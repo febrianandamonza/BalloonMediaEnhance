@@ -20,7 +20,6 @@ detector.load_model()
 enhancer = ImageEnhancer()
 enhancer.load_model()
 
-
 @router.post("/image")
 async def detect(file: UploadFile = File(...)):
 
@@ -37,7 +36,7 @@ async def detect(file: UploadFile = File(...)):
     # enhanced_path = enhancer.enhance_image(str(input_path))
 
     output_path, objects = detector.detect_image(
-        str(input_path)
+        input_path
         # enhanced_path
     )
 

@@ -26,6 +26,8 @@ class ObjectDetector:
         print("YOLO model loaded.")
 
     def read_image(self, image_path):
+
+        image_path = str(image_path)
         
         image = cv2.imread(image_path)
 
@@ -50,8 +52,6 @@ class ObjectDetector:
         cv2.imwrite(output_path, image)
 
     def detect_image(self, image_path):
-
-       
 
         image = self.read_image(image_path)
 
@@ -108,10 +108,7 @@ class ObjectDetector:
 
         objects = list(unique_objects.values())
 
-        output_path = FileManager.build_output_path(
-            image_path,
-            suffix="detected"
-        )
+        output_path = FileManager.build_output_path(image_path)
 
         self.save_image(
             annotated,
