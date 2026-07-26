@@ -1,28 +1,33 @@
 from pathlib import Path
 from datetime import datetime
+import shutil
 
 class FileManager:
 
-    OUTPUT_DIR = 'output'
+    INPUT_DIR = Path("input")
+    OUTPUT_DIR = Path("output")
 
-    @staticmethod
-    def ensure_output_dir():
+    @classmethod
+    def save_upload_file(cls, upload_file):
 
-        Path(FileManager.OUTPUT_DIR).mkdir(
-            parents=True,
-            exist_ok=True
-        )
+        cls.INPUT_DIR.mkdir(exist_ok=True)
 
-    @staticmethod
-    def build_output_path(image_path: str, suffix: str):
+        input_path = cls.INPUT_DIR / upload_file.filename
 
-        file = Path(image_path)
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(upload_file.file, buffer)
+
+        return str(input_path)
+
+    @classmethod
+    def build_output_path(cls, input_path):
+
+        cls.OUTPUT_DIR.mkdir(exist_ok=True)
+
+        input_path = Path(input_path)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        output_dir = Path("output")
-        output_dir.mkdir(exist_ok=True)
+        filename = f"{input_path.stem}_{timestamp}{input_path.suffix}"
 
-        filename = f"{file.stem}_{suffix}_{timestamp}{file.suffix}"
-
-        return str(output_dir / filename)
+        return str(cls.OUTPUT_DIR / filename)

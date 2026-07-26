@@ -1,14 +1,5 @@
-from ultralytics import YOLO
+import cv2
 
-# Load model
-model = YOLO("yolo11n.pt")
+print(cv2.__version__)
 
-# Jalankan deteksi
-results = model.predict(
-    source="input/images2.png",
-    conf=0.10,
-    imgsz=1280,
-    save=True
-)
-
-print(results[0].boxes)
+print(hasattr(cv2, "dnn_superres"))

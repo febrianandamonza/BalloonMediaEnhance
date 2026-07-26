@@ -7,6 +7,7 @@ from pathlib import Path
 
 from api.enhance import router as enhance_router
 from api.detection import router as detection_router
+from api.crowd_counting import router as crowd_counting_router
 
 
 # image = cv2.imread('input/temp.jpeg')
@@ -42,6 +43,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 app.include_router(enhance_router)
 app.include_router(detection_router)
+app.include_router(crowd_counting_router)
 
 app.mount(
     "/output",
