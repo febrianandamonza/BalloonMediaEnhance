@@ -1,5 +1,7 @@
 import cv2
 import time
+import subprocess
+import os
 
 from utils.config import VIDEO_MAX_WIDTH, VIDEO_OUTSCALE
 from services.enhancer import ImageEnhancer
@@ -59,12 +61,17 @@ class VideoEnhancer:
 
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
+        temp_video = output_video.replace(".mp4", "_temp.mp4")
+
         writer = cv2.VideoWriter(
-            output_video,
+            temp_video,
             fourcc,
             fps,
             (output_width, output_height)
         )
+
+        if not writer.isOpened():
+            raise Exception("Failed to create VideoWriter")
 
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
@@ -141,6 +148,49 @@ class VideoEnhancer:
 
         cap.release()
         writer.release()
+
+        command = [
+            "ffmpeg",
+            "-y",
+            "-i", temp_video,
+            "-i", input_video,
+            "-map", "0:v:0",
+            "-map", "1:a?",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_video
+        ]
+
+        print("=" * 80)
+        print("Running FFmpeg...")
+        print("Command:", " ".join(command))
+
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        print("Return Code:", result.returncode)
+        print("STDOUT:")
+        print(result.stdout)
+        print("STDERR:")
+        print(result.stderr)
+        print("=" * 80)
+
+        if result.returncode != 0:
+            print(result.stderr)
+            raise Exception("FFmpeg convert failed")
+
+        # Hapus temporary file
+        if os.path.exists(temp_video):
+            os.remove(temp_video)
 
         return {
             "frame_count": frame_count,

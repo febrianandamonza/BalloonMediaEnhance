@@ -3,6 +3,7 @@
 from services.enhancer import ImageEnhancer
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
 from api.enhance import router as enhance_router
@@ -40,6 +41,17 @@ app = FastAPI(
 )
 
 BASE_DIR = Path(__file__).resolve().parent
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(enhance_router)
 app.include_router(detection_router)
