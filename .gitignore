@@ -229,4 +229,8 @@ Backend/output/
 *.log
 
 Backend/weights/*.pth
+<<<<<<< HEAD
 >>>>>>> 2fd9365 (Fix Bug Video Enhance)
+=======
+Backend/weights/*.pt
+>>>>>>> 0f52ba1 (Add Video Detection with Websoket)

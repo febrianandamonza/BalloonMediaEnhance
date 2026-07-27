@@ -1,6 +1,7 @@
 from pathlib import Path
 from datetime import datetime
 import shutil
+from uuid import uuid4
 
 class FileManager:
 
@@ -12,7 +13,11 @@ class FileManager:
 
         cls.INPUT_DIR.mkdir(exist_ok=True)
 
-        input_path = cls.INPUT_DIR / upload_file.filename
+        ext = Path(upload_file.filename).suffix
+
+        filename = f"{uuid4()}{ext}"
+
+        input_path = cls.INPUT_DIR / filename
 
         with open(input_path, "wb") as buffer:
             shutil.copyfileobj(upload_file.file, buffer)
