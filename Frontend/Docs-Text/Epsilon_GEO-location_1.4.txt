@@ -1,0 +1,84 @@
+
+--- PAGE 1 ---
+Epsilon GEO-location   Date:   18.Mar.2020  Rev:   1.4  Epsilon GEO-location  1 Description 2 GEO Settings 3 Moving Map Software Overlay 4 Laser Range Finder  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 2 ---
+Date:   19.Sep.2018  Rev:   1.3 This page is intentionally left blank.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 3 ---
+Date:   19.Sep.2018  Rev:   1.3  Notice  This manual is property of UAVFACTORY Ltd. Information contained in this document is confidential. No part of this document may be disclosed in any manner to a third party without the prior written consent of UAVFACTORY Ltd. Reproduction of or forwarding to anyone not directly sent this document is strictly forbidden! Information presented in this document is correct at the time of publication. UAVFACTORY maintains a policy of continuous product improvement. UAVFACTORY does not take any obligation to install improved components on its products previously manufactured. Some pictures, illustrations or schematics may not represent the object in full detail and latest design, but are intended to show correct operational principle or action. Please see   https://uavfactory.com/sys/terms   for more details.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 4 ---
+Date:   19.Sep.2018  Rev:   1.3 This page is intentionally left blank.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 5 ---
+Date:   18.Mar.2020  Rev:   1.4  Revision Record  Revision Number   Revision Date  1.3   19.Sep.2018 1.4   18.Mar.2020  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 6 ---
+Date:   19.Sep.2018  Rev:   1.3 This page is intentionally left blank.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 7 ---
+Date:   18.Mar.2020  Rev:   1.4  Change Log  Page   Comment  Revision to introduce new format of the Manual.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 8 ---
+Date:   19.Sep.2018  Rev:   1.3 This page is intentionally left blank.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 9 ---
+Date:   19.Sep.2018  Rev:   1.3  Abbreviations  Abbreviation   Definition  There are no abbreviations  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 10 ---
+Date:   19.Sep.2018  Rev:   1.3 This page is intentionally left blank.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 11 ---
+Date:   19.Sep.2018  Rev:   1.3  Table Of Contents  Notice Change Log Abbreviations Table Of Contents  1   Description   1-1  1.1   Geo Location Feature   1-1  1.2   Moving Map Software Overlay   1-2  2   GEO Settings   2-1  2.1   General   2-1  2.2   GPS Antenna Setup   2-1  2.3   GEO Offsets And Geo-Lock   2-3  3   Moving Map Software Overlay   3-1  3.1   General   3-1  3.2   Choosing The Point Of Interest On The Map   3-1  3.3   Adding Targets To The Target Bank   3-1  3.4   Add Raster Map   3-3  3.5   Digital Elevation Data   3-6  4   Laser Range Finder   4-1  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 12 ---
+Date:   19.Sep.2018  Rev:   1.3 This page is intentionally left blank.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 13 ---
+1 Description  Page:   1-1  Date:   19.Sep.2018  Rev:   1.3  1.1 Geo Location Feature  Epsilon GEO Location feature allows operator to see GPS coordinates of the target at any time. At all times GPS coordinate (longitude, latitude) of the target and slant range from the target to the camera are indicated on the screen.  Video screen with GEO information  Complete set of Geo Location feature benefits include: a. Operator can see the GPS coordinates [LAT ; LON] of the target at which the gimbal is pointing at any time; b. Operator can see the Slant Range [SR] to the target at which the gimbal is pointing at any time; c. Operator can input GPS coordinates of the object of interest and automatically steer the gimbal towards it; d. Operator can input the list of predefined targets by entering its corresponding GPS coordinates and automatically steer the gimbal towards each one of them when necessary.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 14 ---
+1 Description  Page:   1-2  Date:   19.Sep.2018  Rev:   1.3  1.2 Moving Map Software Overlay  Additional optional functionality can be enabled with Moving Map Software Overlay plugin. When Moving Map Software plugin is enabled in the additional software window operator can see: a. Exact point on the map in which gimbal is currently pointing marked with the red “target” icon; b. The area within the current Field of View on the map marked with a red overlay; c. Camera current position on the map marked by the “camera” icon; d. Camera icon direction always shows the direction where the camera is actually pointing. Operator can also select the object of interest on the map by clicking on it and utilizing “Look Here” feature.  Moving map overlay  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 15 ---
+2 GEO Settings  Page:   2-1  Date:   19.Sep.2018  Rev:   1.3  2.1 General  Epsilon GEO features settings allows user to configure various parameters such as GPS antenna location relative to internal INS module, Laser Range Finder mode, Pan/Tilt offsets and Digital Elevation mode. GEO settings are located under Epsilon Settings menu.  GEO settings main window  2.2 GPS Antenna Setup  GPS antennas location is very important for GPS/INS module accuracy and needs to be configured every time when GPS antennas are reinstalled. Epsilon has two options for GPS/INS internal module: 1) moving platform with one GPS antenna; 2) stationary platform with two GPS antennas.  IMPORTANT: if Epsilon with GEO-location feature is installed on stationary platform such as air balloon, permanent mast or other stationary platform, you will not be able to calibrate GPS antenna and this feature will not work.  GPS antennas can be set up through Epsilon software menu by clicking:   Settings   >   Geo   and clicking on “ GPS Antenna Settings ”.  GPS antenna settings  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 16 ---
+2 GEO Settings  Page:   2-2  Date:   19.Sep.2018  Rev:   1.3  Under GPS antenna settings input the actual distances from the X, Y, Z axis sign printed on the top surface of the gimbal to the GPS antenna which is connected to the “A” GPS antenna port. And the distances from GPS antenna connected to the “A” GPS antenna port to the GPS antenna connected to “B” GPS antenna port. Distance value must be input in meters. Directions of the axis must be taken in accordance with the printed X, Y, Z sign printed on the top surface of the gimbal.  IMPORTANT: GPS B Antenna X, Y and Z distances should be measured from GPS A antenna, not from X, Y, Z axis sign printed on the top surface of the gimbal.  Recommended distance between GPS antennas is 1m.  Epsilon 175 GPS port description  Example of the input data for some particular case is indicated on the picture below.  Dual GPS installation example  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 17 ---
+2 GEO Settings  Page:   2-3  Date:   19.Sep.2018  Rev:   1.3  2.3 GEO Offsets And Geo-Lock  To calibrate Epsilon LOS for the exact target location follow this steps:  Input the terrain elevation value for the area of operation basing on WGS84 map data in the field “Altitude” under   Settings   >   Geo  GEO offsets  Lock the gimbal on the target with the known geographical coordinates (eg. cross-section of the roads, a house, etc.). To lock the gimbal on the target:  Enable geo location based control of the gimbal by pressing “GEO” button in the main window of Epsilon software.  In the main Epsilon software menu select:   Settings   >   Geo   input target Latitude and Longitude in the fields under “ Target Geo Lock ” menu and press “ Apply ”  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 18 ---
+2 GEO Settings  Page:   2-4  Date:   19.Sep.2018  Rev:   1.3  Target Geo Lock  After the gimbal is locked onto the target input the “Offsets” part of the open menu by typing in “Pan” and “Tilt” offsets in degrees to center the video stream on the chosen target.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 19 ---
+3 Moving Map Software Overlay  Page:   3-1  Date:   19.Sep.2018  Rev:   1.3  3.1 General  To open Moving Map Software overlay in enabled from the main Epsilon software menu by clicking   Window   >   Map  In the bottom of the opened window operator can see:  Mouse cursor GPS location  Camera GPS location  Target GPS location To use online maps Ground Control Station must be connected to the internet at all times.  3.2 Choosing The Point Of Interest On The Map  To choose the point of interest on the map operator has to left-click on the object of interest and select “Look Here” in the opened menu. In this case gimbal will turn automatically towards the chosen target.  Note: GEO mode must be enabled in order for this function to take action.  3.3 Adding Targets To The Target Bank  To add targets to the target bank from the map left-click on the target of interest and select “Add Target”  Target will appear on the list available by clicking “Target List” icon in the top menu of the Moving Maps Overlay Window.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 20 ---
+3 Moving Map Software Overlay  Page:   3-2  Date:   19.Sep.2018  Rev:   1.3  In the opened menu operator can input chosen target name, delete target, or add other target(s) by entering it’s GPS data information.  - Hold Camera in the map center  - Hold target in the map center  - Map zoom  - Add Raster map image  - Add digital elevation file  - Multitarget editor  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 21 ---
+3 Moving Map Software Overlay  Page:   3-3  Date:   19.Sep.2018  Rev:   1.3  3.4 Add Raster Map  The Epsilon software supports TIF (TIFF) format georeferenced raster map images. This allows user to create custom maps or overlays to display on the Epsilon map. The world file also must be supplied with raster image to provide necessary GEO information. It is a separate text file, which can be created with any text editors (Notepad++). The world file must be with the same name and TIFW format as shown in Figure 12.  Note : The rendering speed depends on the performance of the computer, the more detailed (the larger) the TIFF file is, the more time can be occupied to render it. To generate world file manually, create a text file with 6 lines described in table below:  Text file Line   Description   Units   Example  1   Longitudinal scale of the image   Deg/pixel   0.00102459 2   Not used, needs to be 0   -   0 3   Not used, needs to be 0   -   0 4   Latitudinal scale of the image   Deg/pixel   0.00144868 5   Longitude of the image top-left corner   Decimal degrees   23.292606 6   Latitude of the image top-left corner   Decimal degrees   56.335875  1st line  Vertical scale of the map. Subtract longitude of the top of the image of the map from the coordinates of the bottom of the map image and divide it by number of vertical pixels of the image.  Example (see the attached map) Line 1 = (Longitude_A – Longitude_B)/Image height in pixels. (23.2942.55 – 23.2946.48) / 3904 = 0.00102459  Vertical scale of the man  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 22 ---
+3 Moving Map Software Overlay  Page:   3-4  Date:   19.Sep.2018  Rev:   1.3 2nd line  Value is always “0”  3rd line  Value is always “0”  4th line  Horizontal scale of the map. Subtract latitude of the left side of the image of the map from the longitude of the right side of the map image and divide by it by number of horizontal pixels of the image.  Example (see the attached map) Line 4 = (Latitude A – Latitude B)/Image width in pixels. (53.33.35 - 56.33.28)/4832 = 0.00144868  Horizontal scale of the ma p  5th line  Longitude of the top-left corner (Degrees) Example: Longitude_A  6th line  Latitude of the top-left corner (Degrees) Example: Latitude_A  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 23 ---
+3 Moving Map Software Overlay  Page:   3-5  Date:   19.Sep.2018  Rev:   1.3  To add Raster Layers, need to press Add Raster icon.  Add Raster icon  Choose the image file, in example “mapname.tif”.  Raster image with World File  Epsilon software will start to render chosen raster map. After rendering is complete Epsilon software will show notification.  Raster image rendering  Render complete  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 24 ---
+3 Moving Map Software Overlay  Page:   3-6  Date:   19.Sep.2018  Rev:   1.3  3.5 Digital Elevation Data  A Digital Elevation Model (DEM) is a specialized database that represents the relief of a surface between points of known elevation. Elevation is shown in Geo Map window as “Elev”.  Elevation  User need to choose and download DEM file for his planned operations. Elevation files can be downloaded in:  https://dds.cr.usgs.gov/srtm/  To choose DEM file, need to know location – region and longitude-latitude. In   https://dds.cr.usgs.gov/srtm/   website need to select “version1/”.  Main page  In section “srtm/version1/” need to select, designed region.  Version1/ page  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 25 ---
+3 Moving Map Software Overlay  Page:   3-7  Date:   19.Sep.2018  Rev:   1.3  In region section need to choose necessary longitude-latitude “hgt.zip” file. For example – designated operation field is in Latitude: 56.509638 Longitude: 23.393337 – N56E023.hgt.zip must be chosen.  Longitude-Latitude hgt.zip files  To Add downloaded elevation files to Epsilon software, need to extract .hgt file from archival file format(zip) then need press “Add Elevation” icon.  Add Elevation icon  User will need to choose necessary elevation file and elevation file will be automatically uploaded to Epsilon software. Elevation will be visible in the bottom of the opened Moving Map Software Overlay window operator.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 26 ---
+3 Moving Map Software Overlay  Page:   3-8  Date:   19.Sep.2018  Rev:   1.3 This page is intentionally left blank.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 27 ---
+4 Laser Range Finder  Page:   4-1  Date:   19.Sep.2018  Rev:   1.3  To access Laser Range Finder Settings go to: “ Settings ” > “ GEO ” Laser range finder (LRF) has 3 positions:  “Don’t Use” - LRF is off.  “Telemetry Only (Distance)” – LRF is used only to measure distance and the measured value is shown in the top right corner of the video under “SR”  “GEO” – LRF measured distance is used to determine the target location together with GPS antenna data.  Laser Range Finder Settings  “Use DTED” stands for Use Digital Terrain Elevation Data  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd
+
+--- PAGE 28 ---
+4 Laser Range Finder  Page:   4-2  Date:   19.Sep.2018  Rev:   1.3 This page is intentionally left blank.  Epsilon GEO-location RT LTA Systems Ltd RT LTA Systems Ltd

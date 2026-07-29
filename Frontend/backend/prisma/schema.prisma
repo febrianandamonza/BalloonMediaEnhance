@@ -1,0 +1,562 @@
+// ================================================================
+// PRISMA SCHEMA — SkyStar GeoInt Database
+// PostgreSQL 16 | Based on SDD database_schema.md
+// ================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ================================================================
+// CORE: Users, Roles, Sessions
+// ================================================================
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(50)
+  code        String   @unique @db.VarChar(30)
+  permissions Json     @default("[]")
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  users       User[]
+
+  @@map("roles")
+}
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  username      String    @unique @db.VarChar(100)
+  email         String    @unique @db.VarChar(255)
+  passwordHash  String    @map("password_hash") @db.VarChar(255)
+  fullName      String    @map("full_name") @db.VarChar(255)
+  roleId        String    @map("role_id") @db.Uuid
+  isActive      Boolean   @default(true) @map("is_active")
+  phone         String?   @db.VarChar(20)
+  avatarUrl     String?   @map("avatar_url") @db.VarChar(500)
+  lastLoginAt   DateTime? @map("last_login_at")
+  refreshToken  String?   @map("refresh_token") @db.VarChar(500)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  role          Role      @relation(fields: [roleId], references: [id])
+  licenseSeats  LicenseSeat[]
+  auditLogs     AuditLog[]
+  activatedLicenses License[] @relation("LicenseActivator")
+  activatedModules  LicenseModule[] @relation("ModuleActivator")
+  licenseHistory    LicenseHistory[] @relation("HistoryPerformer")
+  flights       Flight[]
+  flightLogs    FlightLog[]
+  targets       Target[]
+  alertRules    AlertRule[]
+  alertsAcknowledged Alert[] @relation("AlertAcknowledger")
+  alertsResolved     Alert[] @relation("AlertResolver")
+  crowdSessions CrowdCountingSession[]
+  detectionSessions DetectionSession[]
+  reports       Report[]
+
+  @@index([username])
+  @@index([email])
+  @@index([roleId])
+  @@map("users")
+}
+
+// ================================================================
+// LICENSING
+// ================================================================
+
+model License {
+  id             String    @id @default(uuid()) @db.Uuid
+  name           String    @default("Video Analytics Software") @db.VarChar(255)
+  licenseKey     String    @unique @map("license_key") @db.VarChar(100)
+  status         String    @default("inactive") @db.VarChar(20)
+  maxSeats       Int       @default(2) @map("max_seats")
+  activatedAt    DateTime? @map("activated_at")
+  expiresAt      DateTime? @map("expires_at")
+  activatedById  String?   @map("activated_by") @db.Uuid
+  organization   String?   @db.VarChar(255)
+  contractNumber String?   @map("contract_number") @db.VarChar(100)
+  contactEmail   String?   @map("contact_email") @db.VarChar(255)
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  activatedBy    User?     @relation("LicenseActivator", fields: [activatedById], references: [id])
+  modules        LicenseModule[]
+  seats          LicenseSeat[]
+  history        LicenseHistory[]
+
+  @@map("licenses")
+}
+
+model LicenseModule {
+  id              String    @id @default(uuid()) @db.Uuid
+  licenseId       String    @map("license_id") @db.Uuid
+  moduleCode      String    @map("module_code") @db.VarChar(10)
+  moduleName      String    @map("module_name") @db.VarChar(255)
+  subLicenseCode  String    @map("sub_license_code") @db.VarChar(10)
+  subLicenseName  String    @map("sub_license_name") @db.VarChar(500)
+  subLicenseKey   String?   @unique @map("sub_license_key") @db.VarChar(100)
+  isActive        Boolean   @default(false) @map("is_active")
+  activatedAt     DateTime? @map("activated_at")
+  expiresAt       DateTime? @map("expires_at")
+  activatedById   String?   @map("activated_by") @db.Uuid
+  priceIdr        BigInt?   @map("price_idr")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  license         License   @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  activatedBy     User?     @relation("ModuleActivator", fields: [activatedById], references: [id])
+
+  @@unique([licenseId, subLicenseCode], name: "uq_license_subcode")
+  @@index([subLicenseCode, isActive])
+  @@index([licenseId])
+  @@map("license_modules")
+}
+
+model LicenseSeat {
+  id           String   @id @default(uuid()) @db.Uuid
+  licenseId    String   @map("license_id") @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  isActive     Boolean  @default(true) @map("is_active")
+  sessionToken String?  @map("session_token") @db.VarChar(255)
+  ipAddress    String?  @map("ip_address") @db.VarChar(45)
+  userAgent    String?  @map("user_agent") @db.Text
+  lastActivity DateTime @default(now()) @map("last_activity")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  license      License  @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([licenseId, userId], name: "uq_seat_user")
+  @@index([licenseId, isActive])
+  @@map("license_seats")
+}
+
+model LicenseHistory {
+  id              String   @id @default(uuid()) @db.Uuid
+  licenseId       String?  @map("license_id") @db.Uuid
+  moduleCode      String?  @map("module_code") @db.VarChar(10)
+  subLicenseCode  String?  @map("sub_license_code") @db.VarChar(10)
+  action          String   @db.VarChar(30)
+  performedById   String?  @map("performed_by") @db.Uuid
+  details         Json     @default("{}")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  license         License? @relation(fields: [licenseId], references: [id])
+  performedBy     User?    @relation("HistoryPerformer", fields: [performedById], references: [id])
+
+  @@index([createdAt(sort: Desc)])
+  @@index([licenseId])
+  @@map("license_history")
+}
+
+// ================================================================
+// SITES & DEVICES
+// ================================================================
+
+model Site {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   @db.VarChar(255)
+  code       String   @unique @db.VarChar(50)
+  latitude   Decimal? @db.Decimal(10, 7)
+  longitude  Decimal? @db.Decimal(10, 7)
+  altitude   Decimal? @db.Decimal(10, 2)
+  address    String?  @db.Text
+  timezone   String   @default("Asia/Jakarta") @db.VarChar(50)
+  status     String   @default("offline") @db.VarChar(20)
+  vpnConfig  Json?    @map("vpn_config")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  devices    Device[]
+  alerts     Alert[]
+  alertRules AlertRule[]
+  flights    Flight[]
+  targets    Target[]
+  crowdSessions    CrowdCountingSession[]
+  detectionSessions DetectionSession[]
+  reports    Report[]
+  reportSchedules ReportSchedule[]
+
+  @@index([code])
+  @@index([status])
+  @@map("sites")
+}
+
+model Device {
+  id              String    @id @default(uuid()) @db.Uuid
+  siteId          String    @map("site_id") @db.Uuid
+  name            String    @db.VarChar(255)
+  type            String    @db.VarChar(50)
+  model           String?   @db.VarChar(100)
+  serialNumber    String?   @unique @map("serial_number") @db.VarChar(100)
+  firmwareVersion String?   @map("firmware_version") @db.VarChar(50)
+  connectionType  String    @default("ethernet") @map("connection_type") @db.VarChar(20)
+  ipAddress       String?   @map("ip_address") @db.VarChar(45)
+  port            Int       @default(15004)
+  serialPort      String?   @map("serial_port") @db.VarChar(20)
+  baudRate        Int       @default(57600) @map("baud_rate")
+  status          String    @default("offline") @db.VarChar(20)
+  lastSeenAt      DateTime? @map("last_seen_at")
+  metadata        Json      @default("{}")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  site            Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  gimbalSettings  GimbalSettings?
+  crowdSessions   CrowdCountingSession[]
+  detectionSessions DetectionSession[]
+  recordings      Recording[]
+  snapshots       Snapshot[]
+  alerts          Alert[]
+
+  @@index([siteId])
+  @@index([type])
+  @@index([status])
+  @@map("devices")
+}
+
+model GimbalSettings {
+  id                   String  @id @default(uuid()) @db.Uuid
+  deviceId             String  @unique @map("device_id") @db.Uuid
+  opticalZoomSpeed     Int     @default(4) @map("optical_zoom_speed")
+  focusAdjustment      Int     @default(128) @map("focus_adjustment")
+  deadZoneOffset       Int     @default(1500) @map("dead_zone_offset")
+  speedLimit           Int     @default(20) @map("speed_limit")
+  stowPanAngle         Decimal? @map("stow_pan_angle") @db.Decimal(6, 2)
+  stowTiltAngle        Decimal? @map("stow_tilt_angle") @db.Decimal(6, 2)
+  joystickDynamicRate  Boolean @default(false) @map("joystick_dynamic_rate")
+  joystickTiltReverse  Boolean @default(false) @map("joystick_tilt_reverse")
+  videoCodec           String  @default("H264_HD") @map("video_codec") @db.VarChar(30)
+  videoPort            Int     @default(15004) @map("video_port")
+  videoMode            String  @default("PAL") @map("video_mode") @db.VarChar(10)
+  videoBitrate         Int     @default(1500000) @map("video_bitrate")
+  gimbalIp             String  @default("192.168.10.100") @map("gimbal_ip") @db.VarChar(15)
+  gimbalSubnet         String  @default("255.255.255.0") @map("gimbal_subnet") @db.VarChar(15)
+  gimbalGateway        String  @default("192.168.10.1") @map("gimbal_gateway") @db.VarChar(15)
+  enhanceFilter        String  @default("NONE") @map("enhance_filter") @db.VarChar(20)
+  autoConnectEnabled   Boolean @default(true) @map("auto_connect")
+  logTelemetry         Boolean @default(true) @map("log_telemetry")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  device               Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@map("gimbal_settings")
+}
+
+// ================================================================
+// CROWD COUNTING & DETECTION
+// ================================================================
+
+model CrowdCountingSession {
+  id            String    @id @default(uuid()) @db.Uuid
+  deviceId      String    @map("device_id") @db.Uuid
+  siteId        String    @map("site_id") @db.Uuid
+  startedById   String    @map("started_by") @db.Uuid
+  sourceName    String    @map("source_name") @db.VarChar(255)
+  sourceType    String    @map("source_type") @db.VarChar(10)
+  sourceAddress String    @map("source_address") @db.VarChar(500)
+  frameSize     String    @default("1280x720") @map("frame_size") @db.VarChar(20)
+  detectionType String    @default("crowd_counting") @map("detection_type") @db.VarChar(30)
+  status        String    @default("configured") @db.VarChar(20)
+  totalFrames   Int       @default(0) @map("total_frames")
+  avgCount      Decimal?  @map("avg_count") @db.Decimal(10, 2)
+  maxCount      Int?      @map("max_count")
+  minCount      Int?      @map("min_count")
+  startedAt     DateTime? @map("started_at")
+  stoppedAt     DateTime? @map("stopped_at")
+  errorMessage  String?   @map("error_message") @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  device        Device    @relation(fields: [deviceId], references: [id])
+  site          Site      @relation(fields: [siteId], references: [id])
+  startedBy     User      @relation(fields: [startedById], references: [id])
+
+  @@index([deviceId])
+  @@index([status])
+  @@map("crowd_counting_sessions")
+}
+
+model DetectionSession {
+  id                   String    @id @default(uuid()) @db.Uuid
+  deviceId             String?   @map("device_id") @db.Uuid
+  siteId               String    @map("site_id") @db.Uuid
+  startedById          String    @map("started_by") @db.Uuid
+  type                 String    @db.VarChar(10)
+  subLicense           String    @map("sub_license") @db.VarChar(10)
+  modelName            String    @default("yolov8") @map("model_name") @db.VarChar(100)
+  confidenceThreshold  Decimal   @default(0.50) @map("confidence_threshold") @db.Decimal(3, 2)
+  roiPolygon           Json?     @map("roi_polygon")
+  status               String    @default("pending") @db.VarChar(20)
+  totalObjects         Int       @default(0) @map("total_objects")
+  totalFrames          Int       @default(0) @map("total_frames")
+  uniqueClasses        Json      @default("[]") @map("unique_classes")
+  startedAt            DateTime? @map("started_at")
+  completedAt          DateTime? @map("completed_at")
+  errorMessage         String?   @map("error_message") @db.Text
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  device               Device?   @relation(fields: [deviceId], references: [id])
+  site                 Site      @relation(fields: [siteId], references: [id])
+  startedBy            User      @relation(fields: [startedById], references: [id])
+  results              DetectionResult[]
+
+  @@index([siteId])
+  @@map("detection_sessions")
+}
+
+model DetectionResult {
+  id             String   @id @default(uuid()) @db.Uuid
+  sessionId      String   @map("session_id") @db.Uuid
+  frameNumber    Int?     @map("frame_number")
+  objects        Json     @default("[]")
+  totalObjects   Int      @default(0) @map("total_objects")
+  processingMs   Int?     @map("processing_ms")
+  imagePath      String?  @map("image_path") @db.VarChar(500)
+  annotatedPath  String?  @map("annotated_path") @db.VarChar(500)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  session        DetectionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt(sort: Desc)])
+  @@map("detection_results")
+}
+
+// ================================================================
+// FLIGHTS
+// ================================================================
+
+model Flight {
+  id              String    @id @default(uuid()) @db.Uuid
+  siteId          String    @map("site_id") @db.Uuid
+  createdById     String    @map("created_by") @db.Uuid
+  missionName     String    @map("mission_name") @db.VarChar(255)
+  missionType     String?   @map("mission_type") @db.VarChar(50)
+  status          String    @default("planned") @db.VarChar(20)
+  balloonType     String    @default("SkyStar_180") @map("balloon_type") @db.VarChar(50)
+  payloadConfig   String?   @map("payload_config") @db.VarChar(50)
+  teamLead        String?   @map("team_lead") @db.VarChar(255)
+  crewMembers     Json      @default("[]") @map("crew_members")
+  targetAltitude  Decimal?  @map("target_altitude") @db.Decimal(10, 2)
+  targetArea      Json?     @map("target_area")
+  checklist       Json      @default("{}") @map("checklist")
+  plannedStart    DateTime? @map("planned_start")
+  plannedEnd      DateTime? @map("planned_end")
+  actualStart     DateTime? @map("actual_start")
+  actualEnd       DateTime? @map("actual_end")
+  blockTime       Int?      @map("block_time")
+  postFlightNotes String?   @map("post_flight_notes") @db.Text
+  weatherConditions Json    @default("{}") @map("weather_conditions")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  site            Site      @relation(fields: [siteId], references: [id])
+  createdBy       User      @relation(fields: [createdById], references: [id])
+  logs            FlightLog[]
+
+  @@index([siteId, createdAt(sort: Desc)])
+  @@index([status])
+  @@map("flights")
+}
+
+model FlightLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  flightId  String   @map("flight_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String   @db.VarChar(100)
+  details   Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  flight    Flight   @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([flightId, createdAt])
+  @@map("flight_logs")
+}
+
+// ================================================================
+// ALERTS
+// ================================================================
+
+model Alert {
+  id              String    @id @default(uuid()) @db.Uuid
+  siteId          String    @map("site_id") @db.Uuid
+  ruleId          String?   @map("rule_id") @db.Uuid
+  title           String    @db.VarChar(500)
+  description     String?   @db.Text
+  severity        String    @db.VarChar(10)
+  type            String    @db.VarChar(30)
+  sourceData      Json      @default("{}") @map("source_data")
+  deviceId        String?   @map("device_id") @db.Uuid
+  isAcknowledged  Boolean   @default(false) @map("is_acknowledged")
+  acknowledgedById String?  @map("acknowledged_by") @db.Uuid
+  acknowledgedAt  DateTime? @map("acknowledged_at")
+  isResolved      Boolean   @default(false) @map("is_resolved")
+  resolvedById    String?   @map("resolved_by") @db.Uuid
+  resolvedAt      DateTime? @map("resolved_at")
+  resolutionNote  String?   @map("resolution_note") @db.Text
+  notifiedVia     Json      @default("[]") @map("notified_via")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  site            Site      @relation(fields: [siteId], references: [id])
+  rule            AlertRule? @relation(fields: [ruleId], references: [id])
+  device          Device?   @relation(fields: [deviceId], references: [id])
+  acknowledgedBy  User?     @relation("AlertAcknowledger", fields: [acknowledgedById], references: [id])
+  resolvedBy      User?     @relation("AlertResolver", fields: [resolvedById], references: [id])
+
+  @@index([siteId, severity, createdAt(sort: Desc)])
+  @@map("alerts")
+}
+
+model AlertRule {
+  id                    String   @id @default(uuid()) @db.Uuid
+  siteId                String   @map("site_id") @db.Uuid
+  createdById           String   @map("created_by") @db.Uuid
+  name                  String   @db.VarChar(255)
+  type                  String   @db.VarChar(30)
+  severity              String   @db.VarChar(10)
+  conditions            Json
+  notificationChannels  Json     @default("[\"web_push\"]") @map("notification_channels")
+  autoAction            String?  @map("auto_action") @db.VarChar(50)
+  recipients            Json     @default("[]")
+  isActive              Boolean  @default(true) @map("is_active")
+  cooldownSec           Int      @default(300) @map("cooldown_sec")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  site                  Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdBy             User     @relation(fields: [createdById], references: [id])
+  alerts                Alert[]
+
+  @@unique([siteId, name], name: "uq_alert_rule_name")
+  @@map("alert_rules")
+}
+
+// ================================================================
+// GEO TARGETS
+// ================================================================
+
+model Target {
+  id         String   @id @default(uuid()) @db.Uuid
+  siteId     String   @map("site_id") @db.Uuid
+  createdById String  @map("created_by") @db.Uuid
+  name       String   @db.VarChar(255)
+  latitude   Decimal  @db.Decimal(10, 7)
+  longitude  Decimal  @db.Decimal(10, 7)
+  altitude   Decimal? @db.Decimal(10, 2)
+  isFavorite Boolean  @default(false) @map("is_favorite")
+  category   String?  @db.VarChar(50)
+  notes      String?  @db.Text
+  icon       String   @default("default") @db.VarChar(50)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  site       Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdBy  User     @relation(fields: [createdById], references: [id])
+
+  @@index([siteId])
+  @@map("targets")
+}
+
+// ================================================================
+// RECORDINGS & SNAPSHOTS
+// ================================================================
+
+model Recording {
+  id         String    @id @default(uuid()) @db.Uuid
+  deviceId   String    @map("device_id") @db.Uuid
+  startedAt  DateTime  @map("started_at")
+  stoppedAt  DateTime? @map("stopped_at")
+  filePath   String    @map("file_path") @db.VarChar(500)
+  fileSize   BigInt?   @map("file_size")
+  duration   Int?
+  format     String    @default("mp4") @db.VarChar(10)
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  device     Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, startedAt(sort: Desc)])
+  @@map("recordings")
+}
+
+model Snapshot {
+  id        String   @id @default(uuid()) @db.Uuid
+  deviceId  String   @map("device_id") @db.Uuid
+  filePath  String   @map("file_path") @db.VarChar(500)
+  fileSize  BigInt?  @map("file_size")
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, createdAt(sort: Desc)])
+  @@map("snapshots")
+}
+
+// ================================================================
+// REPORTS
+// ================================================================
+
+model Report {
+  id          String   @id @default(uuid()) @db.Uuid
+  siteId      String   @map("site_id") @db.Uuid
+  createdById String   @map("created_by") @db.Uuid
+  title       String   @db.VarChar(500)
+  type        String   @db.VarChar(50)
+  format      String   @default("pdf") @db.VarChar(10)
+  filePath    String?  @map("file_path") @db.VarChar(500)
+  parameters  Json     @default("{}")
+  status      String   @default("pending") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  site        Site     @relation(fields: [siteId], references: [id])
+  createdBy   User     @relation(fields: [createdById], references: [id])
+
+  @@index([siteId, createdAt(sort: Desc)])
+  @@map("reports")
+}
+
+model ReportSchedule {
+  id         String   @id @default(uuid()) @db.Uuid
+  siteId     String   @map("site_id") @db.Uuid
+  name       String   @db.VarChar(255)
+  type       String   @db.VarChar(50)
+  cronExpr   String   @map("cron_expression") @db.VarChar(50)
+  recipients Json     @default("[]")
+  isActive   Boolean  @default(true) @map("is_active")
+  lastRun    DateTime? @map("last_run")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  site       Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@map("report_schedules")
+}
+
+// ================================================================
+// AUDIT LOGS (Immutable)
+// ================================================================
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String   @db.VarChar(100)
+  resource   String   @db.VarChar(255)
+  resourceId String?  @map("resource_id") @db.Uuid
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.Text
+  details    Json     @default("{}")
+  statusCode Int      @default(200) @map("status_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([createdAt(sort: Desc)])
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
