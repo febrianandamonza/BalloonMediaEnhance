@@ -11,7 +11,7 @@ from fastapi import APIRouter, UploadFile, File, WebSocket, WebSocketDisconnect,
 from services.detector import ObjectDetector
 from services.enhancer import ImageEnhancer
 from utils.file_manager import FileManager
-from core.websocket_manager import manager
+from utils.websocket_manager import manager
 
 router = APIRouter(
     prefix="/api/v1/detect",

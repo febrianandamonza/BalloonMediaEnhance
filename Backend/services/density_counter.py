@@ -25,9 +25,14 @@ class DensityCounter:
 
     def __init__(self):
 
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        if torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        elif torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
+
+        print(f"Using device: {self.device}")
 
         self.model = self.load_model()
 

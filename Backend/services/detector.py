@@ -4,7 +4,7 @@ import base64
 import asyncio
 
 from utils.file_manager import FileManager
-from core.websocket_manager import manager
+from utils.websocket_manager import manager
 
 class ObjectDetector:
 
