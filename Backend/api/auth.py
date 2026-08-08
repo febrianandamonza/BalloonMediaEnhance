@@ -12,13 +12,13 @@ from services.auth_service import AuthService
 from schemas.auth_schema import (
     CurrentUserResponse,
     LoginResponse,
+    RefreshRequest,
     RegisterRequest,
     LoginRequest
 )
 
 from schemas.user_schema import UserResponse
 from dependencies.authentication import get_current_user
-from entities.user import User
 
 router = APIRouter(
     prefix="/api/v1/auth",
@@ -26,6 +26,20 @@ router = APIRouter(
 )
 
 service = AuthService()
+
+
+@router.post(
+    "/refresh"
+)
+def refresh(
+    request: RefreshRequest,
+    db: Session = Depends(get_db)
+):
+
+    return service.refresh(
+        db,
+        request.refresh_token
+    )
 
 
 @router.get(

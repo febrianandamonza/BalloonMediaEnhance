@@ -24,6 +24,31 @@ EXPIRE_MINUTES = int(
     os.getenv("JWT_EXPIRE_MINUTES")
 )
 
+REFRESH_EXPIRE_DAYS = int(
+    os.getenv("JWT_REFRESH_EXPIRE_DAYS")
+)
+
+
+def create_refresh_token(
+    data: dict
+):
+
+    payload = data.copy()
+
+    expire = datetime.utcnow() + timedelta(
+        days=REFRESH_EXPIRE_DAYS
+    )
+
+    payload["exp"] = expire
+
+    payload["type"] = "refresh"
+
+    return jwt.encode(
+        payload,
+        SECRET_KEY,
+        algorithm=ALGORITHM
+    )
+
 
 def decode_access_token(
     token: str

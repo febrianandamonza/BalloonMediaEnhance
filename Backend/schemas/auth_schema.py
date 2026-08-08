@@ -6,6 +6,11 @@ from pydantic import ConfigDict
 
 
 
+class RefreshRequest(BaseModel):
+
+    refresh_token: str
+
+
 class CurrentUserResponse(BaseModel):
 
     id: UUID
@@ -50,6 +55,8 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
 
     access_token: str
+
+    refresh_token: str
 
     token_type: str
 

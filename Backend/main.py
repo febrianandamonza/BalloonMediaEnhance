@@ -20,30 +20,12 @@ from api.license import router as license_router
 from api.license_status import router as license_status_router
 from api.auth import router as auth_router
 from api.user_license import router as user_license_router
-
-
-# image = cv2.imread('input/temp.jpeg')
-
-# if image is None:
-#     raise Exception("Image not found or unable to load.")
-
-
-# print("Ukuran gambar:", image.shape)
-
-# cv2.imshow('Original', image)
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
-
-
-# enhancer = ImageEnhancer()
-
-# enhancer.load_model()
-
-# result = enhancer.enhance_image(
-#     "input/images2.png"
-# )
-
-# print(result)
+from api.flight_simulation import router as flight_simulation_router
+from api.flight_mission import router as flight_mission_router
+from api.mission_status import router as mission_status_router
+from api.location import router as location_router
+from api.balloon import router as balloon_router
+from api.flight_information import router as flight_information_router
 
 
 app = FastAPI(
@@ -73,6 +55,12 @@ app.include_router(user_router)
 app.include_router(license_router)
 app.include_router(license_status_router)
 app.include_router(user_license_router)
+app.include_router(flight_simulation_router)
+app.include_router(flight_mission_router)
+app.include_router(flight_information_router)
+app.include_router(mission_status_router)
+app.include_router(location_router)
+app.include_router(balloon_router)
 
 app.include_router(enhance_router)
 app.include_router(detection_router)
