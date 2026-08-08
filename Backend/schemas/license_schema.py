@@ -1,0 +1,37 @@
+from uuid import UUID
+
+from pydantic import BaseModel
+from pydantic import ConfigDict
+
+
+class LicenseCreateRequest(BaseModel):
+
+    license_code: str
+
+    license_name: str
+
+    description: str | None = None
+
+
+class LicenseUpdateRequest(BaseModel):
+
+    license_code: str
+
+    license_name: str
+
+    description: str | None = None
+
+
+class LicenseResponse(BaseModel):
+
+    id: UUID
+
+    license_code: str
+
+    license_name: str
+
+    description: str | None
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )

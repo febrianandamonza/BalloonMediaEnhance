@@ -3,8 +3,16 @@ import cv2
 import base64
 import asyncio
 
+from pathlib import Path
+
 from utils.file_manager import FileManager
 from utils.websocket_manager import manager
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+WEIGHTS_DIR = BASE_DIR / "weights"
+
+YOLO_WEIGHT = WEIGHTS_DIR / "yolo11x.pt"
 
 class ObjectDetector:
 
@@ -24,9 +32,15 @@ class ObjectDetector:
     def load_model(self):
 
         print("Loading YOLO model...")
-        self.model = YOLO("yolo11x.pt")
 
-        print("YOLO model loaded.")
+        if not YOLO_WEIGHT.exists():
+            raise FileNotFoundError(
+                f"YOLO weight not found: {YOLO_WEIGHT}"
+            )
+
+        self.model = YOLO(str(YOLO_WEIGHT))
+
+    print("YOLO model loaded.")
 
     def read_image(self, image_path):
 
