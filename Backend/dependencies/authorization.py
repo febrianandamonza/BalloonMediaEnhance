@@ -10,7 +10,6 @@ def require_roles(
     *roles: str
 ):
 
-    print("require_roles dibuat")
 
     def checker(
             
@@ -20,7 +19,6 @@ def require_roles(
         )
 
     ):
-        print("checker dipanggil")
         print(current_user)
 
         if current_user.role.name not in roles:

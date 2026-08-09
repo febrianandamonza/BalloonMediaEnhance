@@ -13,6 +13,20 @@ class UserRepository(
 
         super().__init__(User)
 
+
+    def get_all(
+        self,
+        db: Session
+    ):
+
+        return (
+            db.query(User)
+            .options(
+                joinedload(User.role)
+            )
+            .all()
+        )
+
     def get_by_username(
         self,
         db: Session,
@@ -21,6 +35,9 @@ class UserRepository(
 
         return (
             db.query(User)
+            .options(
+                joinedload(User.role)
+            )
             .filter(User.username == username)
             .first()
         )
@@ -37,24 +54,6 @@ class UserRepository(
         return user
 
 
-    def get_by_username(
-        self,
-        db,
-        username
-    ):
-
-        return (
-
-            db.query(User)
-
-            .filter(
-                User.username == username
-            )
-
-            .first()
-
-        )
-
     def get_by_id(
         self,
         db,
@@ -64,17 +63,12 @@ class UserRepository(
         return (
 
             db.query(User)
-
             .options(
-
                 joinedload(User.role)
-
             )
-
             .filter(
                 User.id == user_id
             )
-
             .first()
 
         )

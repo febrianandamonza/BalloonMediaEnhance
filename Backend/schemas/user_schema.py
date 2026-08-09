@@ -1,9 +1,10 @@
 from uuid import UUID
+from datetime import datetime
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
 
-
+from schemas.role_schema import RoleSimpleResponse
 
 class UserResponse(BaseModel):
 
@@ -18,6 +19,14 @@ class UserResponse(BaseModel):
     phone: str | None
 
     is_active: bool
+
+    created_at: datetime | None
+
+    updated_at: datetime | None
+
+    last_login: datetime | None
+
+    role: RoleSimpleResponse
 
     model_config = ConfigDict(
         from_attributes=True

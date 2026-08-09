@@ -19,7 +19,8 @@ from schemas.flight_information_schema import (
 
 router = APIRouter(
     prefix="/api/v1/flight-information",
-    tags=["Flight Information"]
+    tags=["Flight Information"],
+    dependencies=[Depends(require_roles("Admin", "Operator"))]
 )
 
 service = FlightInformationService()
@@ -27,8 +28,7 @@ service = FlightInformationService()
 
 @router.get(
     "",
-    response_model=list[FlightInformationResponse],
-    dependencies=[Depends(require_roles("Admin", "Operator"))]
+    response_model=list[FlightInformationResponse]
 )
 def get_all(
     db: Session = Depends(get_db)
@@ -39,8 +39,7 @@ def get_all(
 
 @router.get(
     "/{information_id}",
-    response_model=FlightInformationResponse,
-    dependencies=[Depends(require_roles("Admin", "Operator"))]
+    response_model=FlightInformationResponse
 )
 def get_by_id(
     information_id: UUID,
@@ -55,8 +54,7 @@ def get_by_id(
 
 @router.post(
     "",
-    response_model=FlightInformationResponse,
-    dependencies=[Depends(require_roles("Admin"))]
+    response_model=FlightInformationResponse
 )
 def create(
     request: FlightInformationCreateRequest,
@@ -71,8 +69,7 @@ def create(
 
 @router.put(
     "/{information_id}",
-    response_model=FlightInformationResponse,
-    dependencies=[Depends(require_roles("Admin"))]
+    response_model=FlightInformationResponse
 )
 def update(
     information_id: UUID,
@@ -88,8 +85,7 @@ def update(
 
 
 @router.delete(
-    "/{information_id}",
-    dependencies=[Depends(require_roles("Admin"))]
+    "/{information_id}"
 )
 def delete(
     information_id: UUID,

@@ -31,7 +31,10 @@ service = UserLicenseService()
 
 @router.get(
     "",
-    response_model=list[UserLicenseResponse]
+    response_model=list[UserLicenseResponse],
+    dependencies=[
+            Depends(require_roles("Admin", "Operator"))
+        ]
 )
 def get_all(
     db: Session = Depends(get_db)
@@ -42,11 +45,14 @@ def get_all(
 
 @router.get(
     "/{user_license_id}",
-    response_model=UserLicenseResponse
+    response_model=UserLicenseResponse,
+    dependencies=[
+                Depends(require_roles("Admin", "Operator"))
+            ]
 )
 def get_by_id(
     user_license_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
 
     return service.get_by_id(
@@ -57,7 +63,10 @@ def get_by_id(
 
 @router.get(
     "/user/{user_id}",
-    response_model=list[UserLicenseResponse]
+    response_model=list[UserLicenseResponse],
+    dependencies=[
+                Depends(require_roles("Admin", "Operator"))
+            ]
 )
 def get_by_user(
     user_id: UUID,
@@ -72,7 +81,10 @@ def get_by_user(
 
 @router.post(
     "",
-    response_model=UserLicenseResponse
+    response_model=UserLicenseResponse,
+    dependencies=[
+                Depends(require_roles("Admin", "Operator"))
+            ]
 )
 def create(
     request: UserLicenseCreateRequest,
@@ -87,7 +99,10 @@ def create(
 
 @router.put(
     "/{user_license_id}",
-    response_model=UserLicenseResponse
+    response_model=UserLicenseResponse,
+    dependencies=[
+                Depends(require_roles("Admin"))
+            ]
 )
 def update(
     user_license_id: UUID,
@@ -103,7 +118,10 @@ def update(
 
 
 @router.delete(
-    "/{user_license_id}"
+    "/{user_license_id}",
+    dependencies=[
+                Depends(require_roles("Admin"))
+            ]
 )
 def delete(
     user_license_id: UUID,

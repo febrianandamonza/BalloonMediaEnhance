@@ -24,17 +24,18 @@ router = APIRouter(
 
     prefix="/api/v1/flight-missions",
 
-    tags=["Flight Missions"]
+    tags=["Flight Missions"],
+
+    dependencies=[
+        Depends(require_roles("Admin", "Operator"))
+    ]
 )
 
 service = FlightMissionService()
 
 @router.get(
     "",
-    response_model=list[FlightMissionResponse],
-    dependencies=[
-        Depends(require_roles("Admin", "Operator"))
-    ]
+    response_model=list[FlightMissionResponse]
 )
 def get_all(
     db: Session = Depends(get_db)
@@ -44,10 +45,7 @@ def get_all(
 
 @router.get(
     "/{mission_id}",
-    response_model=FlightMissionResponse,
-    dependencies=[
-        Depends(require_roles("Admin", "Operator"))
-    ]
+    response_model=FlightMissionResponse
 )
 def get_by_id(
     mission_id: UUID,
@@ -61,10 +59,7 @@ def get_by_id(
 
 @router.post(
     "",
-    response_model=FlightMissionResponse,
-    dependencies=[
-        Depends(require_roles("Admin"))
-    ]
+    response_model=FlightMissionResponse
 )
 def create(
 
@@ -89,10 +84,7 @@ def create(
 
 @router.put(
     "/{mission_id}",
-    response_model=FlightMissionResponse,
-    dependencies=[
-        Depends(require_roles("Admin"))
-    ]
+    response_model=FlightMissionResponse
 )
 def update(
 
@@ -115,10 +107,7 @@ def update(
     )
 
 @router.delete(
-    "/{mission_id}",
-    dependencies=[
-        Depends(require_roles("Admin"))
-    ]
+    "/{mission_id}"
 )
 def delete(
 

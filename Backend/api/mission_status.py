@@ -32,7 +32,8 @@ service = MissionStatusService()
     dependencies=[
         Depends(
             require_roles(
-                "Admin"
+                "Admin",
+                "Operator"
             )
         )
     ]
