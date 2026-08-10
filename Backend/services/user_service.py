@@ -7,7 +7,7 @@ from repositories.user_repository import UserRepository
 
 from services.base_service import BaseService
 
-from utils.exceptions import NotFoundException
+from utils.exceptions import BadRequestException, NotFoundException
 
 
 class UserService(BaseService[UserRepository]):
@@ -15,6 +15,31 @@ class UserService(BaseService[UserRepository]):
     def __init__(self):
 
         super().__init__(UserRepository())
+
+
+    def change_status(
+            self,
+            db,
+            user_id,
+            request
+    ):
+        entity = self.repository.get_by_id(
+            db,
+            user_id
+        )
+
+        if entity.is_active == request.is_active:
+
+            raise BadRequestException(
+                "User status is already set to the requested value."
+            )
+
+        entity.is_active = request.is_active
+
+        return self.repository.update(
+            db,
+            entity
+        )
 
 
     def update(

@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
+from fastapi import Request
 
 from sqlalchemy.orm import Session
 
@@ -24,11 +25,7 @@ router = APIRouter(
 
     prefix="/api/v1/flight-missions",
 
-    tags=["Flight Missions"],
-
-    dependencies=[
-        Depends(require_roles("Admin", "Operator"))
-    ]
+    tags=["Flight Missions"]
 )
 
 service = FlightMissionService()
@@ -63,21 +60,30 @@ def get_by_id(
 )
 def create(
 
+    http_request: Request,
+
     request: FlightMissionCreateRequest,
 
     db: Session = Depends(get_db),
 
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(
+        require_roles(
+            "Admin",
+            "Operator"
+        )
+    )
 
 ):
 
     return service.create(
 
-        db,
+        db=db,
 
-        request,
+        http_request=http_request,
 
-        current_user
+        request=request,
+
+        current_user=current_user
 
     )
 
@@ -90,19 +96,32 @@ def update(
 
     mission_id: UUID,
 
+    http_request: Request,
+
     request: FlightMissionUpdateRequest,
 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+
+    current_user: User = Depends(
+        require_roles(
+            "Admin",
+            "Operator"
+        )
+    )
 
 ):
 
     return service.update(
 
-        db,
+        db=db,
 
-        mission_id,
+        mission_id=mission_id,
 
-        request
+        http_request=http_request,
+
+        current_user=current_user,
+
+        request=request
 
     )
 
@@ -113,15 +132,27 @@ def delete(
 
     mission_id: UUID,
 
-    db: Session = Depends(get_db)
+    http_request: Request,
+
+    db: Session = Depends(get_db),
+
+    current_user: User = Depends(
+        require_roles(
+            "Admin"
+        )
+    )
 
 ):
 
     service.delete(
 
-        db,
+        db=db,
 
-        mission_id
+        mission_id=mission_id,
+
+        http_request=http_request,
+
+        current_user=current_user
 
     )
 

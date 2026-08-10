@@ -20,10 +20,7 @@ from dependencies.authorization import require_roles
 
 router = APIRouter(
     prefix="/api/v1/licenses",
-    tags=["Licenses"],
-    dependencies=[
-        Depends(require_roles("Admin"))
-    ]
+    tags=["Licenses"]
 )
 
 service = LicenseService()
@@ -31,7 +28,10 @@ service = LicenseService()
 
 @router.get(
     "",
-    response_model=list[LicenseResponse]
+    response_model=list[LicenseResponse],
+    dependencies=[
+            Depends(require_roles("Admin", "Operator"))
+        ]
 )
 def get_all(
     db: Session = Depends(get_db)
@@ -41,7 +41,10 @@ def get_all(
 
 @router.get(
     "/{license_id}",
-    response_model=LicenseResponse
+    response_model=LicenseResponse,
+    dependencies=[
+            Depends(require_roles("Admin", "Operator"))
+        ]
 )
 def get_by_id(
     license_id: UUID,
@@ -65,7 +68,10 @@ def get_by_id(
 
 @router.post(
     "",
-    response_model=LicenseResponse
+    response_model=LicenseResponse,
+    dependencies=[
+            Depends(require_roles("Admin"))
+        ]
 )
 def create(
     request: LicenseCreateRequest,
@@ -80,7 +86,10 @@ def create(
 
 @router.put(
     "/{license_id}",
-    response_model=LicenseResponse
+    response_model=LicenseResponse,
+    dependencies=[
+            Depends(require_roles("Admin"))
+        ]
 )
 def update(
     license_id: UUID,
@@ -96,7 +105,10 @@ def update(
 
 
 @router.delete(
-    "/{license_id}"
+    "/{license_id}",
+    dependencies=[
+            Depends(require_roles("Admin"))
+        ]
 )
 def delete(
     license_id: UUID,

@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
+from fastapi import Request
 
 from sqlalchemy.orm import Session
 
@@ -26,15 +27,6 @@ router = APIRouter(
     prefix="/api/v1/flight-simulations",
 
     tags=["Flight Simulations"],
-
-    dependencies=[
-        Depends(
-            require_roles(
-                "Admin",
-                "Operator"
-            )
-        )
-    ]
 )
 
 service = FlightSimulationService()
@@ -72,17 +64,22 @@ def get_by_id(
     response_model=FlightSimulationResponse
 )
 def create(
+    http_request: Request,
     request: FlightSimulationCreateRequest,
 
     db: Session = Depends(get_db),
 
     current_user: User = Depends(
-        get_current_user
+        require_roles(
+            "Admin",
+            "Operator"
+        )
     )
 ):
 
     return service.create(
         db,
+        http_request,
         request,
         current_user
     )
@@ -92,16 +89,25 @@ def create(
     response_model=FlightSimulationResponse
 )
 def update(
+    http_request: Request,
     simulation_id: UUID,
 
     request: FlightSimulationUpdateRequest,
 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "Admin",
+            "Operator"
+        )
+    )
 ):
 
     return service.update(
         db,
         simulation_id,
+        http_request,
+        current_user,
         request
     )
 
@@ -110,13 +116,24 @@ def update(
 )
 def delete(
     simulation_id: UUID,
+    http_request: Request,
 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+
+    current_user: User = Depends(
+        require_roles(
+            "Admin",
+            "Operator"
+        )
+    )
 ):
 
     service.delete(
         db,
-        simulation_id
+        simulation_id,
+        http_request,
+        current_user
+
     )
 
     return {

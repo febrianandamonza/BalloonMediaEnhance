@@ -6,6 +6,26 @@ from pydantic import ConfigDict
 
 from schemas.role_schema import RoleSimpleResponse
 
+
+class UserSimpleResponse(BaseModel):
+
+    username: str
+
+    full_name: str
+
+    is_active: bool
+
+    role: RoleSimpleResponse | None
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+
+class UserStatusRequest(BaseModel):
+    
+    is_active: bool
+
 class UserResponse(BaseModel):
 
     id: UUID

@@ -1,5 +1,11 @@
 from datetime import datetime
 from uuid import uuid4
+from zoneinfo import ZoneInfo
+
+from fastapi import Request
+
+
+from utils.audit_helper import audit
 
 from entities.user import User
 
@@ -29,6 +35,7 @@ class AuthService:
     def login(
         self,
         db,
+        http_request: Request,
         request
     ):
 
@@ -38,6 +45,27 @@ class AuthService:
         )
 
         if not user:
+            audit.log(
+
+                db=db,
+
+                request=http_request,
+
+                current_user=None,
+
+                module="Authentication",
+
+                action="LOGIN",
+
+                entity="User",
+
+                entity_id=None,
+
+                description=f"Login failed. Username '{request.username}' not found.",
+
+                status="FAILED"
+
+            )
 
             raise UnauthorizedException(
                 "Invalid username or password."
@@ -45,6 +73,27 @@ class AuthService:
 
         if not user.is_active:
 
+            audit.log(
+
+                db=db,
+
+                request=http_request,
+
+                current_user=user,
+
+                module="Authentication",
+
+                action="LOGIN",
+
+                entity="User",
+
+                entity_id=user.id,
+
+                description=f"Login failed. User '{user.username}' is inactive.",
+
+                status="FAILED"
+
+            )
             raise ForbiddenException(
                 "User is inactive."
             )
@@ -53,6 +102,29 @@ class AuthService:
             request.password,
             user.password_hash
         ):
+
+            
+            audit.log(
+
+                db=db,
+
+                request=http_request,
+
+                current_user=user,
+
+                module="Authentication",
+
+                action="LOGIN",
+
+                entity="User",
+
+                entity_id=user.id,
+
+                description=f"Login failed. Invalid password for '{user.username}'.",
+
+                status="FAILED"
+
+            )
 
             raise UnauthorizedException(
                 "Invalid username or password."
@@ -74,7 +146,29 @@ class AuthService:
 
         })
 
-        user.last_login = datetime.utcnow()
+        audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=user,
+
+            module="Authentication",
+
+            action="LOGIN",
+
+            entity="User",
+
+            entity_id=user.id,
+
+            description=f"User '{user.username}' logged in successfully."
+
+        )
+
+        user.last_login = datetime.now(
+            ZoneInfo("Asia/Jakarta")
+        ).replace(tzinfo=None)
 
         self.repository.update(
             db,
@@ -104,6 +198,7 @@ class AuthService:
     def register(
         self,
         db,
+        http_request: Request,
         request
     ):
 
@@ -113,6 +208,26 @@ class AuthService:
         )
 
         if user:
+            audit.log(
+                db=db,
+
+                request=http_request,
+
+                current_user=None,
+
+                module="Authentication",
+
+                action="REGISTER",
+
+                entity="User",
+
+                entity_id=None,
+
+                description=f"Registration failed. Username '{request.username}' already exists.",
+
+                status="FAILED"
+
+            )
 
             raise ConflictException(
                 "Username already exists."
@@ -139,6 +254,25 @@ class AuthService:
             is_active=True,
 
             created_at=datetime.utcnow()
+
+        )
+
+        audit.log(
+            db=db,
+
+            request=http_request,
+
+            current_user=None,
+
+            module="Authentication",
+
+            action="REGISTER",
+
+            entity="User",
+
+            entity_id=entity.id,
+
+            description=f"User '{request.username}' registered successfully."
 
         )
 

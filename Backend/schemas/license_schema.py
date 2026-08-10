@@ -1,4 +1,5 @@
 from uuid import UUID
+from datetime import date
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -12,6 +13,10 @@ class LicenseCreateRequest(BaseModel):
 
     description: str | None = None
 
+    issued_date: date | None = None
+
+    expired_date: date | None = None
+
 
 class LicenseUpdateRequest(BaseModel):
 
@@ -20,6 +25,11 @@ class LicenseUpdateRequest(BaseModel):
     license_name: str
 
     description: str | None = None
+
+    issued_date: date | None = None
+
+    expired_date: date | None = None
+    
 
 
 class LicenseResponse(BaseModel):
@@ -31,6 +41,10 @@ class LicenseResponse(BaseModel):
     license_name: str
 
     description: str | None
+
+    issued_date: date | None
+
+    expired_date: date | None
 
     model_config = ConfigDict(
         from_attributes=True

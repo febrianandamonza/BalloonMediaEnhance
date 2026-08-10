@@ -51,14 +51,6 @@ class UserLicense(Base):
         String(150)
     )
 
-    issued_date: Mapped[date | None] = mapped_column(
-        Date
-    )
-
-    expired_date: Mapped[date | None] = mapped_column(
-        Date
-    )
-
     document_path: Mapped[str | None] = mapped_column(
         Text
     )

@@ -43,6 +43,10 @@ class LicenseService(
 
             description=request.description,
 
+            issued_date=request.issued_date,
+
+            expired_date=request.expired_date,
+
             created_at=datetime.utcnow()
 
         )
@@ -84,6 +88,8 @@ class LicenseService(
         entity.license_code = request.license_code
         entity.license_name = request.license_name
         entity.description = request.description
+        entity.issued_date = request.issued_date
+        entity.expired_date = request.expired_date
         entity.updated_at = datetime.utcnow()
 
         return self.repository.update(

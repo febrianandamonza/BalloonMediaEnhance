@@ -14,10 +14,6 @@ class UserLicenseUpdateRequest(BaseModel):
 
     issued_by: str | None = None
 
-    issued_date: date | None = None
-
-    expired_date: date | None = None
-
     document_path: str | None = None
 
     remarks: str | None = None
@@ -35,10 +31,6 @@ class UserLicenseCreateRequest(BaseModel):
 
     issued_by: str | None = None
 
-    issued_date: date | None = None
-
-    expired_date: date | None = None
-
     document_path: str | None = None
 
     remarks: str | None = None
@@ -51,10 +43,6 @@ class UserLicenseUpdateRequest(BaseModel):
     license_number: str
 
     issued_by: str | None = None
-
-    issued_date: date | None = None
-
-    expired_date: date | None = None
 
     document_path: str | None = None
 
@@ -74,10 +62,6 @@ class UserLicenseResponse(BaseModel):
     license_number: str
 
     issued_by: str | None
-
-    issued_date: date | None
-
-    expired_date: date | None
 
     document_path: str | None
 

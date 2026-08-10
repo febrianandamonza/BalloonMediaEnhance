@@ -74,25 +74,11 @@ class UserLicenseService:
                 "License status not found."
             )
 
-        if (
-            request.issued_date
-            and request.expired_date
-            and request.expired_date < request.issued_date
-        ):
-
-            raise BadRequestException(
-                "Expired date must be greater than issued date."
-            )
-
         entity.status_id = request.status_id
 
         entity.license_number = request.license_number
 
         entity.issued_by = request.issued_by
-
-        entity.issued_date = request.issued_date
-
-        entity.expired_date = request.expired_date
 
         entity.document_path = request.document_path
 
@@ -198,16 +184,6 @@ class UserLicenseService:
                 "User already has this license."
             )
 
-        if (
-            request.issued_date
-            and request.expired_date
-            and request.expired_date < request.issued_date
-        ):
-
-            raise BadRequestException(
-                "Expired date must be greater than issued date."
-            )
-
         entity = UserLicense(
 
             id=uuid4(),
@@ -221,10 +197,6 @@ class UserLicenseService:
             license_number=request.license_number,
 
             issued_by=request.issued_by,
-
-            issued_date=request.issued_date,
-
-            expired_date=request.expired_date,
 
             document_path=request.document_path,
 

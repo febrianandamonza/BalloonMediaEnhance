@@ -1,6 +1,10 @@
 from datetime import datetime
 from uuid import uuid4
 
+from fastapi import Request
+
+from utils.audit_helper import audit
+
 from entities.flight_mission import FlightMission
 
 from repositories.flight_mission_repository import FlightMissionRepository
@@ -57,6 +61,7 @@ class FlightMissionService(
     def create(
         self,
         db,
+        http_request: Request,
         request,
         current_user
     ):
@@ -65,6 +70,26 @@ class FlightMissionService(
             db,
             request.simulation_id
         ):
+
+            audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=current_user,
+
+            module="Flight Mission",
+
+            action="FAILED",
+
+            entity="FlightMission",
+
+            entity_id=None,
+
+            description=f"Flight Mission failed. '{request.simulation_id}' not found "
+
+        )
 
             raise NotFoundException(
                 "Flight Simulation not found."
@@ -77,6 +102,26 @@ class FlightMissionService(
                 request.location_id
             ):
 
+                audit.log(
+                
+                    db=db,
+                    
+                    request=http_request,
+                    
+                    current_user=current_user,
+                    
+                    module="Flight Mission",
+                    
+                    action="FAILED",
+                    
+                    entity="FlightMission",
+                    
+                    entity_id=None,
+                    
+                    description=f"Flight Mission failed. Location '{request.location_id}' not found"
+                    
+                )
+
                 raise NotFoundException(
                     "Location not found."
                 )
@@ -87,6 +132,25 @@ class FlightMissionService(
                 db,
                 request.balloon_id
             ):
+                audit.log(
+                
+                    db=db,
+                
+                    request=http_request,
+                
+                    current_user=current_user,
+                
+                    module="Flight Mission",
+                
+                    action="FAILED",
+                
+                    entity="FlightMission",
+                
+                    entity_id=None,
+                
+                    description=f"Flight Mission failed. Ballon '{request.balloon_id}' not found"
+                
+                )
 
                 raise NotFoundException(
                     "Balloon not found."
@@ -98,6 +162,26 @@ class FlightMissionService(
                 db,
                 request.status_id
             ):
+
+                audit.log(
+                
+                    db=db,
+                
+                    request=http_request,
+                
+                    current_user=current_user,
+                
+                    module="Flight Mission",
+                
+                    action="FAILED",
+                
+                    entity="FlightMission",
+                
+                    entity_id=None,
+                
+                    description=f"Flight Mission failed. Mission status '{request.status_id}' not found"
+                
+                )
 
                 raise NotFoundException(
                     "Mission Status not found."
@@ -129,15 +213,39 @@ class FlightMissionService(
 
         )
 
-        return super().create(
+        result = super().create(
             db,
             entity
         )
+
+        audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=current_user,
+
+            module="Flight Mission",
+
+            action="CREATE",
+
+            entity="FlightMission",
+
+            entity_id=result.id,
+
+            description=f"Flight Mission '{result.mission_code}' created."
+
+        )
+
+        return result
 
     def update(
         self,
         db,
         mission_id,
+        http_request: Request,
+        current_user,
         request
     ):
 
@@ -150,6 +258,25 @@ class FlightMissionService(
             db,
             request.simulation_id
         ):
+            audit.log(
+            
+            db=db,
+            
+            request=http_request,
+            
+            current_user=current_user,
+            
+            module="Flight Mission",
+            
+            action="FAILED",
+            
+            entity="FlightMission",
+            
+            entity_id=None,
+            
+            description=f"Flight Mission failed. '{request.simulation_id}' not found "
+            
+            )
 
             raise NotFoundException(
                 "Flight Simulation not found."
@@ -161,6 +288,25 @@ class FlightMissionService(
                 db,
                 request.location_id
             ):
+                audit.log(
+                
+                    db=db,
+                
+                    request=http_request,
+                
+                    current_user=current_user,
+                
+                    module="Flight Mission",
+                
+                    action="FAILED",
+                
+                    entity="FlightMission",
+                
+                    entity_id=None,
+                
+                    description=f"Flight Mission failed. Location '{request.location_id}' not found"
+                
+                )
 
                 raise NotFoundException(
                     "Location not found."
@@ -172,6 +318,45 @@ class FlightMissionService(
                 db,
                 request.balloon_id
             ):
+                audit.log(
+                
+                    db=db,
+                
+                    request=http_request,
+                
+                    current_user=current_user,
+                
+                    module="Flight Mission",
+                
+                    action="FAILED",
+                
+                    entity="FlightMission",
+                
+                    entity_id=None,
+                
+                    description=f"Flight Mission failed. Ballon '{request.balloon_id}' not found"
+                
+                )
+
+                audit.log(
+                
+                    db=db,
+                
+                    request=http_request,
+                
+                    current_user=current_user,
+                
+                    module="Flight Mission",
+                
+                    action="FAILED",
+                
+                    entity="FlightMission",
+                
+                    entity_id=None,
+                
+                    description=f"Flight Mission failed. Mission status '{request.status_id}' not found"
+                
+                )
 
                 raise NotFoundException(
                     "Balloon not found."
@@ -204,15 +389,39 @@ class FlightMissionService(
 
         entity.updated_at = datetime.utcnow()
 
-        return super().update(
+        result =  super().update(
             db,
             entity
         )
 
+        audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=current_user,
+
+            module="Flight Mission",
+
+            action="UPDATE",
+
+            entity="FlightMission",
+
+            entity_id=result.id,
+
+            description=f"Flight Mission '{result.mission_code}' updated."
+
+        )
+
+        return result
+
     def delete(
         self,
         db,
-        mission_id
+        mission_id,
+        http_request: Request,
+        current_user
     ):
 
         entity = self.get_by_id(
@@ -220,10 +429,40 @@ class FlightMissionService(
             mission_id
         )
 
-        return super().delete(
+        if entity is None:
+
+            raise NotFoundException(
+                "Flight Missiong not found."
+            )
+
+        mission_code = entity.mission_code
+
+        result = super().delete(
             db,
             entity
         )
+
+        audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=current_user,
+
+            module="Flight Mission",
+
+            action="DELETE",
+
+            entity="FlightMission",
+
+            entity_id=entity.id,
+
+            description=f"Flight Mission '{mission_code}' deleted."
+
+        )
+
+        return result
 
     def generate_mission_code(
         self,

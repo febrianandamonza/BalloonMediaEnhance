@@ -1,7 +1,12 @@
 from datetime import datetime
 from uuid import uuid4
+from zoneinfo import ZoneInfo
+
+from fastapi import Request
 
 from entities.flight_simulation import FlightSimulation
+
+from utils.audit_helper import audit
 
 from repositories.flight_simulation_repository import FlightSimulationRepository
 from repositories.user_repository import UserRepository
@@ -49,6 +54,7 @@ class FlightSimulationService:
     def create(
         self,
         db,
+        http_request : Request,
         request,
         current_user
     ):
@@ -83,19 +89,45 @@ class FlightSimulationService:
 
             created_by=current_user.id,
 
-            created_at=datetime.utcnow()
+            created_at=datetime.now(
+                ZoneInfo("Asia/Jakarta")
+            ).replace(tzinfo=None)
 
         )
 
-        return self.repository.create(
+        result =  self.repository.create(
             db,
             entity
         )
+
+        audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=current_user,
+
+            module="Flight Simulation",
+
+            action="CREATE",
+
+            entity="FlightSimulation",
+
+            entity_id=result.id,
+
+            description=f"Created Flight Simulation '{result.simulation_name}'."
+
+        )
+
+        return result
 
     def update(
         self,
         db,
         simulation_id,
+        http_request: Request,
+        current_user,
         request
     ):
 
@@ -134,15 +166,39 @@ class FlightSimulationService:
 
         entity.remarks = request.remarks
 
-        return self.repository.update(
+        result = self.repository.update(
             db,
             entity
         )
 
+        audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=current_user,
+
+            module="Flight Simulation",
+
+            action="UPDATE",
+
+            entity="FlightSimulation",
+
+            entity_id=result.id,
+
+            description=f"Updated Flight Simulation '{result.simulation_name}'."
+
+        )
+
+        return result
+
     def delete(
         self,
         db,
-        simulation_id
+        simulation_id,
+        http_request: Request,
+        current_user
     ):
 
         entity = self.repository.get_by_id(
@@ -150,13 +206,36 @@ class FlightSimulationService:
             simulation_id
         )
 
+        
         if entity is None:
 
             raise NotFoundException(
                 "Flight Simulation not found."
             )
 
+        simulation_name = entity.simulation_name
+
         self.repository.delete(
             db,
             entity
+        )
+
+        audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=current_user,
+
+            module="Flight Simulation",
+
+            action="DELETE",
+
+            entity="FlightSimulation",
+
+            entity_id=entity.id,
+
+            description=f"Deleted Flight Simulation '{simulation_name}'."
+
         )

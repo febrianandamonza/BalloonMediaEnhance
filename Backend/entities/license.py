@@ -1,15 +1,18 @@
-from datetime import datetime
+from datetime import datetime, date
 from uuid import UUID
 
 from sqlalchemy import DateTime
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy import Date
 
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+
 
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
+
 
 from database.database import Base
 
@@ -45,6 +48,12 @@ class License(Base):
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime
     )
+
+    issued_date : Mapped[date | None] = mapped_column(
+        Date)
+
+    expired_date : Mapped[date | None] = mapped_column(
+        Date)
 
     user_licenses = relationship(
         "UserLicense",

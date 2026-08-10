@@ -1,6 +1,10 @@
 from datetime import datetime
 from uuid import uuid4
 
+from fastapi import Request
+
+from utils.audit_helper import audit
+
 from entities.flight_information import FlightInformation
 
 from repositories.flight_information_repository import FlightInformationRepository
@@ -49,7 +53,9 @@ class FlightInformationService(
     def create(
         self,
         db,
-        request
+        http_request: Request,
+        request,
+        current_user
     ):
 
         if not self.mission_repository.get_by_id(
@@ -106,15 +112,39 @@ class FlightInformationService(
 
         )
 
-        return super().create(
+        result = super().create(
             db,
             entity
         )
+
+        audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=current_user,
+
+            module="Flight Information",
+
+            action="CREATE",
+
+            entity="FlightInformation",
+
+            entity_id=result.id,
+
+            description=f"Flight Information for Mission '{result.mission.mission_code}' created."
+
+        )
+
+        return result
 
     def update(
         self,
         db,
         information_id,
+        http_request: Request,
+        current_user,
         request
     ):
 
@@ -139,23 +169,77 @@ class FlightInformationService(
 
         entity.remarks = request.remarks
 
-        return super().update(
+        result = super().update(
             db,
             entity
         )
+
+        audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=current_user,
+
+            module="Flight Information",
+
+            action="UPDATE",
+
+            entity="FlightInformation",
+
+            entity_id=result.id,
+
+            description=f"Flight Information for Mission '{result.mission.mission_code}' updated."
+
+        )
+
+        return result
 
     def delete(
         self,
         db,
-        information_id
+        information_id,
+        http_request: Request,
+        current_user
     ):
 
-        entity = self.get_by_id(
+        entity = self.repository.get_by_id(
             db,
             information_id
         )
 
-        return super().delete(
+        if entity is None:
+
+            raise NotFoundException(
+                "Flight Information not found."
+            )
+
+        mission_code = entity.mission.mission_code
+
+        result = super().delete(
             db,
             entity
         )
+
+        audit.log(
+
+            db=db,
+
+            request=http_request,
+
+            current_user=current_user,
+
+            module="Flight Information",
+
+            action="DELETE",
+
+            entity="FlightInformation",
+
+            entity_id=entity.id,
+
+            description=f"Flight Information for Mission '{mission_code}' deleted."
+
+        )
+
+        return result

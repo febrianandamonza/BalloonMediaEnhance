@@ -10,6 +10,7 @@ from database.database import get_db
 
 from schemas.user_schema import (
     UserResponse,
+    UserStatusRequest,
     UserUpdateRequest
 )
 
@@ -76,19 +77,42 @@ def update(
     )
 
     
-@router.delete(
-    "/{user_id}"
-)
-def delete(
-    user_id: UUID,
-    db: Session = Depends(get_db)
-):
+# @router.delete(
+#     "/{user_id}"
+# )
+# def delete(
+#     user_id: UUID,
+#     db: Session = Depends(get_db)
+# ):
 
-    service.soft_delete(
-        db,
-        user_id
-    )
+#     service.soft_delete(
+#         db,
+#         user_id
+#     )
     
-    return {
-        "message": "User deactivated successfully."
-    }
+#     return {
+#         "message": "User deactivated successfully."
+#     }
+
+
+@router.put(
+    "/{user_id}/status",
+    response_model=UserResponse
+)
+def change_status(
+
+        user_id: UUID,
+
+        request: UserStatusRequest,
+
+        db: Session = Depends(get_db),
+
+        current_user = Depends(
+            require_roles("Admin")
+        )
+):
+    return service.change_status(
+        db,
+        user_id,
+        request
+    )

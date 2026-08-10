@@ -26,6 +26,8 @@ from api.mission_status import router as mission_status_router
 from api.location import router as location_router
 from api.balloon import router as balloon_router
 from api.flight_information import router as flight_information_router
+from api.audit_module import router as audit_module_router
+from api.audit_log import router as audit_log_router
 
 
 app = FastAPI(
@@ -61,6 +63,9 @@ app.include_router(flight_information_router)
 app.include_router(mission_status_router)
 app.include_router(location_router)
 app.include_router(balloon_router)
+app.include_router(audit_module_router)
+app.include_router(audit_log_router)
+
 
 app.include_router(enhance_router)
 app.include_router(detection_router)
