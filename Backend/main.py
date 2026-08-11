@@ -28,6 +28,7 @@ from api.balloon import router as balloon_router
 from api.flight_information import router as flight_information_router
 from api.audit_module import router as audit_module_router
 from api.audit_log import router as audit_log_router
+from api.media import router as media_router
 
 
 app = FastAPI(
@@ -65,7 +66,7 @@ app.include_router(location_router)
 app.include_router(balloon_router)
 app.include_router(audit_module_router)
 app.include_router(audit_log_router)
-
+app.include_router(media_router)
 
 app.include_router(enhance_router)
 app.include_router(detection_router)
@@ -73,9 +74,9 @@ app.include_router(crowd_counting_router)
 
 
 app.mount(
-    "/output",
-    StaticFiles(directory=BASE_DIR / "output"),
-    name="output"
+    "/storage",
+    StaticFiles(directory=BASE_DIR / "storage"),
+    name="storage"
 )
 
 

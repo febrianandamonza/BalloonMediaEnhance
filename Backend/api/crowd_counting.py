@@ -43,7 +43,7 @@ async def predict_video(
 async def density_count_image(file: UploadFile = File(...)):
 
     input_path = FileManager.save_upload_file(file)
-    output_path = FileManager.build_output_path(input_path)
+    output_path = FileManager.get_temp_directory("crowd")
 
     result = density_counter.predict_image(
     input_path,

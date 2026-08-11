@@ -191,14 +191,23 @@ class ImageEnhancer:
             outscale=outscale
         )
 
-        output_path = FileManager.build_output_path(image_path)
+        output_path = FileManager.build_temp_file_path(
+
+            "enhancement",
+
+            image_path
+
+        )
 
         self.save_image(
+
             enhanced,
-            output_path
+
+            str(output_path)
+
         )
 
         print("Image berhasil di-enhance.")
         print(f"Enhanced image saved to {output_path}.")
 
-        return output_path
+        return str(output_path)

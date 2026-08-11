@@ -9,7 +9,6 @@ import asyncio
 from fastapi import APIRouter, UploadFile, File, WebSocket, WebSocketDisconnect, BackgroundTasks
 
 from services.detector import ObjectDetector
-from services.enhancer import ImageEnhancer
 from utils.file_manager import FileManager
 from utils.websocket_manager import manager
 
@@ -21,9 +20,6 @@ router = APIRouter(
 detector = ObjectDetector()
 detector.load_model()
 
-enhancer = ImageEnhancer()
-enhancer.load_model()
-
 video_jobs = {}
 
 
@@ -34,9 +30,17 @@ async def detect_video(
 
     job_id = str(uuid.uuid4())
 
-    video_path = FileManager.save_upload_file(file)
+    input_path = FileManager.save_upload_file(file)
 
-    video_jobs[job_id] = video_path
+    output_path = FileManager.build_temp_file_path(
+        "detection",
+        file.filename
+    )
+
+    video_jobs[job_id] = {
+        "input": str(input_path),
+        "output": str(output_path)
+    }
 
     return {
         "success": True,
@@ -48,19 +52,20 @@ async def detect(file: UploadFile = File(...)):
 
     start = time.time()
 
-    input_dir = Path("input")
-    input_dir.mkdir(exist_ok=True)
+    # input_dir = Path("input")
+    # input_dir.mkdir(exist_ok=True)
 
-    input_path = input_dir / file.filename
+    # input_path = input_dir / file.filename
 
-    with open(input_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
+    # with open(input_path, "wb") as buffer:
+    #     shutil.copyfileobj(file.file, buffer)
+    
     # enhanced_path = enhancer.enhance_image(str(input_path))
 
+    input_path = FileManager.save_upload_file(file)
+
     output_path, objects = detector.detect_image(
-        input_path
-        # enhanced_path
+        str(input_path)
     )
 
     elapsed = round(time.time() - start, 2)
@@ -68,10 +73,23 @@ async def detect(file: UploadFile = File(...)):
     file_name = Path(output_path).name
 
     return {
+
         "success": True,
-        "image_url": f"/output/{file_name}",
+
+        "media_type": "IMAGE",
+
+        "processing_type": "OBJECT_DETECTION",
+
+        "temp_path": output_path,
+
+        "preview_url": FileManager.get_preview_url(
+            output_path
+        ),
+
         "processing_time": elapsed,
+
         "objects": objects
+
     }
 
 @router.websocket("/ws/{job_id}")
@@ -84,22 +102,27 @@ async def websocket_detect(
 
     try:
 
-        video_path = video_jobs.get(job_id)
+        job = video_jobs.get(job_id)
 
-        if video_path is None:
+        if job is None:
 
             await manager.send(
                 job_id,
                 {
-                    "error": "Job ID not found."
+                    "error": "Job not found."
                 }
             )
 
             return
 
         await detector.detect_video_stream(
+
             job_id,
-            video_path
+
+            job["input"],
+
+            job["output"]
+
         )
 
     except WebSocketDisconnect:

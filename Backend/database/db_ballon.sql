@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict It2C0EBGjgWyVPVDSlaDeTee70TsFtEr0KBOhUP5xFpvYFt3uziIvLhDZQFGlYK
+\restrict jFhDIfHo2fqo2CocQsuxFBh9S216ItNsqEeZpDBwlDq3b3CzFHABlJ45f1Xlqq9
 
 -- Dumped from database version 18.4 (Homebrew)
 -- Dumped by pg_dump version 18.4 (Homebrew)
@@ -326,7 +326,9 @@ CREATE TABLE public.licenses (
     updated_at timestamp without time zone,
     license_code character varying(50),
     license_name character varying(150),
-    description text
+    description text,
+    issued_date date,
+    expired_date date
 );
 
 
@@ -503,8 +505,6 @@ CREATE TABLE public.user_licenses (
     status_id bigint NOT NULL,
     license_number character varying(100) NOT NULL,
     issued_by character varying(150),
-    issued_date date,
-    expired_date date,
     document_path text,
     remarks text,
     created_at timestamp without time zone DEFAULT now(),
@@ -579,6 +579,8 @@ COPY public.ai_models (id, model_name, version, framework, description, created_
 --
 
 COPY public.audit_logs (id, user_id, module_id, action, entity, entity_id, description, ip_address, user_agent, status, created_at) FROM stdin;
+1	570a2976-817a-433b-85eb-b5febbb14c11	1	LOGIN	User	570a2976-817a-433b-85eb-b5febbb14c11	User 'febriop' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-10 15:04:16.364493
+2	165fc446-dbe1-4cc7-b149-29781790a16a	1	LOGIN	User	165fc446-dbe1-4cc7-b149-29781790a16a	User 'admin' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-10 15:04:45.80384
 \.
 
 
@@ -587,6 +589,15 @@ COPY public.audit_logs (id, user_id, module_id, action, entity, entity_id, descr
 --
 
 COPY public.audit_modules (id, name, description) FROM stdin;
+1	Authentication	Authentication Module
+2	Users	User Management
+3	Roles	Role Management
+4	Flight Mission	Flight Mission Module
+5	Flight Simulation	Flight Mission Module
+6	Flight Information	Flight Mission Module
+7	License	License Module
+8	Balloons	Balloons Module
+9	User License	User License Module
 \.
 
 
@@ -642,8 +653,8 @@ COPY public.license_status (id, name, description, created_at) FROM stdin;
 -- Data for Name: licenses; Type: TABLE DATA; Schema: public; Owner: ballon_user
 --
 
-COPY public.licenses (id, created_at, updated_at, license_code, license_name, description) FROM stdin;
-3cb0a553-ab9f-4869-9cc2-e5f9086716ed	2026-08-08 14:31:46.931576	\N	BAL-CROWD	Balloon Crowd Counting	Crowd Counting balloon operator certification
+COPY public.licenses (id, created_at, updated_at, license_code, license_name, description, issued_date, expired_date) FROM stdin;
+3cb0a553-ab9f-4869-9cc2-e5f9086716ed	2026-08-08 14:31:46.931576	\N	BAL-CROWD	Balloon Crowd Counting	Crowd Counting balloon operator certification	\N	\N
 \.
 
 
@@ -703,8 +714,8 @@ COPY public.roles (id, name, description, created_at) FROM stdin;
 -- Data for Name: user_licenses; Type: TABLE DATA; Schema: public; Owner: ballon_user
 --
 
-COPY public.user_licenses (id, user_id, license_id, status_id, license_number, issued_by, issued_date, expired_date, document_path, remarks, created_at, updated_at) FROM stdin;
-0d3ce669-e85a-4d4e-9193-b7e40f47bb3a	570a2976-817a-433b-85eb-b5febbb14c11	3cb0a553-ab9f-4869-9cc2-e5f9086716ed	1	BAL-CROWD	admin	2026-08-08	2026-12-08	/documents/document	Operational Crowd Counting	2026-08-08 08:35:36.135981	\N
+COPY public.user_licenses (id, user_id, license_id, status_id, license_number, issued_by, document_path, remarks, created_at, updated_at) FROM stdin;
+0d3ce669-e85a-4d4e-9193-b7e40f47bb3a	570a2976-817a-433b-85eb-b5febbb14c11	3cb0a553-ab9f-4869-9cc2-e5f9086716ed	1	BAL-CROWD	admin	/documents/document	Operational Crowd Counting	2026-08-08 08:35:36.135981	\N
 \.
 
 
@@ -713,8 +724,8 @@ COPY public.user_licenses (id, user_id, license_id, status_id, license_number, i
 --
 
 COPY public.users (id, role_id, username, password_hash, full_name, email, phone, is_active, last_login, created_at, updated_at) FROM stdin;
-570a2976-817a-433b-85eb-b5febbb14c11	2	febriop	$2b$12$xANbZq/bB99XNT.Bvzx64OEqHP3ThzN5jd6RPqnjsgqnsrBktLWki	Febri Operator	febri@gmail.com	0813480123123	t	2026-08-08 11:10:19.907423	2026-08-08 07:49:22.737186	\N
-165fc446-dbe1-4cc7-b149-29781790a16a	1	admin	$2b$12$bg7PCWXcHwkyL/LnPsRDE.bTdg4QkbkFeaqpfnPQaUf3ledxk1OZ2	Admin Ballon	admin@gmail.com	08123912391239	t	2026-08-08 11:54:51.494911	2026-08-08 09:44:13.030385	\N
+570a2976-817a-433b-85eb-b5febbb14c11	2	febriop	$2b$12$xANbZq/bB99XNT.Bvzx64OEqHP3ThzN5jd6RPqnjsgqnsrBktLWki	Febri Operator	febri@gmail.com	0813480123123	t	2026-08-10 22:04:16.371666	2026-08-08 07:49:22.737186	\N
+165fc446-dbe1-4cc7-b149-29781790a16a	1	admin	$2b$12$bg7PCWXcHwkyL/LnPsRDE.bTdg4QkbkFeaqpfnPQaUf3ledxk1OZ2	Admin Ballon	admin@gmail.com	08123912391239	t	2026-08-10 22:04:45.806416	2026-08-08 09:44:13.030385	\N
 \.
 
 
@@ -743,14 +754,14 @@ SELECT pg_catalog.setval('public.ai_models_id_seq', 1, false);
 -- Name: audit_logs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: ballon_user
 --
 
-SELECT pg_catalog.setval('public.audit_logs_id_seq', 1, false);
+SELECT pg_catalog.setval('public.audit_logs_id_seq', 2, true);
 
 
 --
 -- Name: audit_modules_id_seq; Type: SEQUENCE SET; Schema: public; Owner: ballon_user
 --
 
-SELECT pg_catalog.setval('public.audit_modules_id_seq', 1, false);
+SELECT pg_catalog.setval('public.audit_modules_id_seq', 9, true);
 
 
 --
@@ -1231,5 +1242,5 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict It2C0EBGjgWyVPVDSlaDeTee70TsFtEr0KBOhUP5xFpvYFt3uziIvLhDZQFGlYK
+\unrestrict jFhDIfHo2fqo2CocQsuxFBh9S216ItNsqEeZpDBwlDq3b3CzFHABlJ45f1Xlqq9
 
