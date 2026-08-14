@@ -19,17 +19,14 @@ from dependencies.authorization import require_roles
 
 router = APIRouter(
     prefix="/api/v1/users",
-    tags=["Users"],
-    dependencies=[
-        Depends(require_roles("Admin"))
-    ]
+    tags=["Users"]
 )
 
 service = UserService()
 
 @router.get(
     "",
-    response_model=list[UserResponse]
+    response_model=list[UserResponse],
 )
 def get_all(
 
@@ -48,7 +45,14 @@ def get_all(
     response_model=list[UserResponse]
 )
 def get_all_operator(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(
+            require_roles(
+                "Admin",
+                "Operator"
+                )
+
+        )
 ):
 
     return service.get_all_operator(
@@ -63,6 +67,9 @@ def get_all_operator(
 def get_by_id(
     user_id: UUID,
     db: Session = Depends(get_db),
+    current_user = Depends(
+        require_roles("Admin")
+    )
 ):
 
     return service.get_by_id(
@@ -78,7 +85,10 @@ def get_by_id(
 def update(
     user_id: UUID,
     request: UserUpdateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(
+        require_roles("Admin")
+    )
 ):
 
 
