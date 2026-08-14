@@ -76,3 +76,19 @@ class FlightMission(Base):
     creator = relationship(
         "User"
     )
+
+    mission_status = relationship(
+        "MissionStatus",
+        back_populates="missions"
+    )
+
+    location= relationship(
+        "Location",
+        back_populates="missions"
+    )
+
+    balloon= relationship(
+        "Balloon",
+        back_populates="missions"
+    )
+

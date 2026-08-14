@@ -1,9 +1,10 @@
 from entities.flight_mission import FlightMission
+from entities.mission_status import MissionStatus
 
 from repositories.base_repository import BaseRepository
 
 from sqlalchemy import desc
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 
 class FlightMissionRepository(
@@ -13,6 +14,21 @@ class FlightMissionRepository(
     def __init__(self):
 
         super().__init__(FlightMission)
+
+    def get_all(
+            self,
+            db: Session
+    ):
+        return (
+            db.query(FlightMission)
+            .options(
+                joinedload(FlightMission.mission_status),
+                joinedload(FlightMission.location),
+                joinedload(FlightMission.balloon)
+            )
+            .all()
+        )
+        
 
     def get_last_mission(
         self,

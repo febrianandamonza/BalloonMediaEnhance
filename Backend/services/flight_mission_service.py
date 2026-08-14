@@ -373,6 +373,9 @@ class FlightMissionService(
                     "Mission Status not found."
                 )
 
+            
+        print(request)
+
         entity.simulation_id = request.simulation_id
 
         entity.mission_code = request.mission_code
@@ -393,6 +396,7 @@ class FlightMissionService(
             db,
             entity
         )
+
 
         audit.log(
 

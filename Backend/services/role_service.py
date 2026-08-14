@@ -12,3 +12,5 @@ class RoleService(
         super().__init__(
             RoleRepository()
         )
+
+    

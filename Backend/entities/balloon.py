@@ -10,6 +10,8 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import relationship
+
 
 from database.database import Base
 
@@ -45,4 +47,9 @@ class Balloon(Base):
 
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime
+    )
+
+    missions = relationship(
+        "FlightMission",
+        back_populates="balloon"
     )

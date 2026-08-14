@@ -5,11 +5,18 @@ from datetime import datetime
 from pydantic import BaseModel
 from pydantic import ConfigDict
 
+from schemas.mission_status_schema import MissionStatusSimpleRespone
+from schemas.location_schema import LocationSimpleResponse
+from schemas.balloon_schema import BalloonSimpleResponse
+
+
 class FlightMissionCreateRequest(BaseModel):
 
     simulation_id: UUID
 
     mission_name: str | None = None
+
+    mission_code: str | None = None
 
     description: str | None = None
 
@@ -18,6 +25,7 @@ class FlightMissionCreateRequest(BaseModel):
     balloon_id: UUID | None = None
 
     status_id: int | None = None
+
 
 class FlightMissionUpdateRequest(
     FlightMissionCreateRequest
@@ -37,11 +45,11 @@ class FlightMissionResponse(BaseModel):
 
     description: str | None
 
-    location_id: int | None
+    location: LocationSimpleResponse
 
-    balloon_id: UUID | None
+    balloon: BalloonSimpleResponse
 
-    status_id: int | None
+    mission_status: MissionStatusSimpleRespone
 
     created_by: UUID | None
 

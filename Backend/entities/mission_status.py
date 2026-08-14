@@ -4,6 +4,7 @@ from sqlalchemy import Text
 
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import relationship
 
 from database.database import Base
 
@@ -23,4 +24,9 @@ class MissionStatus(Base):
 
     description: Mapped[str | None] = mapped_column(
         Text
+    )
+
+    missions = relationship(
+        "FlightMission",
+        back_populates="mission_status"
     )
