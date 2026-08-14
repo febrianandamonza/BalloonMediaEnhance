@@ -17,6 +17,15 @@ class UserService(BaseService[UserRepository]):
         super().__init__(UserRepository())
 
 
+    def get_all_operator(
+            self,
+            db
+    ):
+        return self.repository.get_all_operator(
+            db
+        )
+
+
     def change_status(
             self,
             db,

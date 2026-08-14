@@ -43,6 +43,18 @@ def get_all(
 
     return service.get_all(db)
 
+@router.get(
+    "/operators",
+    response_model=list[UserResponse]
+)
+def get_all_operator(
+    db: Session = Depends(get_db)
+):
+
+    return service.get_all_operator(
+        db
+    )
+
 
 @router.get(
     "/{user_id}",

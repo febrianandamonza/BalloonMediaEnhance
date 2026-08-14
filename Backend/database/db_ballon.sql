@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict jFhDIfHo2fqo2CocQsuxFBh9S216ItNsqEeZpDBwlDq3b3CzFHABlJ45f1Xlqq9
+\restrict bJ6Rmf5uxhuguWVk9pcJTpPRhj2wvbexbKXCAaXrO13YF68zCUcHbdYLosIHcM3
 
 -- Dumped from database version 18.4 (Homebrew)
 -- Dumped by pg_dump version 18.4 (Homebrew)
@@ -377,7 +377,9 @@ CREATE TABLE public.media (
     mime_type character varying(100),
     file_size bigint,
     uploaded_by uuid,
-    uploaded_at timestamp without time zone
+    uploaded_at timestamp without time zone,
+    storage_path character varying(500),
+    processing_type character varying(50)
 );
 
 
@@ -581,6 +583,14 @@ COPY public.ai_models (id, model_name, version, framework, description, created_
 COPY public.audit_logs (id, user_id, module_id, action, entity, entity_id, description, ip_address, user_agent, status, created_at) FROM stdin;
 1	570a2976-817a-433b-85eb-b5febbb14c11	1	LOGIN	User	570a2976-817a-433b-85eb-b5febbb14c11	User 'febriop' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-10 15:04:16.364493
 2	165fc446-dbe1-4cc7-b149-29781790a16a	1	LOGIN	User	165fc446-dbe1-4cc7-b149-29781790a16a	User 'admin' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-10 15:04:45.80384
+3	570a2976-817a-433b-85eb-b5febbb14c11	1	LOGIN	User	570a2976-817a-433b-85eb-b5febbb14c11	User 'febriop' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 10:02:20.409036
+4	165fc446-dbe1-4cc7-b149-29781790a16a	1	LOGIN	User	165fc446-dbe1-4cc7-b149-29781790a16a	User 'admin' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 10:06:05.8022
+5	570a2976-817a-433b-85eb-b5febbb14c11	1	LOGIN	User	570a2976-817a-433b-85eb-b5febbb14c11	User 'febriop' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 10:06:56.584278
+6	570a2976-817a-433b-85eb-b5febbb14c11	10	CREATE	Media	d75bb863-78a5-40a4-8881-1577b9b7f445	Media '5b79c4dc-746c-4fff-9bdd-7d7eafd1b66c.mp4' saved.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 10:07:32.156664
+7	570a2976-817a-433b-85eb-b5febbb14c11	10	CREATE	Media	6cf3c46b-da15-4a94-a6b3-fe1898064694	Media '5b79c4dc-746c-4fff-9bdd-7d7eafd1b66c.mp4' saved.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 10:19:19.566925
+8	570a2976-817a-433b-85eb-b5febbb14c11	1	LOGIN	User	570a2976-817a-433b-85eb-b5febbb14c11	User 'febriop' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 16:12:24.459889
+9	570a2976-817a-433b-85eb-b5febbb14c11	10	CREATE	Media	fafe47d3-8ba8-4260-a261-938cee9042eb	Media '57752f6a-3599-4b77-b5c1-2e88420c0982.mp4' saved.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 16:13:34.1784
+10	165fc446-dbe1-4cc7-b149-29781790a16a	1	LOGIN	User	165fc446-dbe1-4cc7-b149-29781790a16a	User 'admin' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 16:17:57.244806
 \.
 
 
@@ -598,6 +608,7 @@ COPY public.audit_modules (id, name, description) FROM stdin;
 7	License	License Module
 8	Balloons	Balloons Module
 9	User License	User License Module
+10	Media	Media Module
 \.
 
 
@@ -671,7 +682,11 @@ COPY public.locations (id, name, city, province, latitude, longitude) FROM stdin
 -- Data for Name: media; Type: TABLE DATA; Schema: public; Owner: ballon_user
 --
 
-COPY public.media (id, flight_information_id, media_type, original_filename, stored_filename, mime_type, file_size, uploaded_by, uploaded_at) FROM stdin;
+COPY public.media (id, flight_information_id, media_type, original_filename, stored_filename, mime_type, file_size, uploaded_by, uploaded_at, storage_path, processing_type) FROM stdin;
+a9a2dad4-ead4-4da5-a15f-5a5a51c77034	c91a71b8-ec43-4113-87f1-b018f9dac977	VIDEO	5b79c4dc-746c-4fff-9bdd-7d7eafd1b66c.mp4	f20c3e3c-f2e8-4375-9040-e3bf9bfec2f0.mp4	video/mp4	758936	570a2976-817a-433b-85eb-b5febbb14c11	2026-08-11 17:02:38.990855	storage/media/c91a71b8-ec43-4113-87f1-b018f9dac977/enhancement/f20c3e3c-f2e8-4375-9040-e3bf9bfec2f0.mp4	ENHANCEMENT
+d75bb863-78a5-40a4-8881-1577b9b7f445	c91a71b8-ec43-4113-87f1-b018f9dac977	VIDEO	5b79c4dc-746c-4fff-9bdd-7d7eafd1b66c.mp4	bc94e9c1-e740-404d-b326-f516661a2080.mp4	video/mp4	758936	570a2976-817a-433b-85eb-b5febbb14c11	2026-08-11 17:07:32.146793	storage/media/c91a71b8-ec43-4113-87f1-b018f9dac977/enhancement/bc94e9c1-e740-404d-b326-f516661a2080.mp4	ENHANCEMENT
+6cf3c46b-da15-4a94-a6b3-fe1898064694	c91a71b8-ec43-4113-87f1-b018f9dac977	VIDEO	5b79c4dc-746c-4fff-9bdd-7d7eafd1b66c.mp4	58d55b96-1b68-4d85-b2d1-4f4fa4e8842c.mp4	video/mp4	758936	570a2976-817a-433b-85eb-b5febbb14c11	2026-08-11 17:19:19.556211	storage/media/c91a71b8-ec43-4113-87f1-b018f9dac977/enhancement/58d55b96-1b68-4d85-b2d1-4f4fa4e8842c.mp4	ENHANCEMENT
+fafe47d3-8ba8-4260-a261-938cee9042eb	c91a71b8-ec43-4113-87f1-b018f9dac977	VIDEO	57752f6a-3599-4b77-b5c1-2e88420c0982.mp4	1b9f5a1e-846b-44f4-8c74-077f0b9c9d8a.mp4	video/mp4	8634001	570a2976-817a-433b-85eb-b5febbb14c11	2026-08-11 23:13:34.171561	storage/media/c91a71b8-ec43-4113-87f1-b018f9dac977/object_detection/1b9f5a1e-846b-44f4-8c74-077f0b9c9d8a.mp4	OBJECT_DETECTION
 \.
 
 
@@ -724,8 +739,8 @@ COPY public.user_licenses (id, user_id, license_id, status_id, license_number, i
 --
 
 COPY public.users (id, role_id, username, password_hash, full_name, email, phone, is_active, last_login, created_at, updated_at) FROM stdin;
-570a2976-817a-433b-85eb-b5febbb14c11	2	febriop	$2b$12$xANbZq/bB99XNT.Bvzx64OEqHP3ThzN5jd6RPqnjsgqnsrBktLWki	Febri Operator	febri@gmail.com	0813480123123	t	2026-08-10 22:04:16.371666	2026-08-08 07:49:22.737186	\N
-165fc446-dbe1-4cc7-b149-29781790a16a	1	admin	$2b$12$bg7PCWXcHwkyL/LnPsRDE.bTdg4QkbkFeaqpfnPQaUf3ledxk1OZ2	Admin Ballon	admin@gmail.com	08123912391239	t	2026-08-10 22:04:45.806416	2026-08-08 09:44:13.030385	\N
+570a2976-817a-433b-85eb-b5febbb14c11	2	febriop	$2b$12$xANbZq/bB99XNT.Bvzx64OEqHP3ThzN5jd6RPqnjsgqnsrBktLWki	Febri Operator	febri@gmail.com	0813480123123	t	2026-08-11 23:12:24.473734	2026-08-08 07:49:22.737186	\N
+165fc446-dbe1-4cc7-b149-29781790a16a	1	admin	$2b$12$bg7PCWXcHwkyL/LnPsRDE.bTdg4QkbkFeaqpfnPQaUf3ledxk1OZ2	Admin Ballon	admin@gmail.com	08123912391239	t	2026-08-11 23:17:57.249242	2026-08-08 09:44:13.030385	\N
 \.
 
 
@@ -754,14 +769,14 @@ SELECT pg_catalog.setval('public.ai_models_id_seq', 1, false);
 -- Name: audit_logs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: ballon_user
 --
 
-SELECT pg_catalog.setval('public.audit_logs_id_seq', 2, true);
+SELECT pg_catalog.setval('public.audit_logs_id_seq', 10, true);
 
 
 --
 -- Name: audit_modules_id_seq; Type: SEQUENCE SET; Schema: public; Owner: ballon_user
 --
 
-SELECT pg_catalog.setval('public.audit_modules_id_seq', 9, true);
+SELECT pg_catalog.setval('public.audit_modules_id_seq', 10, true);
 
 
 --
@@ -1242,5 +1257,5 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jFhDIfHo2fqo2CocQsuxFBh9S216ItNsqEeZpDBwlDq3b3CzFHABlJ45f1Xlqq9
+\unrestrict bJ6Rmf5uxhuguWVk9pcJTpPRhj2wvbexbKXCAaXrO13YF68zCUcHbdYLosIHcM3
 

@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 
 from entities.user import User
+from entities.role import Role
 
 from repositories.base_repository import BaseRepository
 
@@ -12,6 +13,28 @@ class UserRepository(
     def __init__(self):
 
         super().__init__(User)
+
+
+    def get_all_operator(
+            self,
+            db: Session
+    ):
+        return (
+            db.query(User)
+            .options(
+                joinedload(User.role)
+            )
+            .join(Role)
+            .filter(
+                Role.name == 'Operator'
+            )
+            .order_by(
+                User.full_name
+            )
+
+            .all()
+            
+        )
 
 
     def get_all(
