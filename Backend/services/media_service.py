@@ -23,6 +23,13 @@ class MediaService:
 
         self.flight_information_repository = FlightInformationRepository()
 
+    def get_all(
+        self,
+        db
+    ):
+        return self.repository.get_all(db)
+
+
     def save(
         self,
         db,

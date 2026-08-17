@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict bJ6Rmf5uxhuguWVk9pcJTpPRhj2wvbexbKXCAaXrO13YF68zCUcHbdYLosIHcM3
+\restrict ElbhUSmrkTlQYYuvnIjcofC2m4Lvq4YJcMveqNP1fkEcQsglVaVFMovlLZdHdX7
 
 -- Dumped from database version 18.4 (Homebrew)
 -- Dumped by pg_dump version 18.4 (Homebrew)
@@ -591,6 +591,15 @@ COPY public.audit_logs (id, user_id, module_id, action, entity, entity_id, descr
 8	570a2976-817a-433b-85eb-b5febbb14c11	1	LOGIN	User	570a2976-817a-433b-85eb-b5febbb14c11	User 'febriop' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 16:12:24.459889
 9	570a2976-817a-433b-85eb-b5febbb14c11	10	CREATE	Media	fafe47d3-8ba8-4260-a261-938cee9042eb	Media '57752f6a-3599-4b77-b5c1-2e88420c0982.mp4' saved.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 16:13:34.1784
 10	165fc446-dbe1-4cc7-b149-29781790a16a	1	LOGIN	User	165fc446-dbe1-4cc7-b149-29781790a16a	User 'admin' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-11 16:17:57.244806
+11	165fc446-dbe1-4cc7-b149-29781790a16a	1	LOGIN	User	165fc446-dbe1-4cc7-b149-29781790a16a	User 'admin' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-14 02:02:54.961184
+12	165fc446-dbe1-4cc7-b149-29781790a16a	1	LOGIN	User	165fc446-dbe1-4cc7-b149-29781790a16a	User 'admin' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-14 04:09:12.609805
+13	\N	1	LOGIN	User	\N	Login failed. Username 'febri' not found.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	FAILED	2026-08-14 13:22:23.620343
+14	570a2976-817a-433b-85eb-b5febbb14c11	1	LOGIN	User	570a2976-817a-433b-85eb-b5febbb14c11	User 'febriop' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-14 13:22:34.794403
+15	165fc446-dbe1-4cc7-b149-29781790a16a	1	LOGIN	User	165fc446-dbe1-4cc7-b149-29781790a16a	User 'admin' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-14 16:02:21.85041
+16	165fc446-dbe1-4cc7-b149-29781790a16a	1	LOGIN	User	165fc446-dbe1-4cc7-b149-29781790a16a	User 'admin' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-14 16:12:22.675454
+17	165fc446-dbe1-4cc7-b149-29781790a16a	4	UPDATE	FlightMission	126426cb-9028-4f1a-91a1-ab9aa4f6d981	Flight Mission 'MIS-20260808-0001' updated.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-14 16:27:35.31591
+18	165fc446-dbe1-4cc7-b149-29781790a16a	4	UPDATE	FlightMission	126426cb-9028-4f1a-91a1-ab9aa4f6d981	Flight Mission 'MIS-20260808-0001' updated.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-14 16:28:26.891955
+19	165fc446-dbe1-4cc7-b149-29781790a16a	1	LOGIN	User	165fc446-dbe1-4cc7-b149-29781790a16a	User 'admin' logged in successfully.	127.0.0.1	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36	SUCCESS	2026-08-14 17:33:15.29859
 \.
 
 
@@ -635,7 +644,7 @@ c91a71b8-ec43-4113-87f1-b018f9dac977	126426cb-9028-4f1a-91a1-ab9aa4f6d981	Febri 
 --
 
 COPY public.flight_missions (id, simulation_id, mission_code, mission_name, description, location_id, balloon_id, status_id, created_by, created_at, updated_at, mission_leader_id, operator_id) FROM stdin;
-126426cb-9028-4f1a-91a1-ab9aa4f6d981	e6c4c59c-3249-4d97-beec-3cefab3a28ed	MIS-20260808-0001	Jakarta Morning Surveillance	Routine surveillance mission using tethered balloon for aerial monitoring.	1	e21a2523-a014-487a-860e-b1004451c7b6	1	165fc446-dbe1-4cc7-b149-29781790a16a	2026-08-08 12:01:24.529255	\N	\N	\N
+126426cb-9028-4f1a-91a1-ab9aa4f6d981	e6c4c59c-3249-4d97-beec-3cefab3a28ed	MIS-20260808-0001	Jakarta Morning Surveillance	Routine surveillance mission using tethered balloon for aerial monitoring.	1	e21a2523-a014-487a-860e-b1004451c7b6	2	165fc446-dbe1-4cc7-b149-29781790a16a	2026-08-08 12:01:24.529255	2026-08-14 16:28:26.883494	\N	\N
 \.
 
 
@@ -712,6 +721,8 @@ COPY public.mission_roles (id, name, description) FROM stdin;
 
 COPY public.mission_status (id, name, description) FROM stdin;
 1	Planned	Mission has been planned and is waiting for execution.
+2	Flight	The mission is underway.
+3	Done	The mission is complete.
 \.
 
 
@@ -739,8 +750,8 @@ COPY public.user_licenses (id, user_id, license_id, status_id, license_number, i
 --
 
 COPY public.users (id, role_id, username, password_hash, full_name, email, phone, is_active, last_login, created_at, updated_at) FROM stdin;
-570a2976-817a-433b-85eb-b5febbb14c11	2	febriop	$2b$12$xANbZq/bB99XNT.Bvzx64OEqHP3ThzN5jd6RPqnjsgqnsrBktLWki	Febri Operator	febri@gmail.com	0813480123123	t	2026-08-11 23:12:24.473734	2026-08-08 07:49:22.737186	\N
-165fc446-dbe1-4cc7-b149-29781790a16a	1	admin	$2b$12$bg7PCWXcHwkyL/LnPsRDE.bTdg4QkbkFeaqpfnPQaUf3ledxk1OZ2	Admin Ballon	admin@gmail.com	08123912391239	t	2026-08-11 23:17:57.249242	2026-08-08 09:44:13.030385	\N
+165fc446-dbe1-4cc7-b149-29781790a16a	1	admin	$2b$12$bg7PCWXcHwkyL/LnPsRDE.bTdg4QkbkFeaqpfnPQaUf3ledxk1OZ2	Admin Ballon	admin@gmail.com	08123912391239	t	2026-08-15 00:33:15.308705	2026-08-08 09:44:13.030385	\N
+570a2976-817a-433b-85eb-b5febbb14c11	2	febriop	$2b$12$xANbZq/bB99XNT.Bvzx64OEqHP3ThzN5jd6RPqnjsgqnsrBktLWki	Febri Operator	febri@gmail.com	0813480123123	t	2026-08-14 20:22:34.797009	2026-08-08 07:49:22.737186	\N
 \.
 
 
@@ -769,7 +780,7 @@ SELECT pg_catalog.setval('public.ai_models_id_seq', 1, false);
 -- Name: audit_logs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: ballon_user
 --
 
-SELECT pg_catalog.setval('public.audit_logs_id_seq', 10, true);
+SELECT pg_catalog.setval('public.audit_logs_id_seq', 19, true);
 
 
 --
@@ -811,7 +822,7 @@ SELECT pg_catalog.setval('public.mission_roles_id_seq', 1, false);
 -- Name: mission_status_id_seq; Type: SEQUENCE SET; Schema: public; Owner: ballon_user
 --
 
-SELECT pg_catalog.setval('public.mission_status_id_seq', 1, true);
+SELECT pg_catalog.setval('public.mission_status_id_seq', 3, true);
 
 
 --
@@ -1257,5 +1268,5 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict bJ6Rmf5uxhuguWVk9pcJTpPRhj2wvbexbKXCAaXrO13YF68zCUcHbdYLosIHcM3
+\unrestrict ElbhUSmrkTlQYYuvnIjcofC2m4Lvq4YJcMveqNP1fkEcQsglVaVFMovlLZdHdX7
 

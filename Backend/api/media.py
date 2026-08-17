@@ -27,6 +27,21 @@ router = APIRouter(
 
 service = MediaService()
 
+@router.get(
+    "",
+    response_model=list[MediaResponse]
+)
+def get_all(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "Admin",
+            "Operator"
+        )
+    )
+):
+    return service.get_all(db=db)
+
 @router.post(
     "",
     response_model=MediaResponse
