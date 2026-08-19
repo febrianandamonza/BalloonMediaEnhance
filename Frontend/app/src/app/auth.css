@@ -1,0 +1,535 @@
+/* =====================================================================
+   LAYAR MASUK — panggung dua kolom di atas adegan 3D
+   ===================================================================== */
+.auth-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: radial-gradient(120% 100% at 50% 0%, #0a1428 0%, #04070f 60%, #02040a 100%);
+  transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out);
+}
+.auth-root[data-leaving='1'] { opacity: 0; transform: scale(1.04); }
+
+/* Peredup terarah: pekat tepat di bawah kolom teks dan kartu, tetapi
+   membiarkan bagian tengah-atas terbuka agar adegan 3D tetap terlihat. */
+.auth-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg,
+      rgba(3, 7, 15, 0.88) 0%,
+      rgba(3, 7, 15, 0.6) 26%,
+      rgba(3, 7, 15, 0.08) 48%,
+      rgba(3, 7, 15, 0.06) 62%,
+      rgba(3, 7, 15, 0.5) 100%),
+    linear-gradient(180deg, rgba(3, 7, 15, 0.42) 0%, transparent 30%, rgba(3, 7, 15, 0.62) 100%);
+}
+
+.auth-stage {
+  position: relative;
+  z-index: 3;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 470px;
+  align-items: center;
+  gap: 48px;
+  padding: 40px clamp(28px, 6vw, 92px);
+  max-width: 1560px;
+  margin: 0 auto;
+}
+/* Kolom kanan tidak berpindah tempat sepanjang alur masuk: kartu
+   kredensial, panel verifikasi, dan panel sambutan menempati posisi yang
+   sama persis. Yang berubah hanya isinya dan adegan di belakangnya —
+   sehingga peralihan terasa sebagai satu rangkaian, bukan tiga layar. */
+@media (max-width: 1180px) {
+  .auth-stage { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .auth-brand { display: none; }
+}
+
+/* ---------- Kolom kiri: identitas sistem ---------- */
+.auth-brand {
+  max-width: 640px;
+  animation: rise-in 700ms var(--ease-out) both;
+}
+
+.auth-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 14px 5px 9px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(200, 169, 81, 0.26);
+  background: rgba(200, 169, 81, 0.07);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: #d9c88a;
+  margin-bottom: 26px;
+}
+.auth-eyebrow svg { color: #c8a951; }
+
+.auth-headline {
+  font-family: var(--font-display);
+  font-size: clamp(42px, 5.2vw, 74px);
+  line-height: 0.98;
+  font-weight: 400;
+  letter-spacing: -0.012em;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+.auth-headline em {
+  font-style: italic;
+  background: linear-gradient(112deg, #b08d3f 0%, #f3e3ac 36%, #c8a951 60%, #f6ecc4 78%, #a8822f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.auth-kicker {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+  margin-bottom: 24px;
+}
+
+.auth-lede {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  max-width: 54ch;
+  margin-bottom: 30px;
+}
+
+/* Deretan kemampuan yang benar-benar tersedia di aplikasi */
+.auth-caps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+  gap: 9px;
+  max-width: 580px;
+  margin-bottom: 28px;
+}
+.auth-cap {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.auth-cap svg { color: var(--accent-primary); flex-shrink: 0; margin-top: 1px; }
+.auth-cap b {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.auth-cap span {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+/* Baris status kesiapan */
+.auth-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+.auth-status > div { display: flex; align-items: center; gap: 9px; }
+.auth-status .k {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-disabled);
+}
+.auth-status .v {
+  display: block;
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* ---------- Kolom kanan: kartu masuk ---------- */
+.auth-card {
+  width: 100%;
+  max-width: 470px;
+  padding: 36px 38px 30px;
+  border-radius: 24px;
+  animation: rise-in 620ms var(--ease-out) 90ms both;
+}
+
+.auth-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-primary);
+  background: linear-gradient(140deg, rgba(96, 165, 250, 0.2), rgba(129, 140, 248, 0.1));
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  box-shadow: 0 0 30px rgba(96, 165, 250, 0.16), 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+  margin-bottom: 18px;
+}
+
+.auth-card h2 {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin-bottom: 5px;
+}
+.auth-card-sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.auth-field { margin-bottom: 14px; }
+.auth-field > label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 7px;
+}
+.auth-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  background: rgba(4, 8, 16, 0.55);
+  transition: border-color var(--t-base) var(--ease-out), box-shadow var(--t-base) var(--ease-out);
+}
+.auth-input:focus-within {
+  border-color: rgba(96, 165, 250, 0.5);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+}
+.auth-input > svg:first-child {
+  position: absolute;
+  left: 13px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.auth-input input {
+  width: 100%;
+  padding: 12px 14px 12px 39px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  outline: none;
+}
+.auth-input input::placeholder { color: var(--text-disabled); }
+.auth-input .peek {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+.auth-input .peek:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.06); }
+
+.auth-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--warning-400);
+  margin-top: 7px;
+}
+
+.auth-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 13px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  background: var(--danger-bg);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  color: var(--danger-400);
+  font-size: 12px;
+  line-height: 1.55;
+  animation: rise-in 260ms var(--ease-out);
+}
+.auth-alert svg { flex-shrink: 0; margin-top: 1px; }
+
+.auth-submit {
+  width: 100%;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 6px;
+  padding: 13px 18px;
+  border-radius: var(--radius-lg);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* Pintasan akun stasiun */
+.auth-accounts { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border-subtle); }
+.auth-accounts > span {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-disabled);
+  margin-bottom: 9px;
+}
+.auth-accounts .row { display: flex; gap: 8px; }
+.auth-accounts button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.026);
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+  font-family: var(--font-sans);
+  transition: all var(--t-base) var(--ease-out);
+}
+.auth-accounts button:hover {
+  border-color: rgba(96, 165, 250, 0.32);
+  background: rgba(96, 165, 250, 0.07);
+  transform: translateY(-1px);
+}
+.auth-accounts .av {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-family: var(--font-code);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-primary);
+  background: rgba(96, 165, 250, 0.13);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+}
+.auth-accounts b {
+  display: block;
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.auth-accounts i {
+  display: block;
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* ---------- Panel verifikasi & sambutan ---------- */
+.auth-panel {
+  width: 100%;
+  max-width: 466px;
+  padding: 34px 36px 30px;
+  border-radius: 24px;
+  animation: rise-in 500ms var(--ease-out) both;
+}
+.auth-panel-head { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+.auth-panel-head h2 {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.auth-panel-head p { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; }
+
+.auth-steps { display: flex; flex-direction: column; gap: 2px; }
+.auth-step {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 11px;
+  border-radius: var(--radius-md);
+  font-size: 11.5px;
+  font-family: var(--font-code);
+  color: var(--text-disabled);
+  transition: color var(--t-slow) var(--ease-out), background var(--t-slow) var(--ease-out);
+}
+.auth-step.on { color: var(--text-primary); background: rgba(96, 165, 250, 0.07); }
+.auth-step.done { color: var(--text-secondary); }
+.auth-step .ic { display: flex; flex-shrink: 0; width: 14px; }
+
+.auth-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 20px 0 4px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+.auth-summary > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 14px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.018);
+}
+.auth-summary .k { color: var(--text-muted); }
+.auth-summary .v { font-family: var(--font-code); font-weight: 600; color: var(--text-primary); }
+
+.auth-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ---------- Mode terang ----------
+   Emas sertifikat yang cerah tidak terbaca di atas latar putih, sehingga
+   seluruh aksen emas diturunkan gelapnya di sini agar kontrasnya tetap
+   memenuhi ambang keterbacaan. */
+[data-theme='light'] .auth-root {
+  background: radial-gradient(120% 100% at 50% 0%, #eef1f7 0%, #e4e8f0 60%, #dfe3ec 100%);
+}
+
+[data-theme='light'] .auth-eyebrow {
+  color: #6f5511;
+  border-color: rgba(140, 106, 18, 0.32);
+  background: rgba(200, 169, 81, 0.14);
+}
+[data-theme='light'] .auth-eyebrow svg { color: #8a6a1c; }
+
+[data-theme='light'] .auth-headline em {
+  background: linear-gradient(112deg, #5c4610 0%, #9c7a2a 34%, #74591a 60%, #a8853a 78%, #55400e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+[data-theme='light'] .auth-status .k,
+[data-theme='light'] .auth-accounts > span { color: var(--text-muted); }
+[data-theme='light'] .auth-scrim {
+  background:
+    radial-gradient(70% 60% at 68% 50%, rgba(240, 243, 248, 0.3) 0%, rgba(238, 241, 247, 0.8) 100%),
+    linear-gradient(90deg, rgba(238, 241, 247, 0.74) 0%, transparent 46%, rgba(238, 241, 247, 0.4) 100%);
+}
+[data-theme='light'] .auth-input { background: rgba(255, 255, 255, 0.72); }
+[data-theme='light'] .auth-cap { background: rgba(255, 255, 255, 0.6); }
+
+/* =====================================================================
+   PENAMPIL BERKAS MEDIA
+   ===================================================================== */
+.mv-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgba(2, 5, 12, 0.72);
+  backdrop-filter: blur(6px);
+  animation: fadeIn 200ms var(--ease-out);
+}
+
+.mv-panel {
+  width: min(960px, 100%);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  padding: 20px 22px 18px;
+  border-radius: 20px;
+  animation: rise-in 300ms var(--ease-out) both;
+}
+
+.mv-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.mv-name {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mv-meta {
+  display: block;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.mv-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  background: #060a13;
+  display: grid;
+  place-items: center;
+}
+.mv-stage img { width: 100%; height: 100%; object-fit: contain; }
+
+.mv-transport {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: var(--radius-full);
+  background: rgba(6, 10, 19, 0.78);
+  border: 1px solid var(--border-default);
+  backdrop-filter: blur(10px);
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.mv-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border-subtle);
+}

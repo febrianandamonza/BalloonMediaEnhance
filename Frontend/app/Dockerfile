@@ -1,15 +1,11 @@
-FROM node:20-slim AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
-
-# Copy root package files to satisfy local file:.. dependency if needed
 COPY package*.json ./
+RUN npm ci
 COPY . .
-
-# Run npm install with legacy-peer-deps to avoid strict dependency resolution failures
-RUN npm install --legacy-peer-deps
 RUN npm run build
 
-FROM node:20-slim AS production
+FROM node:20-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/.next/standalone ./

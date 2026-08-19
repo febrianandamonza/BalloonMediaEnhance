@@ -11,4 +11,7 @@ out/
 *.log
 coverage/
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
+tools/docs-generator/node_modules/
+tools/docs-generator/out/

@@ -1,0 +1,22 @@
+{
+  "//": [
+    "Berkas root ini sengaja tidak mengompilasi apa pun.",
+    "Proyek TypeScript yang sebenarnya berada di app/tsconfig.json dan backend/tsconfig.json.",
+    "Keberadaan berkas ini memberi language server sebuah batas proyek yang jelas di root,",
+    "sehingga berkas .ts/.tsx yang dibuka tidak jatuh ke inferred project tanpa konfigurasi —",
+    "penyebab kegagalan textDocument/didOpen ketika modul tidak dapat di-resolve."
+  ],
+  "compilerOptions": {
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "files": [],
+  "include": [],
+  "exclude": [
+    "**/node_modules",
+    "**/.next",
+    "**/dist",
+    "docs",
+    "output"
+  ]
+}

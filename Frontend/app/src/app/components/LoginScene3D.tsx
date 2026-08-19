@@ -1,438 +1,406 @@
 'use client';
-import React, { useRef, useMemo, useEffect, useState } from 'react';
-import { Canvas, useFrame, useThree, extend } from '@react-three/fiber';
-import { Line } from '@react-three/drei';
-import * as THREE from 'three';
-
 /* =====================================================================
-   LOGIN SCENE 3D — Globe + Tethered Balloon + GIS
-   Continuous cinematic animation: Login → Auth → Success → Dashboard
+   ADEGAN 3D LAYAR MASUK
+   ---------------------------------------------------------------------
+   Adegan ini bukan hiasan lepas: keempat babaknya mengikuti persis apa
+   yang sedang terjadi pada sesi operator, dan berakhir pada objek yang
+   sama dengan yang menyambut di Mission Dashboard.
+
+     login          Kamera berdiri di permukaan, memandang balon yang
+                    bertahan di ketinggian dengan kabel penambat terulur
+                    ke titik gelar. Tenang, belum ada aktivitas sensor.
+
+     authenticating Kamera mendekat ke gimbal. Kerucut pandang menyala
+                    dan menyapu permukaan — stasiun sedang memeriksa
+                    kredensial dan sertifikat.
+
+     success        Kamera mundur; cincin cakupan mengembang di
+                    permukaan dan tautan data ke titik tambat menyala.
+
+     transitioning  Kamera memanjat cepat. Permukaan yang tadinya datar
+                    melengkung menjadi bola bumi — inilah bola dunia yang
+                    langsung dilihat operator di Mission Dashboard.
+
+   Bumi memang dimodelkan sebagai bola berjari-jari besar yang puncaknya
+   menyentuh y = 0, sehingga "tanah" pada babak awal dan "bola dunia"
+   pada babak akhir benar-benar objek yang sama — bukan dua adegan
+   berbeda yang disambung.
    ===================================================================== */
 
-/* ---------- EARTH GLOBE (Wireframe + GIS Grid) ---------- */
-function EarthGlobe({ phase }: { phase: string }) {
-  const globeRef = useRef<THREE.Group>(null);
+/* React Three Fiber menganimasikan adegan dengan cara mengubah langsung
+   objek Three.js pada setiap bingkai — itulah kontrak pustakanya, dan
+   memang tidak melewati state React. Aturan immutability karena itu
+   dimatikan khusus untuk berkas ini. */
+/* eslint-disable react-hooks/immutability */
 
-  // Create GIS-style grid lines on sphere
-  const gridGeometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    const positions: number[] = [];
-    const radius = 2.0;
+import React, { useMemo, useRef } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 
-    // Latitude lines (every 15 degrees)
-    for (let lat = -75; lat <= 75; lat += 15) {
-      const phi = (90 - lat) * (Math.PI / 180);
-      const segments = 64;
-      for (let i = 0; i < segments; i++) {
-        const theta1 = (i / segments) * Math.PI * 2;
-        const theta2 = ((i + 1) / segments) * Math.PI * 2;
-        positions.push(
-          radius * Math.sin(phi) * Math.cos(theta1), radius * Math.cos(phi), radius * Math.sin(phi) * Math.sin(theta1),
-          radius * Math.sin(phi) * Math.cos(theta2), radius * Math.cos(phi), radius * Math.sin(phi) * Math.sin(theta2)
-        );
-      }
-    }
+/* Jari-jari bumi pada adegan. Pusatnya diletakkan di bawah agar
+   permukaan atasnya tepat berada di ketinggian nol. */
+const R = 62;
+const EARTH_CENTER = new THREE.Vector3(0, -R, 0);
 
-    // Longitude lines (every 20 degrees)
-    for (let lon = 0; lon < 360; lon += 20) {
-      const theta = lon * (Math.PI / 180);
-      const segments = 64;
-      for (let i = 0; i < segments; i++) {
-        const phi1 = (i / segments) * Math.PI;
-        const phi2 = ((i + 1) / segments) * Math.PI;
-        positions.push(
-          radius * Math.sin(phi1) * Math.cos(theta), radius * Math.cos(phi1), radius * Math.sin(phi1) * Math.sin(theta),
-          radius * Math.sin(phi2) * Math.cos(theta), radius * Math.cos(phi2), radius * Math.sin(phi2) * Math.sin(theta)
-        );
-      }
-    }
+/* Ketinggian balon di atas permukaan (satuan adegan). */
+const ALT = 3.1;
 
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    return geo;
-  }, []);
+type Phase = 'login' | 'authenticating' | 'success' | 'transitioning' | 'app';
 
-  // Continent point approximation
-  const continentGeometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    const positions: number[] = [];
-    const r = 2.01;
+/* ---------------------------------------------------------------------
+   Koreografi kamera — satu tabel, satu sumber kebenaran.
+   --------------------------------------------------------------------- */
+const SHOTS: Record<Phase, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
+  /* Berdiri agak jauh di permukaan: balon terlihat utuh beserta kabel
+     penambatnya, dan garis cakrawala ikut masuk bingkai. */
+  login: { pos: [9.5, 2.4, 15.5], look: [0, ALT * 0.72, 0], fov: 40 },
+  /* Mendekat ke gimbal saat kredensial diperiksa. Titik bidik digeser ke
+     kanan agar balon jatuh di sisi kiri bingkai — kolom kanan layar
+     ditempati panel verifikasi. */
+  authenticating: { pos: [4.4, 4.2, 8.0], look: [2.0, ALT + 0.2, 0], fov: 36 },
+  /* Mundur dan naik untuk memperlihatkan cakupan di permukaan. */
+  success: { pos: [2.6, 7.4, 18.0], look: [2.4, ALT * 0.4, 0], fov: 46 },
+  /* Memanjat cepat — permukaan melengkung menjadi bola dunia. */
+  transitioning: { pos: [0, 42, 26], look: [0, 0, 0], fov: 60 },
+  app: { pos: [0, 42, 26], look: [0, 0, 0], fov: 60 },
+};
 
-    const landPatches = [
-      { lat: 35, lon: 105, spread: 30, count: 120 },
-      { lat: 55, lon: 80, spread: 25, count: 80 },
-      { lat: 25, lon: 75, spread: 15, count: 60 },
-      { lat: 50, lon: 15, spread: 15, count: 60 },
-      { lat: 45, lon: 5, spread: 10, count: 40 },
-      { lat: 5, lon: 20, spread: 20, count: 80 },
-      { lat: -15, lon: 25, spread: 15, count: 50 },
-      { lat: 40, lon: -95, spread: 20, count: 80 },
-      { lat: 25, lon: -100, spread: 10, count: 40 },
-      { lat: -15, lon: -55, spread: 20, count: 70 },
-      { lat: -25, lon: 135, spread: 12, count: 40 },
-      { lat: -5, lon: 115, spread: 15, count: 60 },
-      { lat: 2, lon: 110, spread: 10, count: 40 },
-    ];
+function Rig({ phase }: { phase: Phase }) {
+  const { camera } = useThree();
+  const target = useRef(new THREE.Vector3(...SHOTS.login.look));
+  const drift = useRef(0);
 
-    let seed = 42;
-    const rng = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+  useFrame((_, delta) => {
+    const shot = SHOTS[phase] ?? SHOTS.login;
 
-    landPatches.forEach(patch => {
-      for (let i = 0; i < patch.count; i++) {
-        const latR = patch.lat + (rng() - 0.5) * patch.spread * 2;
-        const lonR = patch.lon + (rng() - 0.5) * patch.spread * 2;
-        const phi = (90 - latR) * (Math.PI / 180);
-        const theta = lonR * (Math.PI / 180);
-        positions.push(r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi) * Math.sin(theta));
-      }
-    });
+    /* Gerak melayang halus hanya pada babak diam, supaya adegan tidak
+       terasa beku tanpa mengganggu pembacaan. */
+    drift.current += delta * 0.16;
+    const idle = phase === 'login' ? 1 : 0;
+    const wobbleX = Math.sin(drift.current) * 0.55 * idle;
+    const wobbleY = Math.cos(drift.current * 0.7) * 0.18 * idle;
 
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    return geo;
+    const want = new THREE.Vector3(
+      shot.pos[0] + wobbleX,
+      shot.pos[1] + wobbleY,
+      shot.pos[2],
+    );
+
+    /* Perpindahan babak dibuat cepat di awal lalu melambat, sehingga
+       terbaca sebagai gerakan kamera yang disengaja. */
+    const ease = phase === 'transitioning' ? 1.9 : 1.15;
+    camera.position.lerp(want, 1 - Math.exp(-ease * delta));
+    target.current.lerp(new THREE.Vector3(...shot.look), 1 - Math.exp(-2.4 * delta));
+    camera.lookAt(target.current);
+
+    const cam = camera as THREE.PerspectiveCamera;
+    cam.fov += (shot.fov - cam.fov) * (1 - Math.exp(-2.2 * delta));
+    cam.updateProjectionMatrix();
+  });
+
+  return null;
+}
+
+/* ---------------------------------------------------------------------
+   Bumi — permukaan pada babak awal, bola dunia pada babak akhir.
+   --------------------------------------------------------------------- */
+function Earth({ phase }: { phase: Phase }) {
+  const gridRef = useRef<THREE.LineSegments>(null);
+
+  /* Jaring meridian & paralel dibuat sekali, lalu hanya diputar. */
+  const grid = useMemo(() => {
+    const geo = new THREE.SphereGeometry(R + 0.02, 48, 32);
+    return new THREE.WireframeGeometry(geo);
   }, []);
 
   useFrame((_, delta) => {
-    if (globeRef.current) {
-      const speed = phase === 'authenticating' ? 0.15 : 0.05;
-      globeRef.current.rotation.y += delta * speed;
+    if (gridRef.current) gridRef.current.rotation.y += delta * 0.012;
+  });
+
+  const lit = phase === 'success' || phase === 'transitioning';
+
+  return (
+    <>
+      <group position={EARTH_CENTER}>
+        {/* Badan bumi */}
+        <mesh>
+          <sphereGeometry args={[R, 96, 64]} />
+          <meshStandardMaterial
+            color="#132437"
+            roughness={0.92}
+            metalness={0.06}
+            emissive={lit ? '#143a63' : '#0b1c30'}
+            emissiveIntensity={lit ? 0.6 : 0.42}
+          />
+        </mesh>
+
+        {/* Jaring koordinat global */}
+        <lineSegments ref={gridRef} geometry={grid}>
+          <lineBasicMaterial color="#3b82f6" transparent opacity={0.16} />
+        </lineSegments>
+
+        {/* Cahaya tepi atmosfer — terlihat jelas saat kamera memanjat */}
+        <mesh>
+          <sphereGeometry args={[R * 1.016, 64, 48]} />
+          <meshBasicMaterial
+            color="#38bdf8"
+            transparent
+            opacity={phase === 'transitioning' ? 0.2 : 0.09}
+            side={THREE.BackSide}
+          />
+        </mesh>
+      </group>
+
+      {/* Kisi kutub di sekitar titik gelar — cincin jangkauan dan garis
+          baringan, bahasa visual yang sama dengan peta taktis GeoInt. */}
+      <polarGridHelper args={[26, 12, 8, 96, '#1e40af', '#1e3a5f']} position={[0, 0.015, 0]}>
+        <lineBasicMaterial attach="material" color="#2563eb" transparent opacity={0.28} />
+      </polarGridHelper>
+    </>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   Aerostat tertambat: badan balon, sirip, kabel, dan titik gelar.
+   --------------------------------------------------------------------- */
+function Aerostat({ phase }: { phase: Phase }) {
+  const body = useRef<THREE.Group>(null);
+  const gimbal = useRef<THREE.Mesh>(null);
+
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    if (body.current) {
+      /* Simpangan akibat angin — kecil, seperti balon tertambat sungguhan. */
+      body.current.position.x = Math.sin(t * 0.34) * 0.16;
+      body.current.position.y = ALT + Math.sin(t * 0.52) * 0.07;
+      body.current.rotation.z = Math.sin(t * 0.34) * 0.045;
+    }
+    if (gimbal.current) {
+      /* Gimbal menyapu saat verifikasi, diam mengarah ke bawah selebihnya. */
+      gimbal.current.rotation.y = phase === 'authenticating'
+        ? Math.sin(t * 1.7) * 0.7
+        : gimbal.current.rotation.y * 0.94;
     }
   });
 
   return (
-    <group ref={globeRef}>
-      <mesh>
-        <sphereGeometry args={[1.98, 48, 48]} />
-        <meshPhongMaterial color="#0a1628" transparent opacity={0.6} shininess={30} />
+    <group>
+      {/* Kabel penambat */}
+      <mesh position={[0, ALT / 2, 0]}>
+        <cylinderGeometry args={[0.012, 0.012, ALT, 6]} />
+        <meshBasicMaterial color="#64748b" transparent opacity={0.55} />
       </mesh>
-      <lineSegments geometry={gridGeometry}>
-        <lineBasicMaterial color="#1e3a5f" transparent opacity={0.25} />
-      </lineSegments>
-      <points geometry={continentGeometry}>
-        <pointsMaterial color="#3b82f6" size={0.02} transparent opacity={0.6} sizeAttenuation />
-      </points>
-      <mesh>
-        <sphereGeometry args={[2.15, 48, 48]} />
-        <meshPhongMaterial color="#1d4ed8" transparent opacity={0.04} side={THREE.BackSide} />
+
+      {/* Titik gelar / winch di permukaan */}
+      <mesh position={[0, 0.06, 0]}>
+        <cylinderGeometry args={[0.3, 0.42, 0.12, 16]} />
+        <meshStandardMaterial color="#1e293b" roughness={0.7} metalness={0.3} />
       </mesh>
-      <mesh>
-        <sphereGeometry args={[2.4, 32, 32]} />
-        <meshPhongMaterial color="#3b82f6" transparent opacity={0.02} side={THREE.BackSide} />
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.5, 0.58, 32]} />
+        <meshBasicMaterial color="#38bdf8" transparent opacity={0.4} side={THREE.DoubleSide} />
       </mesh>
+
+      <group ref={body} position={[0, ALT, 0]}>
+        {/* Badan balon — elipsoid memanjang searah angin */}
+        <mesh scale={[1.55, 0.92, 0.92]}>
+          <sphereGeometry args={[0.92, 48, 32]} />
+          <meshStandardMaterial
+            color="#dbe4f0"
+            roughness={0.42}
+            metalness={0.12}
+            emissive="#1e3a5f"
+            emissiveIntensity={0.28}
+          />
+        </mesh>
+
+        {/* Sirip ekor — ditempatkan di luar badan agar benar-benar
+            terlihat sebagai stabilisator, bukan tenggelam di dalamnya. */}
+        {[0, (2 * Math.PI) / 3, (4 * Math.PI) / 3].map((a, i) => (
+          <mesh
+            key={i}
+            position={[1.42, Math.sin(a) * 0.34, Math.cos(a) * 0.34]}
+            rotation={[-a, 0, -Math.PI / 2]}
+          >
+            <coneGeometry args={[0.075, 0.62, 4]} />
+            <meshStandardMaterial color="#8fa3bd" roughness={0.55} metalness={0.2} />
+          </mesh>
+        ))}
+
+        {/* Gimbal sensor di bawah badan */}
+        <mesh ref={gimbal} position={[0, -0.78, 0]}>
+          <sphereGeometry args={[0.2, 24, 18]} />
+          <meshStandardMaterial color="#0f172a" roughness={0.3} metalness={0.7} />
+        </mesh>
+
+        {/* Lampu navigasi */}
+        <mesh position={[-1.4, 0, 0]}>
+          <sphereGeometry args={[0.055, 12, 10]} />
+          <meshBasicMaterial color={phase === 'login' ? '#ef4444' : '#34d399'} />
+        </mesh>
+      </group>
     </group>
   );
 }
 
-/* ---------- TETHERED BALLOON ---------- */
-function TetheredBalloon({ phase }: { phase: string }) {
-  const groupRef = useRef<THREE.Group>(null);
+/* ---------------------------------------------------------------------
+   Kerucut pandang sensor — menyala hanya saat verifikasi berlangsung.
+   --------------------------------------------------------------------- */
+function SensorCone({ phase }: { phase: Phase }) {
+  const ref = useRef<THREE.Mesh>(null);
+  const active = phase === 'authenticating';
 
-  const basePosition = useMemo(() => {
-    const lat = -6.2, lon = 106.8, r = 2.02;
-    const phi = (90 - lat) * (Math.PI / 180);
-    const theta = lon * (Math.PI / 180);
-    return new THREE.Vector3(r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi) * Math.sin(theta));
-  }, []);
-
-  const balloonHeight = phase === 'authenticating' || phase === 'success' ? 0.8 : 0.5;
-  const normal = useMemo(() => basePosition.clone().normalize(), [basePosition]);
-  const balloonPos = useMemo(() => basePosition.clone().add(normal.clone().multiplyScalar(balloonHeight)), [basePosition, normal, balloonHeight]);
-
-  const cableGeometry = useMemo(() => {
-    const pointVectors: [number, number, number][] = [];
-    const segments = 20;
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const height = t * balloonHeight;
-      const sway = Math.sin(t * Math.PI) * 0.03;
-      const pos = basePosition.clone().add(normal.clone().multiplyScalar(height));
-      pos.x += sway;
-      pointVectors.push([pos.x, pos.y, pos.z]);
-    }
-    return pointVectors;
-  }, [basePosition, normal, balloonHeight]);
-
-  useFrame(({ clock }) => {
-    if (groupRef.current) {
-      const t = clock.getElapsedTime();
-      groupRef.current.position.set(Math.sin(t * 0.3) * 0.01, Math.sin(t * 0.5) * 0.02, 0);
-    }
+  useFrame(({ clock }, delta) => {
+    const m = ref.current;
+    if (!m) return;
+    const mat = m.material as THREE.MeshBasicMaterial;
+    mat.opacity += ((active ? 0.2 : 0) - mat.opacity) * Math.min(1, delta * 4);
+    /* Kerucut ikut menyapu bersama gimbal. */
+    m.rotation.y = Math.sin(clock.getElapsedTime() * 1.7) * 0.7;
+    m.rotation.z = Math.sin(clock.getElapsedTime() * 1.1) * 0.14;
   });
 
   return (
-    <group ref={groupRef}>
-      <Line
-        points={cableGeometry}
-        color="#94a3b8"
+    <mesh ref={ref} position={[0, ALT / 2 - 0.3, 0]}>
+      <coneGeometry args={[1.5, ALT - 0.4, 40, 1, true]} />
+      <meshBasicMaterial
+        color="#38bdf8"
         transparent
-        opacity={0.5}
-        lineWidth={1}
+        opacity={0}
+        side={THREE.DoubleSide}
+        depthWrite={false}
       />
-      <mesh position={balloonPos}>
-        <sphereGeometry args={[0.06, 16, 12]} />
-        <meshPhongMaterial color="#f1f5f9" transparent opacity={0.85} emissive="#3b82f6" emissiveIntensity={0.15} />
-      </mesh>
-      <mesh position={[balloonPos.x, balloonPos.y - 0.08, balloonPos.z]}>
-        <boxGeometry args={[0.025, 0.015, 0.025]} />
-        <meshPhongMaterial color="#1e293b" />
-      </mesh>
-      <mesh position={[balloonPos.x, balloonPos.y - 0.09, balloonPos.z]}>
-        <circleGeometry args={[0.008, 12]} />
-        <meshBasicMaterial color={phase === 'authenticating' || phase === 'success' ? '#10b981' : '#3b82f6'} />
-      </mesh>
-      <mesh position={basePosition}>
-        <sphereGeometry args={[0.015, 8, 8]} />
-        <meshBasicMaterial color="#f59e0b" />
-      </mesh>
-    </group>
-  );
-}
-
-/* ---------- SCANNING BEAM ---------- */
-function ScanningBeam({ phase }: { phase: string }) {
-  const beamRef = useRef<THREE.Mesh>(null);
-  const basePosition = useMemo(() => {
-    const lat = -6.2, lon = 106.8, r = 2.02;
-    const phi = (90 - lat) * (Math.PI / 180);
-    const theta = lon * (Math.PI / 180);
-    return new THREE.Vector3(r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi) * Math.sin(theta));
-  }, []);
-
-  const beamActive = phase === 'authenticating' || phase === 'success';
-  const normal = useMemo(() => basePosition.clone().normalize(), [basePosition]);
-  const balloonPos = useMemo(() => basePosition.clone().add(normal.clone().multiplyScalar(0.42)), [basePosition, normal]);
-
-  useFrame(({ clock }) => {
-    if (beamRef.current) {
-      beamRef.current.rotation.y = clock.getElapsedTime() * 0.3;
-      const mat = beamRef.current.material as THREE.MeshBasicMaterial;
-      const target = beamActive ? 0.08 : 0.03;
-      mat.opacity += (target - mat.opacity) * 0.05;
-    }
-  });
-
-  if (phase === 'transitioning') return null;
-
-  return (
-    <mesh ref={beamRef} position={balloonPos}>
-      <coneGeometry args={[0.15, 0.4, 16, 1, true]} />
-      <meshBasicMaterial color="#3b82f6" transparent opacity={0.03} side={THREE.DoubleSide} depthWrite={false} />
     </mesh>
   );
 }
 
-/* ---------- ORBITAL SATELLITES ---------- */
-function DataSatellites() {
-  const groupRef = useRef<THREE.Group>(null);
-  const sats = useMemo(() => [
-    { orbit: 2.8, speed: 0.2, offset: 0, incl: 0.3 },
-    { orbit: 3.0, speed: -0.15, offset: 2.1, incl: -0.2 },
-    { orbit: 3.3, speed: 0.1, offset: 4.2, incl: 0.4 },
-  ], []);
+/* ---------------------------------------------------------------------
+   Cincin cakupan yang mengembang di permukaan setelah akses diberikan.
+   --------------------------------------------------------------------- */
+function CoverageRings({ phase }: { phase: Phase }) {
+  const group = useRef<THREE.Group>(null);
+  const show = phase === 'success' || phase === 'transitioning';
 
-  useFrame(({ clock }) => {
-    if (!groupRef.current) return;
+  useFrame(({ clock }, delta) => {
+    const g = group.current;
+    if (!g) return;
     const t = clock.getElapsedTime();
-    groupRef.current.children.forEach((child, i) => {
-      const s = sats[i];
-      const a = t * s.speed + s.offset;
-      child.position.set(Math.cos(a) * s.orbit, Math.sin(a * 0.5) * s.incl, Math.sin(a) * s.orbit);
+
+    g.children.forEach((child, i) => {
+      const m = child as THREE.Mesh;
+      const mat = m.material as THREE.MeshBasicMaterial;
+      /* Setiap cincin mengembang dengan jeda berbeda lalu memudar. */
+      const cycle = (t * 0.42 + i * 0.34) % 1;
+      const s = 1 + cycle * 9;
+      m.scale.set(s, s, s);
+      const want = show ? (1 - cycle) * 0.42 : 0;
+      mat.opacity += (want - mat.opacity) * Math.min(1, delta * 5);
     });
   });
 
   return (
-    <group ref={groupRef}>
-      {sats.map((_, i) => (
+    <group ref={group} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+      {[0, 1, 2].map(i => (
         <mesh key={i}>
-          <octahedronGeometry args={[0.03, 0]} />
-          <meshBasicMaterial color="#60a5fa" transparent opacity={0.7} />
+          <ringGeometry args={[0.85, 0.95, 64]} />
+          <meshBasicMaterial color="#22d3ee" transparent opacity={0} side={THREE.DoubleSide} />
         </mesh>
       ))}
     </group>
   );
 }
 
-/* ---------- STARS ---------- */
-function Stars() {
-  const geometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    const positions: number[] = [];
-    let s = 123;
-    const rng = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
-    for (let i = 0; i < 800; i++) {
-      const r = 15 + rng() * 20;
-      const theta = rng() * Math.PI * 2;
-      const phi = Math.acos(2 * rng() - 1);
-      positions.push(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi));
+/* ---------------------------------------------------------------------
+   Tautan data ke titik tambat — garis yang menyala saat sesi terbuka.
+   --------------------------------------------------------------------- */
+function Downlink({ phase }: { phase: Phase }) {
+  const ref = useRef<THREE.Mesh>(null);
+  const on = phase === 'success' || phase === 'transitioning';
+
+  useFrame(({ clock }, delta) => {
+    const m = ref.current;
+    if (!m) return;
+    const mat = m.material as THREE.MeshBasicMaterial;
+    const pulse = 0.35 + Math.sin(clock.getElapsedTime() * 4) * 0.18;
+    mat.opacity += ((on ? pulse : 0) - mat.opacity) * Math.min(1, delta * 5);
+  });
+
+  return (
+    <mesh ref={ref} position={[1.6, ALT / 2, 0]} rotation={[0, 0, Math.atan2(3.2, ALT)]}>
+      <cylinderGeometry args={[0.02, 0.02, ALT * 1.16, 6]} />
+      <meshBasicMaterial color="#34d399" transparent opacity={0} depthWrite={false} />
+    </mesh>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   Bintang latar — deterministik supaya polanya tidak berubah-ubah.
+   --------------------------------------------------------------------- */
+function Starfield() {
+  const positions = useMemo(() => {
+    const n = 900;
+    const arr = new Float32Array(n * 3);
+    let s = 20260727;
+    for (let i = 0; i < n; i++) {
+      s = (s * 16807) % 2147483647; const u = s / 2147483647;
+      s = (s * 16807) % 2147483647; const v = s / 2147483647;
+      s = (s * 16807) % 2147483647; const w = s / 2147483647;
+      const theta = u * Math.PI * 2;
+      const phi = Math.acos(2 * v - 1);
+      const r = 150 + w * 90;
+      arr[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      arr[i * 3 + 1] = r * Math.cos(phi) * 0.7 + 30;
+      arr[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
     }
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    return geo;
+    return arr;
   }, []);
 
   return (
-    <points geometry={geometry}>
-      <pointsMaterial color="#94a3b8" size={0.06} transparent opacity={0.4} sizeAttenuation />
+    <points>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <pointsMaterial size={0.55} color="#cbd5e1" transparent opacity={0.6} sizeAttenuation />
     </points>
   );
 }
 
-/* ---------- CAMERA CONTROLLER ---------- */
-function CameraController({ phase }: { phase: string }) {
-  const { camera } = useThree();
-  const targetPos = useRef(new THREE.Vector3(0, 1.5, 5.5));
-  const lookAtTarget = useRef(new THREE.Vector3(0, 0, 0));
-
-  useEffect(() => {
-    switch (phase) {
-      case 'login':
-        targetPos.current.set(0, 1.5, 5.5);
-        lookAtTarget.current.set(0, 0, 0);
-        break;
-      case 'authenticating':
-        targetPos.current.set(1.5, 0.8, 4.0);
-        lookAtTarget.current.set(0.5, -0.2, 0);
-        break;
-      case 'success':
-        targetPos.current.set(1.2, 0.5, 3.5);
-        lookAtTarget.current.set(0.5, -0.2, 0);
-        break;
-      case 'transitioning':
-        targetPos.current.set(0, 0, 2.5);
-        lookAtTarget.current.set(0, 0, 0);
-        break;
-    }
-  }, [phase]);
-
-  useFrame(() => {
-    camera.position.lerp(targetPos.current, 0.02);
-    camera.lookAt(lookAtTarget.current);
-  });
-
-  return null;
-}
-
-/* ---------- HUD OVERLAY ---------- */
-function HUDOverlay({ phase }: { phase: string }) {
-  const [hudVisible, setHudVisible] = useState(false);
-
-  useEffect(() => {
-    if (phase === 'success') {
-      const t = setTimeout(() => setHudVisible(true), 300);
-      return () => clearTimeout(t);
-    }
-    setHudVisible(false);
-  }, [phase]);
-
-  if (phase !== 'success' && phase !== 'authenticating') return null;
-
-  return (
-    <div style={{
-      position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10,
-      transition: 'opacity 0.6s ease',
-      opacity: phase === 'success' ? 1 : 0,
-    }}>
-      {hudVisible && (
-        <>
-          {/* Crosshair */}
-          <div style={{
-            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            width: 60, height: 60, border: '1px solid rgba(59,130,246,0.3)', borderRadius: '50%',
-            animation: 'hudPulse 2s ease infinite',
-          }}>
-            {[{ l: -8, t: '50%', w: 16, h: 1, ty: '-50%' }, { r: -8, t: '50%', w: 16, h: 1, ty: '-50%' },
-              { l: '50%', t: -8, w: 1, h: 16, tx: '-50%' }, { l: '50%', b: -8, w: 1, h: 16, tx: '-50%' }
-            ].map((s, i) => (
-              <div key={i} style={{
-                position: 'absolute', background: 'rgba(59,130,246,0.5)',
-                ...(s.l !== undefined ? { left: s.l } : {}), ...(s.r !== undefined ? { right: s.r } : {}),
-                ...(s.t !== undefined ? { top: s.t } : {}), ...(s.b !== undefined ? { bottom: s.b } : {}),
-                width: s.w, height: s.h,
-                transform: `${s.tx ? `translateX(${s.tx})` : ''} ${s.ty ? `translateY(${s.ty})` : ''}`.trim() || undefined,
-              }} />
-            ))}
-          </div>
-
-          {/* Coordinates — top left */}
-          <div style={{
-            position: 'absolute', top: 24, left: 24,
-            fontFamily: 'var(--font-code)', fontSize: 10, color: 'rgba(148,163,184,0.6)',
-            lineHeight: 1.8, animation: 'fadeSlideIn 0.4s ease 0.2s both',
-          }}>
-            <div>LAT -6.2088°</div>
-            <div>LON 106.8456°</div>
-            <div>ALT 285.0m</div>
-          </div>
-
-          {/* System status — top right */}
-          <div style={{
-            position: 'absolute', top: 24, right: 24,
-            fontFamily: 'var(--font-code)', fontSize: 10, color: 'rgba(148,163,184,0.6)',
-            textAlign: 'right', lineHeight: 1.8, animation: 'fadeSlideIn 0.4s ease 0.4s both',
-          }}>
-            <div style={{ color: 'rgba(16,185,129,0.8)' }}>● SYSTEM ONLINE</div>
-            <div>SAT LINK: 3/3</div>
-            <div>UPTIME: 99.7%</div>
-          </div>
-
-          {/* Bottom bar */}
-          <div style={{
-            position: 'absolute', bottom: 24, left: 24, right: 24,
-            display: 'flex', justifyContent: 'space-between',
-            fontFamily: 'var(--font-code)', fontSize: 9, color: 'rgba(148,163,184,0.4)',
-            animation: 'fadeSlideIn 0.4s ease 0.6s both',
-          }}>
-            <span>SkyStar GeoInt v2.1.0</span>
-            <span>ENCRYPTED CHANNEL</span>
-            <span>{new Date().toISOString().slice(0, 19)}Z</span>
-          </div>
-        </>
-      )}
-
-      <style>{`
-        @keyframes hudPulse {
-          0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(1); }
-          50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
-        }
-        @keyframes fadeSlideIn {
-          from { opacity: 0; transform: translateY(-5px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div>
-  );
-}
-
-/* ========== MAIN EXPORT ========== */
+/* ===================================================================== */
 export default function LoginScene3D({ phase = 'login' }: { phase?: string }) {
+  const p = (['login', 'authenticating', 'success', 'transitioning', 'app'].includes(phase)
+    ? phase
+    : 'login') as Phase;
+
   return (
-    <div style={{
-      position: 'absolute', inset: 0, zIndex: 0,
-      transition: 'opacity 0.8s ease',
-      opacity: phase === 'transitioning' ? 0 : 1,
-      background: 'linear-gradient(180deg, #020617 0%, #0a1628 50%, #0f172a 100%)',
-    }}>
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 1,
+        opacity: p === 'transitioning' ? 0.35 : 1,
+        transition: 'opacity 900ms cubic-bezier(0.16, 1, 0.3, 1)',
+      }}
+      aria-hidden
+    >
       <Canvas
-        camera={{ position: [0, 1.5, 5.5], fov: 45 }}
+        camera={{ position: SHOTS.login.pos, fov: SHOTS.login.fov, near: 0.1, far: 600 }}
+        dpr={[1, 1.75]}
         gl={{ antialias: true, alpha: true }}
-        style={{ position: 'absolute', inset: 0 }}
       >
-        <ambientLight intensity={0.3} />
-        <directionalLight position={[5, 3, 5]} intensity={0.6} color="#e2e8f0" />
-        <pointLight position={[-3, 2, -3]} intensity={0.2} color="#3b82f6" />
+        <ambientLight intensity={0.32} />
+        <directionalLight position={[6, 9, 5]} intensity={1.15} color="#dbeafe" />
+        <pointLight position={[-5, 3, -4]} intensity={0.5} color="#60a5fa" />
 
-        <CameraController phase={phase} />
-        <Stars />
-        <EarthGlobe phase={phase} />
-        <TetheredBalloon phase={phase} />
-        <ScanningBeam phase={phase} />
-        <DataSatellites />
+        <Rig phase={p} />
+        <Starfield />
+        <Earth phase={p} />
+        <Aerostat phase={p} />
+        <SensorCone phase={p} />
+        <CoverageRings phase={p} />
+        <Downlink phase={p} />
+
+        <fog attach="fog" args={["#060d1a", 34, 150]} />
       </Canvas>
-
-      <HUDOverlay phase={phase} />
-
-      {/* Vignette */}
-      <div style={{
-        position: 'absolute', inset: 0, pointerEvents: 'none',
-        background: 'radial-gradient(ellipse at center, transparent 50%, rgba(2,6,23,0.5) 100%)',
-      }} />
     </div>
   );
 }

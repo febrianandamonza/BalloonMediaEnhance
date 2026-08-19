@@ -1,0 +1,42 @@
+{
+  "//": "Direktori berikut berisi artefak build, dependensi, dan dokumen biner berukuran besar. Mengecualikannya dari watcher, pencarian, dan indeks TypeScript mencegah language server kelebihan beban — penyebab kegagalan textDocument/didOpen saat berkas dibuka.",
+  "files.exclude": {
+    "**/.next": true,
+    "**/node_modules": true,
+    "**/dist": true
+  },
+  "files.watcherExclude": {
+    "**/.next/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/docs/manuals/**": true,
+    "**/output/**": true
+  },
+  "search.exclude": {
+    "**/.next": true,
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/docs/manuals/pdf": true,
+    "**/package-lock.json": true
+  },
+
+  "typescript.tsserver.maxTsServerMemory": 4096,
+  "typescript.tsdk": "app/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.tsserver.watchOptions": {
+    "watchFile": "useFsEventsOnParentDirectory",
+    "watchDirectory": "useFsEvents",
+    "excludeDirectories": ["**/node_modules", "**/.next", "**/dist"]
+  },
+  "typescript.preferences.includePackageJsonAutoImports": "off",
+  "javascript.preferences.includePackageJsonAutoImports": "off",
+
+  "eslint.workingDirectories": [
+    { "directory": "app", "changeProcessCWD": true },
+    { "directory": "backend", "changeProcessCWD": true }
+  ],
+
+  "files.associations": {
+    "*.css": "css"
+  }
+}

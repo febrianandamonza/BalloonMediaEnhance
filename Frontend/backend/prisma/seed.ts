@@ -87,43 +87,58 @@ async function main() {
   const operatorRole = roles.find(r => r.code === 'operator')!;
   const supervisorRole = roles.find(r => r.code === 'supervisor')!;
 
-  const passwordHash = await bcrypt.hash('admin', 12);
+  /* Dua akun stasiun GCS — kredensial ini sama dengan daftar operator
+     lokal pada frontend (app/src/app/lib/auth.ts) agar login tetap
+     konsisten baik saat backend aktif maupun saat GCS berjalan mandiri. */
+  const stationPasswordHash = await bcrypt.hash('admin123', 12);
 
   const users = await Promise.all([
     prisma.user.upsert({
-      where: { username: 'admin' },
-      update: {},
+      where: { username: 'gcs1' },
+      update: { passwordHash: stationPasswordHash },
       create: {
-        username: 'admin',
-        email: 'admin@skystar.mil.id',
-        passwordHash,
-        fullName: 'System Administrator',
+        username: 'gcs1',
+        email: 'gcs1@skystar.mil.id',
+        passwordHash: stationPasswordHash,
+        fullName: 'Operator GCS Satu',
         roleId: adminRole.id,
         phone: '+62-811-0000-001',
       },
     }),
     prisma.user.upsert({
-      where: { username: 'operator1' },
-      update: {},
+      where: { username: 'gcs2' },
+      update: { passwordHash: stationPasswordHash },
       create: {
-        username: 'operator1',
-        email: 'operator1@skystar.mil.id',
-        passwordHash: await bcrypt.hash('operator123', 12),
-        fullName: 'GCS Operator Alpha',
-        roleId: operatorRole.id,
+        username: 'gcs2',
+        email: 'gcs2@skystar.mil.id',
+        passwordHash: stationPasswordHash,
+        fullName: 'Operator GCS Dua',
+        roleId: adminRole.id,
         phone: '+62-811-0000-002',
       },
     }),
     prisma.user.upsert({
-      where: { username: 'supervisor1' },
+      where: { username: 'budi.op' },
       update: {},
       create: {
-        username: 'supervisor1',
-        email: 'supervisor1@skystar.mil.id',
-        passwordHash: await bcrypt.hash('supervisor123', 12),
-        fullName: 'Operations Supervisor',
-        roleId: supervisorRole.id,
+        username: 'budi.op',
+        email: 'budi@skystar.mil.id',
+        passwordHash: await bcrypt.hash('operator123', 12),
+        fullName: 'Budi Santoso',
+        roleId: operatorRole.id,
         phone: '+62-811-0000-003',
+      },
+    }),
+    prisma.user.upsert({
+      where: { username: 'ani.spv' },
+      update: {},
+      create: {
+        username: 'ani.spv',
+        email: 'ani@skystar.mil.id',
+        passwordHash: await bcrypt.hash('supervisor123', 12),
+        fullName: 'Ani Rahmawati',
+        roleId: supervisorRole.id,
+        phone: '+62-811-0000-004',
       },
     }),
   ]);
@@ -208,54 +223,107 @@ async function main() {
   // ============================================
   // 6. License + Modules (12 sub-licenses)
   // ============================================
-  console.log('  → Creating license and modules...');
-  const license = await prisma.license.upsert({
-    where: { licenseKey: 'SKST-2026-DEMO-0001' },
-    update: {},
-    create: {
-      name: 'Video Analytics Software License',
-      licenseKey: 'SKST-2026-DEMO-0001',
-      status: 'active',
-      maxSeats: 2,
-      activatedAt: new Date(),
-      organization: 'PT SkyStar GeoInt Indonesia',
-      contractNumber: 'CONT-2026-001',
-      contactEmail: 'admin@skystar.mil.id',
-    },
-  });
+  /* Empat sertifikat yang diterbitkan TAB Integrated Systems Pte Ltd:
+     satu Commercial Software License (Crowd Counting) dan tiga Module
+     License. Setiap sertifikat terbit dalam dua unit serial — satu per
+     stasiun GCS — dan keduanya sah dipakai pada kedua stasiun. */
+  console.log('  → Creating licenses and modules...');
 
-  const moduleDefinitions = [
-    { moduleCode: 'MOD-1', moduleName: 'Object Detection & Analytics', subLicenseCode: '1.1a', subLicenseName: 'Image Detection (Object Detection from Captured Images)', priceIdr: 150000000n },
-    { moduleCode: 'MOD-1', moduleName: 'Object Detection & Analytics', subLicenseCode: '1.1b', subLicenseName: 'Video Detection (Real-Time Object Detection from Video Stream)', priceIdr: 250000000n },
-    { moduleCode: 'MOD-2', moduleName: 'Image Enhancement & Tether', subLicenseCode: '1.2a', subLicenseName: 'Image Enhancement (Post-Processing Image Quality Enhancement)', priceIdr: 100000000n },
-    { moduleCode: 'MOD-2', moduleName: 'Image Enhancement & Tether', subLicenseCode: '1.2b', subLicenseName: 'Video Enhancement (Real-Time Video Quality Enhancement)', priceIdr: 200000000n },
-    { moduleCode: 'MOD-2', moduleName: 'Image Enhancement & Tether', subLicenseCode: '1.2c', subLicenseName: 'Tether Cable API (Tether Cable Monitoring API Integration)', priceIdr: 75000000n },
-    { moduleCode: 'MOD-2', moduleName: 'Image Enhancement & Tether', subLicenseCode: '1.2d', subLicenseName: 'Tether Cable Monitor (Visual Tether Cable Health Dashboard)', priceIdr: 75000000n },
-    { moduleCode: 'MOD-3', moduleName: 'Information & Reporting', subLicenseCode: '1.3a', subLicenseName: 'Reporting (Automated Report Generation)', priceIdr: 100000000n },
-    { moduleCode: 'MOD-3', moduleName: 'Information & Reporting', subLicenseCode: '1.3b', subLicenseName: 'GEO Visualization (Geographic Target Visualization)', priceIdr: 150000000n },
-    { moduleCode: 'MOD-3', moduleName: 'Information & Reporting', subLicenseCode: '1.3c', subLicenseName: 'Smart Notification & Alerts (Intelligent Alert System)', priceIdr: 125000000n },
-    { moduleCode: 'MOD-3', moduleName: 'Information & Reporting', subLicenseCode: '1.3d', subLicenseName: 'Flight Information (Flight Data Management)', priceIdr: 80000000n },
-    { moduleCode: 'MOD-3', moduleName: 'Information & Reporting', subLicenseCode: '1.3e', subLicenseName: 'Mooring Monitoring (Mooring System Health)', priceIdr: 80000000n },
-    { moduleCode: 'MOD-3', moduleName: 'Information & Reporting', subLicenseCode: '1.3f', subLicenseName: 'Flight Simulation (Flight Training Simulator)', priceIdr: 200000000n },
+  const EFFECTIVE = new Date('2026-07-20T00:00:00+07:00');
+  const EXPIRES = new Date('2027-12-31T23:59:59+07:00');
+
+  const licenseDefinitions = [
+    {
+      name: 'Crowd Counting',
+      kind: 'Commercial Software License',
+      serials: ['TAB-CC-2026-001-A8F4K2', 'TAB-CC-2026-002-B7M9X5'],
+      contractNumber: 'TAB-CC-2026',
+      modules: [
+        { subLicenseCode: 'CC-01', subLicenseName: 'Crowd Density Estimation (CSRNet Density Map, CUDA Accelerated)' },
+      ],
+    },
+    {
+      name: 'Analytic and Object Detection Tethered Balloon Geospatial Intelligence System',
+      kind: 'Module License',
+      serials: ['TAB-AODGIS-2026-003-C3L8P6', 'TAB-AODGIS-2026-004-D5Q7W1'],
+      contractNumber: 'TAB-AODGIS-2026',
+      modules: [
+        { subLicenseCode: '1.1a', subLicenseName: 'Digital Imaging Analytic & Object Detection (YOLOv8x, Static Imagery)' },
+        { subLicenseCode: '1.1b', subLicenseName: 'Digital Video Analytic & Object Detection (YOLOv8 + ByteTrack, MTI, ROI Geofence)' },
+      ],
+    },
+    {
+      name: 'Digital Analytic Enhancement Processing System Module',
+      kind: 'Module License',
+      serials: ['TAB-DAEP-2026-005-E9R4T8', 'TAB-DAEP-2026-006-F2N6Y7'],
+      contractNumber: 'TAB-DAEP-2026',
+      modules: [
+        { subLicenseCode: '1.2a', subLicenseName: 'Digital Imaging Enhancement (CLAHE, Laplacian, Unsharp, Bilateral Denoising)' },
+        { subLicenseCode: '1.2b', subLicenseName: 'Digital Video Enhancement (Real-Time False Colour, 22 Palettes)' },
+        { subLicenseCode: '1.2c', subLicenseName: 'Interface Integrasi (API) Main Tether Cable (REST & WebSocket, Modbus TCP/RTU)' },
+        { subLicenseCode: '1.2d', subLicenseName: 'Monitoring Checking Capability Tether Cable (Power, Insulation, Continuity, EOP)' },
+      ],
+    },
+    {
+      name: 'Information and Reporting Tethered Balloon Geospatial Intelligence System Module',
+      kind: 'Module License',
+      serials: ['TAB-IRGIS-2026-007-G5V8K3', 'TAB-IRGIS-2026-008-H7M2Z9'],
+      contractNumber: 'TAB-IRGIS-2026',
+      modules: [
+        { subLicenseCode: '1.3a', subLicenseName: 'Digital Reporting Tethered Balloon (PDF/XLSX, Classification Watermark)' },
+        { subLicenseCode: '1.3b', subLicenseName: 'Digital Visualisation Information GeoInt (Offline Map, FOV Cone, Target Bank)' },
+        { subLicenseCode: '1.3c', subLicenseName: 'Digital Smart Notification Alert (Geofence, Threshold, Intrusion)' },
+        { subLicenseCode: '1.3d', subLicenseName: 'Information Flight Balloon Intelligent App (Logbook, Pre-Flight Checklist)' },
+        { subLicenseCode: '1.3e', subLicenseName: 'Monitoring Availability Mooring App System (Anemometer, Load Cell, Helium)' },
+        { subLicenseCode: '1.3f', subLicenseName: 'Simulation Plan Skenario Flight Balloon (GO / MARGINAL / NO-GO Assessment)' },
+      ],
+    },
   ];
 
-  for (const mod of moduleDefinitions) {
-    await prisma.licenseModule.upsert({
-      where: { uq_license_subcode: { licenseId: license.id, subLicenseCode: mod.subLicenseCode } },
-      update: {},
+  let moduleTotal = 0;
+
+  for (const def of licenseDefinitions) {
+    const license = await prisma.license.upsert({
+      where: { licenseKey: def.serials[0] },
+      update: { status: 'active', expiresAt: EXPIRES },
       create: {
-        licenseId: license.id,
-        moduleCode: mod.moduleCode,
-        moduleName: mod.moduleName,
-        subLicenseCode: mod.subLicenseCode,
-        subLicenseName: mod.subLicenseName,
-        subLicenseKey: `SKST-${mod.subLicenseCode.replace('.', '')}-2026`,
-        isActive: false,
-        priceIdr: mod.priceIdr,
+        name: def.name,
+        licenseKey: def.serials[0],
+        status: 'active',
+        maxSeats: 2,
+        activatedAt: EFFECTIVE,
+        expiresAt: EXPIRES,
+        organization: 'Badan Intelijen Negara',
+        contractNumber: def.contractNumber,
+        contactEmail: 'gcs1@skystar.mil.id',
+        notes: [
+          `Certificate type: ${def.kind}`,
+          `Licensor: TAB Integrated Systems Pte Ltd`,
+          `Accepted serial numbers: ${def.serials.join(', ')}`,
+          `Effective 20 July 2026 — expires 31 December 2027. Non-transferable.`,
+        ].join('\n'),
       },
     });
+
+    for (const mod of def.modules) {
+      await prisma.licenseModule.upsert({
+        where: { uq_license_subcode: { licenseId: license.id, subLicenseCode: mod.subLicenseCode } },
+        update: { subLicenseName: mod.subLicenseName, expiresAt: EXPIRES },
+        create: {
+          licenseId: license.id,
+          moduleCode: def.contractNumber,
+          moduleName: def.name,
+          subLicenseCode: mod.subLicenseCode,
+          subLicenseName: mod.subLicenseName,
+          isActive: true,
+          activatedAt: EFFECTIVE,
+          expiresAt: EXPIRES,
+        },
+      });
+      moduleTotal += 1;
+    }
   }
-  console.log(`  ✓ License + ${moduleDefinitions.length} modules created`);
+  console.log(`  ✓ ${licenseDefinitions.length} licenses + ${moduleTotal} sub-modules created`);
 
   // ============================================
   // 7. Audit log for seed
@@ -270,14 +338,15 @@ async function main() {
         users: users.length,
         sites: 1,
         devices: 1,
-        modules: moduleDefinitions.length,
+        licenses: licenseDefinitions.length,
+        modules: moduleTotal,
       },
       statusCode: 200,
     },
   });
 
   console.log('\n✅ Database seeded successfully!');
-  console.log('  Default login: admin / admin');
+  console.log('  Station logins: gcs1 / admin123  ·  gcs2 / admin123');
   console.log('  API docs: http://localhost:4000/docs');
 }
 

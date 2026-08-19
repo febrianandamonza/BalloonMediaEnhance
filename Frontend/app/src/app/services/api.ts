@@ -2,7 +2,341 @@
 // API Service — Frontend → Backend Communication
 // ================================================================
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
+export const API_BASE_MEDIA = process.env.NEXT_PUBLIC_MEDIA_API_URL || "http://localhost:8000";
+/** Sama seperti API_BASE tapi skema http(s) diganti ws(s) — dipakai
+    VideoDetectionPage menyambung ke /detect/ws/{job_id}. */
+export const WS_BASE = API_BASE.replace(/^http/, 'ws');
+
+/** Profil operator sebagaimana dikirim backend. Hanya medan yang
+    benar-benar dibaca aplikasi yang dicantumkan. */
+export interface RemoteUser {
+  id: string | number;
+  user_id?: string | number;
+  username: string;
+  full_name?: string;
+  role_id?: number;
+}
+
+/** Respons GET /api/v1/auth/me. `expires_in` (detik tersisa sampai access
+    token kedaluwarsa) dipakai context.tsx untuk menjadwalkan auto-logout —
+    tanpa itu, sesi yang sebenarnya sudah invalid di backend akan terlihat
+    tetap login sampai request berikutnya gagal dengan 401. */
+export interface AuthMeResponse {
+  user?: RemoteUser;
+  expires_in?: number;
+  [key: string]: unknown;
+}
+
+/** Payload POST /api/v1/flight-simulations — hasil simulasi GO/NO-GO
+    (SimulationPage) disimpan sebagai satu baris riwayat. */
+export interface CreateFlightSimulationPayload {
+  simulation_name: string;
+  payload_weight: number;
+  helium_volume: number;
+  flight_altitude: number;
+  estimated_duration: number;
+  wind_speed: number;
+  gust_speed: number;
+  visibility: number;
+  rainfall: number;
+  temperature: number;
+  go_no_go: boolean;
+  remarks: string;
+}
+
+/** Satu baris dari respons GET /api/v1/flight-simulations — riwayat hasil
+    simulasi GO/NO-GO. `created_by` dipakai SimulationPage untuk menyaring
+    hanya riwayat milik operator yang sedang login. */
+export interface FlightSimulationRecord {
+  id: string | number;
+  simulation_name: string;
+  payload_weight?: number;
+  helium_volume?: number;
+  flight_altitude?: number;
+  estimated_duration?: number;
+  wind_speed?: number;
+  gust_speed?: number;
+  visibility?: number;
+  rainfall?: number;
+  temperature?: number;
+  go_no_go?: boolean;
+  remarks?: string;
+  created_by?: string | number;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+/** Satu baris dari respons GET /api/v1/locations — opsi lokasi misi pada
+    formulir Misi Baru (FlightInfoPage). */
+export interface LocationRecord {
+  id: string | number;
+  name?: string;
+  city?: string;
+  province?: string;
+  latitude?: string | number;
+  longitude?: string | number;
+  [key: string]: unknown;
+}
+
+/** Satu baris dari respons GET /api/v1/balloons — opsi platform balon pada
+    formulir Misi Baru. */
+export interface BalloonRecord {
+  id: string | number;
+  name?: string;
+  serial_number?: string;
+  balloon_name?: string;
+  capacity?: string | number;
+  max_altitude?: string | number;
+  status?: string;
+  [key: string]: unknown;
+}
+
+/** Satu baris dari respons GET /api/v1/operators — opsi operator penanggung
+    jawab misi pada formulir Misi Baru. */
+export interface OperatorRecord {
+  id: string | number;
+  full_name?: string;
+  username?: string;
+  [key: string]: unknown;
+}
+
+/** Payload POST /api/v1/flight-missions — langkah pertama simpan Misi Baru
+    (FlightInfoPage); id hasilnya dipakai sebagai flight_mission_id saat
+    menyimpan /flight-information. */
+export interface CreateFlightMissionPayload {
+  simulation_id: string | number | null;
+  mission_name: string;
+  mission_code: string;
+  description: string;
+  location_id: string | number;
+  balloon_id: string | number;
+  status_id: number;
+}
+
+/** Satu baris dari respons GET/POST /api/v1/flight-missions — juga sumber
+    tabel Logbook Penerbangan (FlightInfoPage). GET mengembalikan relasi
+    location/balloon/mission_status sebagai objek penuh TANPA id (cuma
+    name/city/... untuk location, serial_number/balloon_name/... untuk
+    balloon) — location_id/balloon_id datar tetap ada di sini untuk
+    payload PUT/POST (CreateFlightMissionPayload), tapi saat mengirim
+    ulang record hasil GET, id-nya harus dicari lewat pencocokan nama
+    (location.name → /locations) / serial_number (balloon.serial_number
+    → /balloons), lihat setMissionStatus di InfoPages.tsx. Status
+    berjalan lewat nama: "Planned" | "Flight" | "Done" (lihat
+    MISSION_STATUS_META di InfoPages.tsx) — status_id numerik cuma
+    dipakai saat MENGIRIM PUT, bukan lagi field yang dibaca dari GET. */
+export interface FlightMissionRecord {
+  id: string | number;
+  simulation_id?: string | number | null;
+  mission_name?: string;
+  mission_code?: string;
+  description?: string;
+  location_id?: string | number;
+  balloon_id?: string | number;
+  location?: LocationRecord | null;
+  balloon?: BalloonRecord | null;
+  status_id?: number;
+  /** Relasi status misi — nilai name: "Planned" | "Flight" | "Done". */
+  mission_status?: { id?: string | number; name?: string;[key: string]: unknown } | string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+/** Respons POST /api/v1/enhance/image — dipakai ImageEnhancementPage.
+    `preview_url` jadi sisi "sesudah" pada CompareSlider; field lainnya
+    ditampung di state untuk dipakai lagi saat menyimpan hasil. */
+export interface EnhanceImageResult {
+  success: boolean;
+  media_type: string;
+  processing_type: string;
+  temp_path: string;
+  preview_url: string;
+  processing_time: number;
+}
+
+/** Respons POST /api/v1/enhance/video — dipakai VideoEnhancementPage, bentuk
+    responsnya sama dengan /enhance/image. */
+export type EnhanceVideoResult = EnhanceImageResult;
+
+/** Satu objek yang terdeteksi pada respons /detect/image. */
+export interface DetectedObject {
+  class: string;
+  confidence: number;
+}
+
+/** Respons POST /api/v1/detect/image — dipakai ImageDetectionPage. Sama
+    dengan EnhanceImageResult ditambah daftar `objects`, ditampilkan sebagai
+    "Hasil Deteksi". */
+export interface DetectImageResult extends EnhanceImageResult {
+  objects: DetectedObject[];
+}
+
+/** Respons POST /api/v1/detect/video — proses berjalan asinkron di
+    backend; hasil per-frame diikuti lewat WebSocket /detect/ws/{job_id}
+    (lihat WS_BASE), bukan lewat respons HTTP ini. */
+export interface DetectVideoJobResult {
+  success: boolean;
+  job_id: string;
+}
+
+/** Satu pesan dari WebSocket /detect/ws/{job_id} — frame JPEG berbasis64
+    (sudah dianotasi bounding box oleh backend) beserta daftar objek yang
+    terdeteksi pada frame tersebut. Field penyelesaian job (temp_path/
+    processing_type/dst) bersifat opsional karena hanya muncul saat job
+    selesai diproses. */
+export interface DetectVideoFrameMessage {
+  frame?: string;
+  objects?: DetectedObject[];
+  success?: boolean;
+  temp_path?: string;
+  processing_type?: string;
+  preview_url?: string;
+  processing_time?: number;
+  [key: string]: unknown;
+}
+
+/** Payload POST /api/v1/media — menyimpan hasil /enhance/image atau
+    /enhance/video secara permanen, dikaitkan ke flight mission yang dipilih. */
+export interface CreateMediaPayload {
+  flight_information_id: string | number;
+  temp_path: string;
+  processing_type: string;
+}
+
+/** Baris GET /api/v1/media — katalog Surveillance Media Source. storage_path
+    dipakai membangun URL berkas (lihat API_BASE_MEDIA di GCSPage). */
+export interface MediaRecord {
+  id: string;
+  flight_information_id: string | number;
+  media_type: string;
+  processing_type?: string;
+  original_filename?: string;
+  stored_filename?: string;
+  storage_path?: string;
+  mime_type?: string;
+  file_size?: number;
+  uploaded_at?: string;
+  uploader?: { username?: string; full_name?: string; is_active?: boolean; role?: { id?: number; name?: string } | string };
+  [key: string]: unknown;
+}
+
+/** Payload PUT /api/v1/flight-missions/{id} — dipakai aksi Play to Flight
+    (status_id 1 → 2) dan End Flight (2 → 3) pada Logbook Penerbangan.
+    Backend memvalidasi PUT ini sebagai full-replace (bukan partial), jadi
+    seluruh field asli misi harus dikirim ulang bersama status_id baru —
+    lihat error 422 "simulation_id: Field required" saat hanya status_id
+    yang dikirim. */
+export type UpdateFlightMissionPayload = CreateFlightMissionPayload;
+
+/** Payload POST /api/v1/flight-information — langkah kedua simpan Misi Baru,
+    merujuk ke flight_mission_id dari langkah pertama. */
+export interface CreateFlightInformationPayload {
+  mission_id: string | number;
+  mission_leader: string;
+  takeoff_time: string;
+  landing_time: string;
+  duration: number;
+  max_altitude: number;
+  cable_length: number;
+  weather: string;
+  remarks: string;
+}
+
+/** Satu baris dari respons GET /api/v1/flight-information — dipakai Logbook
+    Penerbangan untuk mengisi kolom Pimpinan (mission_leader) lewat
+    pencocokan mission_id, dan modal Detail Misi. */
+export interface FlightInformationRecord {
+  id?: string | number;
+  mission_id: string | number;
+  mission_leader?: string;
+  takeoff_time?: string;
+  landing_time?: string;
+  duration?: number;
+  max_altitude?: number;
+  cable_length?: number;
+  weather?: string;
+  remarks?: string;
+  [key: string]: unknown;
+}
+
+/** Payload POST /api/v1/licenses saat operator mengaktivasi lisensi baru —
+    menambah baris sertifikat, bukan menandai satu id "aktif". */
+export interface CreateLicenseCertificatePayload {
+  license_code: string;
+  license_name: string;
+  description: string;
+  issued_date: string;
+  expired_date: string;
+}
+
+/** Satu baris sertifikat dari respons GET /api/v1/licenses. */
+export interface LicenseCertificateRecord {
+  id: string | number;
+  license_id?: string;
+  license_name: string;
+  license_code: string;
+  status?: string;
+  issued_date: string;
+  expired_date: string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+/** Satu baris dari respons GET /api/v1/audit-logs. Kategori, aktor, dan
+    "stasiun" dikirim sebagai objek relasi (module, user, user.role), bukan
+    kolom string datar — field lama dipertahankan sebagai fallback untuk
+    bentuk lain yang mungkin masih dipakai endpoint lain. */
+export interface AuditLogRecord {
+  id?: string | number;
+  timestamp?: string;
+  created_at?: string;
+  ts?: string;
+  module?: { name?: string;[key: string]: unknown } | string;
+  user?: {
+    full_name?: string;
+    username?: string;
+    role?: { name?: string;[key: string]: unknown } | string;
+    [key: string]: unknown;
+  };
+  actor?: string;
+  username?: string;
+  station?: string;
+  station_code?: string;
+  category?: string;
+  action?: string;
+  resource?: string;
+  description?: string;
+  ip?: string;
+  ip_address?: string;
+  status?: number;
+  status_code?: number;
+  [key: string]: unknown;
+}
+
+/** Satu baris dari respons GET /api/v1/audit-modules — daftar modul yang
+    bisa muncul sebagai `module` pada AuditLogRecord, dipakai untuk mengisi
+    filter kategori di AuditLogPage alih-alih daftar tetap yang di-hardcode. */
+export interface AuditModuleRecord {
+  id?: string | number;
+  name: string;
+  [key: string]: unknown;
+}
+
+/** Record dari tabel user_licenses — sesuai respons backend. */
+export interface UserLicenseRecord {
+  id: string | number;
+  user_license_id: string;
+  license_id: string;
+  status: string;
+  issued_date?: string;
+  expired_date?: string;
+  description?: string;
+  serial_number?: string;
+  created_at: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
 
 class ApiService {
   private accessToken: string | null = null;
@@ -18,8 +352,12 @@ class ApiService {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
+    /* FormData butuh boundary yang cuma bisa di-set otomatis oleh browser —
+       memaksa Content-Type: application/json di sini akan merusak body
+       multipart (dipakai enhanceImage() untuk unggah berkas citra). */
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(options.headers as Record<string, string> || {}),
     };
 
@@ -53,19 +391,41 @@ class ApiService {
     }
   }
 
+  /** Dipanggil sekali saat aplikasi dibuka untuk memvalidasi refresh token
+      tersimpan terhadap backend — access token lokal bisa saja sudah
+      kedaluwarsa atau dicabut server walau belum lewat expiresAt yang
+      dihitung di klien. */
+  async refreshSession(): Promise<boolean> {
+    return this.tryRefreshToken();
+  }
+
+  /** Memanggil POST /api/v1/auth/refresh apa adanya dan mengembalikan
+      body response-nya tanpa efek samping (token yang tersimpan tidak
+      diubah) — dipakai untuk memeriksa/menampilkan bentuk data yang
+      benar-benar dikirim balik backend. Untuk memperbarui sesi yang
+      sedang berjalan, pakai refreshSession(). */
+  async getAuthRefreshResult(): Promise<unknown> {
+    const response = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: this.refreshToken }),
+    });
+    return response.json();
+  }
+
   private async tryRefreshToken(): Promise<boolean> {
     try {
       const response = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: this.refreshToken }),
+        body: JSON.stringify({ refresh_token: this.refreshToken }),
       });
       if (!response.ok) {
         this.clearTokens();
         return false;
       }
       const data = await response.json();
-      this.setTokens(data.accessToken, data.refreshToken);
+      this.setTokens(data.access_token, data.refresh_token);
       return true;
     } catch {
       this.clearTokens();
@@ -100,14 +460,15 @@ class ApiService {
   // ==========================================
   async login(username: string, password: string) {
     const data = await this.request<{
-      user: any;
-      accessToken: string;
-      refreshToken: string;
+      user: RemoteUser;
+      access_token: string;
+      refresh_token: string;
     }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: username, password: password }),
     });
-    this.setTokens(data.accessToken, data.refreshToken);
+    this.setTokens(data.access_token, data.refresh_token);
     return data;
   }
 
@@ -120,59 +481,230 @@ class ApiService {
   }
 
   async getProfile() {
-    return this.request<any>('/auth/me');
+    return this.request<AuthMeResponse>('/auth/me');
   }
 
   // ==========================================
   // USERS
   // ==========================================
   async getUsers() {
-    return this.request<any[]>('/users');
+    return this.request<unknown[]>('/users');
+  }
+  async getUsersById(id: string) {
+    return this.request<unknown[]>('/users/${id}');
   }
 
-  async createUser(data: { username: string; email: string; password: string; fullName: string; roleId: string }) {
-    return this.request<any>('/users', { method: 'POST', body: JSON.stringify(data) });
+
+  async register(data: Record<string, unknown>) {
+    return this.request<unknown>('/auth/register', { method: 'POST', body: JSON.stringify(data) });
   }
 
-  async updateUser(id: string, data: any) {
-    return this.request<any>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  async updateUser(id: string, data: Record<string, unknown>) {
+    return this.request<unknown>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   }
 
   async deleteUser(id: string) {
-    return this.request<any>(`/users/${id}`, { method: 'DELETE' });
+    return this.request<unknown>(`/users/${id}`, { method: 'DELETE' });
   }
 
   // ==========================================
   // LICENSES
   // ==========================================
-  async getLicense() {
-    return this.request<any>('/licenses');
+  /** Seluruh sertifikat: 1 Software License + 3 Module License. */
+  async getLicenses() {
+    return this.request<LicenseCertificateRecord[]>('/licenses');
+  }
+  async getLicenseById(id: string) {
+    return this.request<unknown[]>('/licenses/' + id);
   }
 
-  async activateModule(code: string, key: string) {
-    return this.request<any>(`/licenses/modules/${code}/activate`, {
+  /** Menyimpan sertifikat hasil aktivasi operator sebagai baris baru pada
+      tabel licenses — dipanggil setelah kode lisensi lolos verifikasi
+      lokal (format, kecocokan lisensi, belum aktif, belum expired). */
+  async createLicenseCertificate(payload: CreateLicenseCertificatePayload) {
+    return this.request<unknown>('/licenses', {
       method: 'POST',
-      body: JSON.stringify({ key }),
+      body: JSON.stringify(payload),
     });
   }
 
-  async deactivateModule(code: string) {
-    return this.request<any>(`/licenses/modules/${code}/deactivate`, { method: 'POST' });
+  /** Mengunci kembali sertifikat beserta seluruh sub-modulnya. */
+  async deactivateLicense(licenseId: string) {
+    return this.request<unknown>(`/licenses/${licenseId}/deactivate`, { method: 'POST' });
   }
 
   async getLicenseHistory(limit = 50) {
-    return this.request<any[]>(`/licenses/history?limit=${limit}`);
+    return this.request<unknown[]>(`/licenses/history?limit=${limit}`);
+  }
+  async getLicensesUser() {
+    return this.request<unknown[]>('/user-licenses');
+  }
+
+  // ==========================================
+  // USER LICENSES
+  // ==========================================
+  /**
+   * Ambil semua record untuk satu user_license_id, kemudian kembalikan
+   * record paling baru berdasarkan kolom `created_at`.
+   */
+  async getUserLicense(userLicenseId: string) {
+    return this.request<UserLicenseRecord[]>(`/user-licenses/${userLicenseId}`);
+  }
+
+  // ==========================================
+  // FLIGHT SIMULATIONS
+  // ==========================================
+  async createFlightSimulation(payload: CreateFlightSimulationPayload) {
+    return this.request<unknown>('/flight-simulations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getFlightSimulations() {
+    return this.request<FlightSimulationRecord[]>('/flight-simulations');
+  }
+
+  async getFlightSimulationById(id: string | number) {
+    return this.request<FlightSimulationRecord>(`/flight-simulations/${id}`);
+  }
+
+  // ==========================================
+  // MISSION FORM OPTIONS
+  // ==========================================
+  async getLocations() {
+    return this.request<LocationRecord[]>('/locations');
+  }
+
+  async getBalloons() {
+    return this.request<BalloonRecord[]>('/balloons');
+  }
+
+  async getOperators() {
+    return this.request<OperatorRecord[]>('/users/operators');
+  }
+
+  // ==========================================
+  // IMAGE ENHANCEMENT
+  // ==========================================
+  async enhanceImage(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<EnhanceImageResult>('/enhance/image', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  // ==========================================
+  // VIDEO ENHANCEMENT
+  // ==========================================
+  /** denoise/contrast/sharpness — 0-100, dikirim sebagai field tambahan
+      di luar file (beda dari enhanceImage yang cuma mengirim file). */
+  async enhanceVideo(file: File, params: { denoise: number; contrast: number; sharpness: number }) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('denoise', String(params.denoise));
+    formData.append('contrast', String(params.contrast));
+    formData.append('sharpness', String(params.sharpness));
+    return this.request<EnhanceVideoResult>('/enhance/video', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async createMedia(payload: CreateMediaPayload) {
+    return this.request<unknown>('/media', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** Katalog Surveillance Media Source (GCSPage). */
+  async getMedia() {
+    return this.request<MediaRecord[]>('/media');
+  }
+
+  // ==========================================
+  // OBJECT DETECTION
+  // ==========================================
+  async detectImage(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<DetectImageResult>('/detect/image', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  /** Memulai job deteksi video (berkas unggahan). Hasilnya cuma job_id —
+      progres per-frame diikuti lewat WebSocket ke WS_BASE + /detect/ws/{job_id}. */
+  async detectVideo(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<DetectVideoJobResult>('/detect/video', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  // ==========================================
+  // FLIGHT MISSIONS
+  // ==========================================
+  async createFlightMission(payload: CreateFlightMissionPayload) {
+    return this.request<FlightMissionRecord>('/flight-missions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** Sumber data Logbook Penerbangan (FlightInfoPage). */
+  async getFlightMissions() {
+    return this.request<FlightMissionRecord[]>('/flight-missions');
+  }
+
+  /** Dipakai aksi Play to Flight / End Flight untuk mengubah status_id. */
+  async updateFlightMission(id: string | number, payload: UpdateFlightMissionPayload) {
+    return this.request<unknown>(`/flight-missions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async createFlightInformation(payload: CreateFlightInformationPayload) {
+    return this.request<unknown>('/flight-information', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** Dipakai Logbook Penerbangan untuk mengisi kolom Pimpinan lewat
+      pencocokan mission_id. */
+  async getFlightInformation() {
+    return this.request<FlightInformationRecord[]>('/flight-information');
+  }
+
+  // ==========================================
+  // AUDIT LOG
+  // ==========================================
+  async getAuditLogs() {
+    return this.request<AuditLogRecord[]>('/audit-logs');
+  }
+
+  /** Daftar modul yang bisa dipakai memfilter audit trail. */
+  async getAuditModules() {
+    return this.request<AuditModuleRecord[]>('/audit-modules');
   }
 
   // ==========================================
   // HEALTH
   // ==========================================
   async getHealth() {
-    return this.request<any>('/health');
+    return this.request<unknown>('/health');
   }
 
   async getReadiness() {
-    return this.request<any>('/health/ready');
+    return this.request<unknown>('/health/ready');
   }
 }
 

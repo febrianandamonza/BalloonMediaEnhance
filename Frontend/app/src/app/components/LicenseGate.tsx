@@ -1,38 +1,52 @@
 'use client';
 import React, { ReactNode } from 'react';
 import { useApp } from '../context';
-import { Lock, KeyRound } from 'lucide-react';
+import { FEATURE_TO_LICENSE, LICENSE_BY_ID } from '../lib/licensing';
+import { Lock, KeyRound, Hash } from 'lucide-react';
 
 interface LicenseGateProps {
+  /** Kode sub-lisensi, mis. "1.3b" */
   moduleCode: string;
+  /** Nama resmi sub-modul — ditampilkan pada pesan penguncian */
   moduleName: string;
   children: ReactNode;
 }
 
+/**
+ * Membungkus halaman modul. Bila lisensi induk belum aktif, konten tetap
+ * dirender di belakang lapisan buram agar operator memahami kapabilitas apa
+ * yang tersedia setelah lisensi diaktifkan.
+ */
 export default function LicenseGate({ moduleCode, moduleName, children }: LicenseGateProps) {
-  const { isLicensed, setCurrentPage } = useApp();
+  const { isLicensed, setCurrentPage, t } = useApp();
 
-  if (isLicensed(moduleCode)) {
-    return <>{children}</>;
-  }
+  if (isLicensed(moduleCode)) return <>{children}</>;
+
+  const licenseId = FEATURE_TO_LICENSE[moduleCode];
+  const def = licenseId ? LICENSE_BY_ID[licenseId] : undefined;
 
   return (
     <div className="license-gate license-gate-locked" style={{ minHeight: '60vh', position: 'relative' }}>
-      <div className="license-gate-content">
-        {children}
-      </div>
+      <div className="license-gate-content" aria-hidden>{children}</div>
+
       <div className="license-gate-overlay">
-        <div className="lock-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Lock size={32} style={{ color: 'var(--text-muted)' }} />
-        </div>
-        <h3>Module License Required</h3>
+        <span className="lock-icon"><Lock size={26} /></span>
+        <h3>{t('Lisensi Modul Diperlukan')}</h3>
         <p>
-          <strong>{moduleName}</strong> requires an active license (Code: {moduleCode}).
-          Contact your administrator to activate this module.
+          <strong>{moduleName}</strong> termasuk dalam lisensi{' '}
+          <strong>{def?.title ?? 'modul terkait'}</strong>. Aktifkan lisensi tersebut pada
+          License Manager menggunakan License Number yang tercetak di sertifikat.
         </p>
-        <button className="btn btn-primary" onClick={() => setCurrentPage('licenses')} style={{ gap: 8 }}>
-          <KeyRound size={15} /> Go to License Manager
-        </button>
+
+        {/* {def && (
+          <span className="gate-serial">
+            <Hash size={12} /> {def.contractRef}-… · berlaku s.d. {def.expiryDate}
+          </span>
+        )} */}
+
+        {/* <button className="btn btn-primary" onClick={() => setCurrentPage('licenses')} style={{ gap: 7 }}>
+          <KeyRound size={14} /> Buka License Manager
+        </button> */}
       </div>
     </div>
   );

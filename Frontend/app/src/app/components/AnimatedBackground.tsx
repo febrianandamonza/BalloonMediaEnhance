@@ -9,30 +9,24 @@ export default function AnimatedBackground() {
   return (
     <div className="animated-bg" aria-hidden="true" style={{
       background: isLight
-        ? '#f8fafc'
-        : 'linear-gradient(180deg, #0a0e17 0%, #0d1117 50%, #111827 100%)',
+        ? 'linear-gradient(135deg, #f0f2f7, #e8eaf0, #f0f2f7)'
+        : 'var(--bg-root)',
     }}>
-      {/* Subtle gradient mesh — dark mode only */}
-      {!isLight && (
-        <>
-          <div style={{
-            position: 'absolute',
-            width: '60vw', height: '60vh',
-            top: '-10%', left: '-10%',
-            background: 'radial-gradient(ellipse, rgba(59,130,246,0.04) 0%, transparent 70%)',
-            filter: 'blur(60px)',
-            pointerEvents: 'none',
-          }} />
-          <div style={{
-            position: 'absolute',
-            width: '50vw', height: '50vh',
-            bottom: '-10%', right: '-10%',
-            background: 'radial-gradient(ellipse, rgba(99,102,241,0.03) 0%, transparent 70%)',
-            filter: 'blur(60px)',
-            pointerEvents: 'none',
-          }} />
-        </>
-      )}
+      <div className="orb orb-1" style={{
+        background: isLight
+          ? 'radial-gradient(circle, rgba(0,136,212,0.06), transparent 70%)'
+          : undefined,
+      }} />
+      <div className="orb orb-2" style={{
+        background: isLight
+          ? 'radial-gradient(circle, rgba(51,102,204,0.05), transparent 70%)'
+          : undefined,
+      }} />
+      <div className="orb orb-3" style={{
+        background: isLight
+          ? 'radial-gradient(circle, rgba(124,77,255,0.04), transparent 70%)'
+          : undefined,
+      }} />
     </div>
   );
 }

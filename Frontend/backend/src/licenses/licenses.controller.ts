@@ -12,8 +12,22 @@ export class LicensesController {
   constructor(private licensesService: LicensesService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get current license with all modules' })
-  getLicense() { return this.licensesService.getLicense(); }
+  @ApiOperation({ summary: 'List all issued certificates with their sub-modules' })
+  getLicenses() { return this.licensesService.getLicenses(); }
+
+  @Post('activate')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Activate a certificate by its printed License Number' })
+  activateLicense(@Body() body: { serialNumber: string }, @Req() req: any) {
+    return this.licensesService.activateLicense(body.serialNumber, req.user.id);
+  }
+
+  @Post(':id/deactivate')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Lock a certificate and all of its sub-modules' })
+  deactivateLicense(@Param('id') id: string, @Req() req: any) {
+    return this.licensesService.deactivateLicense(id, req.user.id);
+  }
 
   @Post('modules/:code/activate')
   @Roles('admin')
