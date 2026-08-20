@@ -230,3 +230,6 @@ Backend/output/
 
 Backend/weights/*.pth
 Backend/weights/*.pt
+
+__pycache__/
+*.py[cod]
