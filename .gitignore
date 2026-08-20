@@ -223,7 +223,8 @@ __marimo__/
 
 
 # Output hasil processing
-Backend/output/
+Backend/storage
+Backend/output
 
 # Log
 *.log
