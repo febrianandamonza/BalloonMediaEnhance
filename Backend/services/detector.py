@@ -691,6 +691,13 @@ class ObjectDetector:
 
                 annotation_time = time.time() - annotation_start
 
+
+                # =========================
+                # WRITE VIDEO
+                # =========================
+                writer.write(annotated)
+
+
                 # =========================
                 # JPEG Encode
                 # =========================
