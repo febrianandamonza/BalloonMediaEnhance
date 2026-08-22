@@ -13,6 +13,7 @@ from utils.handlers import register_exception_handlers
 from api.enhance import router as enhance_router
 from api.detection import router as detection_router
 from api.crowd_counting import router as crowd_counting_router
+from api.crowd_counting_live import router as crowd_counting_live_router
 
 from api.role import router as role_router
 from api.user import router as user_router
@@ -71,6 +72,7 @@ app.include_router(media_router)
 app.include_router(enhance_router)
 app.include_router(detection_router)
 app.include_router(crowd_counting_router)
+app.include_router(crowd_counting_live_router)
 
 
 app.mount(

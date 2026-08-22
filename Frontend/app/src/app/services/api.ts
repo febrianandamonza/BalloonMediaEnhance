@@ -196,6 +196,44 @@ export interface DetectVideoFrameMessage {
   [key: string]: unknown;
 }
 
+/** Respons POST /api/v1/crowd/video — proses berjalan asinkron di
+    backend; hasil per-frame diikuti lewat WebSocket /crowd/ws/{job_id}
+    (lihat WS_BASE), bukan lewat respons HTTP ini. */
+export interface CrowdVideoJobResult {
+  success: boolean;
+  job_id: string;
+}
+
+/** Ringkasan statistik sesi — hanya muncul pada pesan penyelesaian job. */
+export interface CrowdVideoSummary {
+  max_count: number;
+  min_count: number;
+  average_count: number;
+  last_count: number;
+  total_frames: number;
+  fps: number;
+}
+
+/** Satu pesan dari WebSocket /crowd/ws/{job_id} — frame JPEG berbasis64
+    (sudah dianotasi heatmap density + kotak hitung oleh backend) beserta
+    estimasi jumlah orang pada frame tersebut. Field penyelesaian job
+    (temp_path/processing_type/summary/dst) bersifat opsional karena hanya
+    muncul saat job selesai diproses. */
+export interface CrowdVideoFrameMessage {
+  frame?: string;
+  count?: number;
+  progress?: number;
+  frame_number?: number;
+  total_frame?: number;
+  finished?: boolean;
+  temp_path?: string;
+  processing_type?: string;
+  preview_url?: string;
+  processing_time?: number;
+  summary?: CrowdVideoSummary;
+  [key: string]: unknown;
+}
+
 /** Payload POST /api/v1/media — menyimpan hasil /enhance/image atau
     /enhance/video secara permanen, dikaitkan ke flight mission yang dipilih. */
 export interface CreateMediaPayload {
@@ -643,6 +681,18 @@ class ApiService {
     const formData = new FormData();
     formData.append('file', file);
     return this.request<DetectVideoJobResult>('/detect/video', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  /** Memulai sesi crowd counting video (berkas unggahan). Hasilnya cuma
+      job_id — hitungan per-frame diikuti lewat WebSocket ke WS_BASE +
+      /crowd/ws/{job_id}. */
+  async detectCrowdVideo(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<CrowdVideoJobResult>('/crowd/video', {
       method: 'POST',
       body: formData,
     });
