@@ -20,7 +20,6 @@ sys.path.insert(
 
 from models import vgg19
 
-
 class DensityCounter:
 
     def __init__(self):
