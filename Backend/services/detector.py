@@ -22,19 +22,40 @@ YOLO_WEIGHT = WEIGHTS_DIR / "yolo11x.pt"
 class ObjectDetector:
 
     FRAME_INTERVAL = 25
+    CONFIDENCE_THRESHOLD = 0.70
 
     CLASS_MAPPING = {
         "person": "person",
 
         "car": "vehicle",
-        # "bus": "vehicle",
-        # "truck": "vehicle",
         "motorcycle": "vehicle",
-        # "bicycle": "vehicle",
     }
+
+    CLASS_COLORS = {
+        "person": {
+            "bgr": (0, 255, 0),
+            "hex": "#00FF00"
+        },
+
+        "vehicle": {
+            "bgr": (255, 0, 0),
+            "hex": "#0000FF"
+        }
+    }
+
+    def get_class_color(self, mapped_class):
+    
+        return self.CLASS_COLORS.get(
+            mapped_class,
+            {
+                "bgr": (255, 255, 255),
+                "hex": "#FFFFFF"
+            }
+        )
 
     def __init__(self):
         self.model = None
+
 
     def load_model(self):
 
@@ -60,11 +81,12 @@ class ObjectDetector:
         
         return image
     
+    
     def detect_frame(self, frame):
 
         results = self.model.predict(
             source=frame,
-            conf=0.10,
+            conf=self.CONFIDENCE_THRESHOLD,
             imgsz=1280,
             verbose=False
         )
@@ -661,9 +683,12 @@ class ObjectDetector:
 
                     mapped = self.CLASS_MAPPING[label]
 
+                    color = self.get_class_color(mapped)
+
                     objects.append({
                         "class": mapped,
-                        "confidence": round(conf, 2)
+                        "confidence": round(conf, 2),
+                        "color": color["hex"]
                     })
 
                     x1, y1, x2, y2 = map(
@@ -675,7 +700,7 @@ class ObjectDetector:
                         annotated,
                         (x1, y1),
                         (x2, y2),
-                        (0, 255, 0),
+                        color["bgr"],
                         2
                     )
 
@@ -685,7 +710,7 @@ class ObjectDetector:
                         (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.6,
-                        (0, 255, 0),
+                        color["bgr"],
                         2
                     )
 
@@ -922,9 +947,12 @@ class ObjectDetector:
 
             mapped_label = self.CLASS_MAPPING[label]
 
+            color = self.get_class_color(mapped_label)
+
             objects.append({
                 "class": mapped_label,
-                "confidence": round(conf, 2)
+                "confidence": round(conf, 2),
+                "color": color["hex"]
             })
 
             x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -933,7 +961,7 @@ class ObjectDetector:
                 annotated,
                 (x1, y1),
                 (x2, y2),
-                (0, 255, 0),
+                color["bgr"],
                 2
             )
 
@@ -943,7 +971,7 @@ class ObjectDetector:
                 (x1, y1 - 10),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,
-                (0, 255, 0),
+                color["bgr"],
                 2
             )
 
