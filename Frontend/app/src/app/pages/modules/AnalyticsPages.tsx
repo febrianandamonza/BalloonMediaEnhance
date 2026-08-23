@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import LicenseGate from '../../components/LicenseGate';
 import GlassCard from '../../components/GlassCard';
-import { useApp } from '../../context';
+import { useApp, useNavGuard } from '../../context';
 import {
   PageHead, Metric, MetricRow, SectionHead, KVList,
   Sparkline, EmptyState, Segmented,
@@ -45,6 +45,21 @@ interface CrowdSessionResult {
   summary?: CrowdVideoFrameMessage['summary'];
 }
 
+/** Satu frame density-map yang sudah diterima lewat WebSocket — direkam
+    ke dalam array `frames` supaya sesi bisa diputar ulang sebagai
+    linimasa begitu selesai, sama seperti VideoDetectionPage. Dibatasi ke
+    CROWD_FRAME_BUFFER frame terbaru: sesi crowd counting biasanya jauh
+    lebih lama daripada deteksi video biasa, jadi linimasa tak terbatas
+    berisiko menumpuk memori peramban selama sesi berjalan. */
+interface CapturedCrowdFrame {
+  image: string;
+  count: number;
+  /** milidetik sejak sesi dimulai — dipakai label linimasa */
+  t: number;
+}
+
+const CROWD_FRAME_BUFFER = 400;
+
 export function CrowdCountingPage() {
   const { pushToast, offline, t } = useApp();
   const [source, setSource] = useState<'upload' | 'rtsp'>('upload');
@@ -60,19 +75,57 @@ export function CrowdCountingPage() {
 
   const [starting, setStarting] = useState(false);
   const [running, setRunning] = useState(false);
-  /* Frame density-map terakhir yang diterima — hanya disimpan satu, bukan
-     linimasa penuh, supaya sesi panjang tidak menumpuk memori. */
-  const [currentImage, setCurrentImage] = useState<string | null>(null);
+  /* Seluruh frame density-map yang sudah diterima sejauh ini — linimasa
+     sesi, dibatasi CROWD_FRAME_BUFFER frame terbaru (lihat komentar pada
+     CapturedCrowdFrame). */
+  const [frames, setFrames] = useState<CapturedCrowdFrame[]>([]);
+  /* Indeks frame yang sedang ditampilkan. Mengikuti frame terbaru secara
+     otomatis selama liveEdge true (posisi "siaran langsung"); begitu
+     operator menggeser linimasa secara manual, liveEdge dimatikan supaya
+     tampilan tidak "ditarik paksa" kembali ke ujung. */
+  const [playIndex, setPlayIndex] = useState(0);
+  const [liveEdge, setLiveEdge] = useState(true);
+  /* Putar-ulang otomatis lewat frame yang sudah direkam — hanya berlaku
+     setelah sesi selesai. */
+  const [replaying, setReplaying] = useState(false);
   const [count, setCount] = useState(0);
   const [peak, setPeak] = useState(0);
-  const [frames, setFrames] = useState(0);
+  /* Jumlah frame yang sudah diproses backend — angka akumulasi ini
+     berbeda dari panjang array `frames`, yang dibatasi buffer. */
+  const [frameCount, setFrameCount] = useState(0);
   const [threshold] = useState(500);
   const [history, setHistory] = useState<number[]>([]);
   const [jobResult, setJobResult] = useState<CrowdSessionResult | null>(null);
   const [saving, setSaving] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const startedAtRef = useRef<number | null>(null);
+
+  useNavGuard(
+    starting || running,
+    t('Sesi crowd counting sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.'),
+  );
 
   const finished = !running && Boolean(jobResult);
+  const currentIndex = liveEdge && running ? frames.length - 1 : playIndex;
+  const currentFrame = frames[currentIndex];
+  /* Jumlah jiwa yang ditampilkan di badge/Statistik Sesi harus mengikuti
+     frame yang sedang dilihat lewat scrubber, bukan selalu angka live
+     terbaru — kalau tidak, angkanya akan "diam" di nilai lama begitu
+     operator menggeser linimasa menjauh dari live edge. */
+  const displayCount = currentFrame?.count ?? count;
+
+  /* Putar-ulang otomatis: majukan playIndex tiap ~130ms selagi replaying
+     aktif, berhenti sendiri begitu mencapai frame terakhir. */
+  useEffect(() => {
+    if (!replaying) return;
+    const id = window.setInterval(() => {
+      setPlayIndex(i => {
+        if (i + 1 >= frames.length) { setReplaying(false); return i; }
+        return i + 1;
+      });
+    }, 130);
+    return () => window.clearInterval(id);
+  }, [replaying, frames.length]);
 
   /* Sama seperti ImageDetectionPage/VideoDetectionPage — analisis harus
      dikaitkan ke satu flight mission (hanya yang mission_status.name
@@ -104,7 +157,7 @@ export function CrowdCountingPage() {
   const average = history.length
     ? Math.round(history.reduce((a, b) => a + b, 0) / history.length)
     : 0;
-  const overThreshold = count > threshold;
+  const overThreshold = displayCount > threshold;
 
   const closeSocket = () => {
     wsRef.current?.close();
@@ -119,6 +172,7 @@ export function CrowdCountingPage() {
   const openSocket = (jobId: string) => {
     const socket = new WebSocket(`${WS_BASE}/crowd/ws/${jobId}`);
     wsRef.current = socket;
+    startedAtRef.current = Date.now();
 
     socket.onopen = () => setRunning(true);
 
@@ -128,10 +182,14 @@ export function CrowdCountingPage() {
 
         if (data.frame) {
           const next = data.count ?? 0;
-          setCurrentImage(`data:image/jpeg;base64,${data.frame}`);
+          const elapsed = startedAtRef.current ? Date.now() - startedAtRef.current : 0;
+          setFrames(prev => {
+            const appended = [...prev, { image: `data:image/jpeg;base64,${data.frame}`, count: next, t: elapsed }];
+            return appended.length > CROWD_FRAME_BUFFER ? appended.slice(-CROWD_FRAME_BUFFER) : appended;
+          });
           setCount(next);
           setPeak(p => Math.max(p, next));
-          setFrames(f => (data.frame_number != null ? data.frame_number + 1 : f + 1));
+          setFrameCount(f => (data.frame_number != null ? data.frame_number + 1 : f + 1));
           setHistory(h => [...h.slice(-39), next]);
         }
 
@@ -173,7 +231,8 @@ export function CrowdCountingPage() {
     }
     closeSocket();
     setFile({ name: f.name, url: URL.createObjectURL(f), raw: f });
-    setCurrentImage(null); setCount(0); setPeak(0); setFrames(0); setHistory([]); setJobResult(null);
+    setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false);
+    setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setJobResult(null);
   };
 
   const start = async () => {
@@ -191,7 +250,8 @@ export function CrowdCountingPage() {
       return;
     }
     setStarting(true);
-    setCurrentImage(null); setCount(0); setPeak(0); setFrames(0); setHistory([]); setJobResult(null);
+    setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false);
+    setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setJobResult(null);
     try {
       const job = await api.detectCrowdVideo(file.raw);
       openSocket(job.job_id);
@@ -205,11 +265,11 @@ export function CrowdCountingPage() {
 
   const stop = () => {
     closeSocket();
-    pushToast({ tone: 'success', title: t('Sesi dihentikan'), detail: `${frames.toLocaleString('id-ID')} frame diproses · puncak ${peak.toLocaleString('id-ID')} jiwa.` });
+    pushToast({ tone: 'success', title: t('Sesi dihentikan'), detail: `${frameCount.toLocaleString('id-ID')} frame diproses · puncak ${peak.toLocaleString('id-ID')} jiwa.` });
   };
 
   const saveMedia = async () => {
-    if (!jobResult?.temp_path || !jobResult?.processing_type || !missionId || saving) return;
+    if (!jobResult?.temp_path || !jobResult?.processing_type || !missionId) return;
     if (flightInfoId == null) {
       pushToast({
         tone: 'error',
@@ -231,7 +291,8 @@ export function CrowdCountingPage() {
         detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; video asli tetap utuh.'),
       });
       closeSocket();
-      setFile(null); setCurrentImage(null); setCount(0); setPeak(0); setFrames(0); setHistory([]); setJobResult(null); setMissionId('');
+      setFile(null); setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false);
+      setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setJobResult(null); setMissionId('');
     } catch {
       pushToast({ tone: 'error', title: t('Gagal menyimpan media'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
     } finally {
@@ -251,7 +312,7 @@ export function CrowdCountingPage() {
           description={t('Estimasi kepadatan massa dengan overlay density map di atas umpan video.')}
           actions={
             <>
-              <button className="btn btn-secondary" disabled={!canSave || saving} onClick={saveMedia}>
+              <button className="btn btn-secondary" disabled={!canSave} onClick={saveMedia}>
                 {saving
                   ? <><RefreshCw size={15} className="spin" /> {t('Menyimpan…')}</>
                   : <><Save size={15} /> {t('Simpan Media')}</>}
@@ -296,12 +357,12 @@ export function CrowdCountingPage() {
           </div>
         </GlassCard>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 330px', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 433px', gap: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <GlassCard tilt={false}>
               <SectionHead
                 icon={<Video size={15} />}
-                title={finished ? t('Sesi Selesai') : t('Umpan Zona A')}
+                title={finished ? t('Sesi Selesai') : t('Video Zona')}
                 sub={
                   running ? t('Aliran langsung dari sesi berjalan')
                     : finished ? t('Sesi selesai — simpan hasil atau mulai sesi baru')
@@ -309,7 +370,7 @@ export function CrowdCountingPage() {
                 }
                 right={
                   running
-                    ? <span className={`badge ${overThreshold ? 'badge-danger' : 'badge-success'}`}>{`${count.toLocaleString('id-ID')} jiwa`}</span>
+                    ? <span className={`badge ${overThreshold ? 'badge-danger' : 'badge-success'}`}>{`${displayCount.toLocaleString('id-ID')} Orang`}</span>
                     : finished ? <span className="badge badge-info">{t('SELESAI')}</span> : undefined
                 }
               />
@@ -319,14 +380,14 @@ export function CrowdCountingPage() {
                   detail={t('Daya platform sedang diputus. Pulihkan daya melalui prosedur reset teknisi untuk melanjutkan.')}
                   last={[
                     [t('Puncak'), peak ? peak.toLocaleString('id-ID') : '—'],
-                    [t('Frame Diproses'), frames ? frames.toLocaleString('id-ID') : '—'],
+                    [t('Frame Diproses'), frameCount ? frameCount.toLocaleString('id-ID') : '—'],
                   ]}
                 />
-              ) : currentImage ? (
+              ) : currentFrame ? (
                 <div className="cmp" style={{ aspectRatio: '16 / 9' }}>
                   <div className="cmp-layer">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={currentImage} alt="Density map crowd counting" />
+                    <img src={currentFrame.image} alt="Density map crowd counting" />
                   </div>
                 </div>
               ) : file ? (
@@ -338,6 +399,43 @@ export function CrowdCountingPage() {
                   description={t('Pilih sumber video di panel kanan, lalu jalankan analisis untuk melihat umpan langsung.')}
                 />
               )}
+
+              {!offline && frames.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    {finished && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => {
+                          if (!replaying && currentIndex >= frames.length - 1) setPlayIndex(0);
+                          setReplaying(r => !r);
+                        }}
+                      >
+                        {replaying ? <Pause size={13} /> : <Play size={13} />}
+                      </button>
+                    )}
+                    <span className="font-mono text-xs" style={{ color: 'var(--text-muted)', minWidth: 46 }}>
+                      {formatElapsed(currentFrame?.t ?? 0)}
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.max(0, frames.length - 1)}
+                      value={currentIndex}
+                      onChange={e => { setLiveEdge(false); setReplaying(false); setPlayIndex(Number(e.target.value)); }}
+                      style={{ flex: 1, accentColor: 'var(--accent-primary)' }}
+                    />
+                    <span className="font-mono text-xs" style={{ color: 'var(--text-muted)', minWidth: 70, textAlign: 'right' }}>
+                      {t('frame')} {currentIndex + 1}/{frames.length}
+                    </span>
+                    {running && !liveEdge && (
+                      <button className="btn btn-secondary btn-sm" onClick={() => { setLiveEdge(true); setReplaying(false); }}>
+                        {t('Ke Live')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
               {overThreshold && running && (
                 <p className="alert-line danger">
                   Kepadatan melewati ambang {threshold.toLocaleString('id-ID')} jiwa — peringatan
@@ -346,32 +444,7 @@ export function CrowdCountingPage() {
               )}
             </GlassCard>
 
-            <GlassCard tilt={false}>
-              <SectionHead icon={<Activity size={15} />} title={t('Statistik Sesi')} sub={t('Diperbarui tiap frame diproses')} />
-              <MetricRow cols={3}>
-                <Metric label={t('Saat Ini')} value={running || finished ? count.toLocaleString('id-ID') : '—'} color="var(--accent-cyan)" foot={t('jiwa')} />
-                <Metric label={t('Rata-rata')} value={running || finished ? average.toLocaleString('id-ID') : '—'} color="var(--accent-primary)" foot={t('sepanjang sesi')} />
-                <Metric label={t('Puncak')} value={running || finished ? peak.toLocaleString('id-ID') : '—'} color="var(--accent-tertiary)" foot={t('tertinggi')} />
-                <Metric label={t('Frame Diproses')} value={running || finished ? frames.toLocaleString('id-ID') : '—'} foot={t('akumulasi')} />
-                {/* Tidak ada sumber data GPU/latensi asli dari backend saat
-                    ini — disembunyikan sampai backend melaporkannya. */}
-                {/* <Metric label={t('Utilisasi GPU')} value={running ? '78%' : '—'} color="var(--accent-emerald)" foot={t('RTX 4090 Laptop')} /> */}
-                {/* <Metric label={t('Waktu Inferensi')} value={running ? '23 ms' : '—'} color="var(--accent-amber)" foot={t('target ≤ 35 ms')} /> */}
-              </MetricRow>
-            </GlassCard>
 
-            <GlassCard tilt={false}>
-              <SectionHead icon={<Activity size={15} />} title={t('Tren Kepadatan')} sub={t('40 pembacaan terakhir')} />
-              {history.length > 2 ? (
-                <Sparkline data={history} color={overThreshold ? 'var(--danger-400)' : 'var(--accent-cyan)'} height={110} unit=" jiwa" />
-              ) : (
-                <EmptyState
-                  icon={<Activity size={22} />}
-                  title={t('Belum ada data tren')}
-                  description={t('Mulai analisis untuk merekam perubahan kepadatan sepanjang sesi pengawasan.')}
-                />
-              )}
-            </GlassCard>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -420,6 +493,32 @@ export function CrowdCountingPage() {
                   </span>
                   <span className="btn btn-secondary btn-sm" aria-hidden>{t('Telusuri Berkas')}</span>
                 </div>
+              )}
+            </GlassCard>
+            <GlassCard tilt={false}>
+              <SectionHead icon={<Activity size={15} />} title={t('Statistik Sesi')} sub={t('Diperbarui tiap frame diproses')} />
+              <MetricRow cols={3}>
+                <Metric label={t('Saat Ini')} value={running || finished ? displayCount.toLocaleString('id-ID') : '—'} color="var(--accent-cyan)" foot={t('Orang')} />
+                <Metric label={t('Rata-rata')} value={running || finished ? average.toLocaleString('id-ID') : '—'} color="var(--accent-primary)" foot={t('sepanjang sesi')} />
+                <Metric label={t('Puncak')} value={running || finished ? peak.toLocaleString('id-ID') : '—'} color="var(--accent-tertiary)" foot={t('tertinggi')} />
+                <Metric label={t('Frame Diproses')} value={running || finished ? frameCount.toLocaleString('id-ID') : '—'} foot={t('akumulasi')} />
+                {/* Tidak ada sumber data GPU/latensi asli dari backend saat
+                    ini — disembunyikan sampai backend melaporkannya. */}
+                {/* <Metric label={t('Utilisasi GPU')} value={running ? '78%' : '—'} color="var(--accent-emerald)" foot={t('RTX 4090 Laptop')} /> */}
+                {/* <Metric label={t('Waktu Inferensi')} value={running ? '23 ms' : '—'} color="var(--accent-amber)" foot={t('target ≤ 35 ms')} /> */}
+              </MetricRow>
+            </GlassCard>
+
+            <GlassCard tilt={false}>
+              <SectionHead icon={<Activity size={15} />} title={t('Tren Kepadatan')} sub={t('40 pembacaan terakhir')} />
+              {history.length > 2 ? (
+                <Sparkline data={history} color={overThreshold ? 'var(--danger-400)' : 'var(--accent-cyan)'} height={110} unit=" jiwa" />
+              ) : (
+                <EmptyState
+                  icon={<Activity size={22} />}
+                  title={t('Belum ada data tren')}
+                  description={t('Mulai analisis untuk merekam perubahan kepadatan sepanjang sesi pengawasan.')}
+                />
               )}
             </GlassCard>
 
@@ -484,6 +583,11 @@ export function ImageDetectionPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useNavGuard(
+    analyzing,
+    t('Deteksi citra sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.'),
+  );
 
   const [missions, setMissions] = useState<FlightMissionRecord[]>([]);
   const [missionsLoading, setMissionsLoading] = useState(true);
@@ -573,7 +677,7 @@ export function ImageDetectionPage() {
   };
 
   const saveMedia = async () => {
-    if (!detectResult || !missionId || saving) return;
+    if (!detectResult || !missionId) return;
     if (flightInfoId == null) {
       pushToast({
         tone: 'error',
@@ -618,7 +722,7 @@ export function ImageDetectionPage() {
           description={t('Deteksi objek pada citra statis dengan bounding box, label kelas, dan nilai kepercayaan.')}
           actions={
             <>
-              <button className="btn btn-secondary" disabled={!detectResult || saving} onClick={saveMedia}>
+              <button className="btn btn-secondary" disabled={!detectResult} onClick={saveMedia}>
                 {saving
                   ? <><RefreshCw size={15} className="spin" /> {t('Menyimpan…')}</>
                   : <><Save size={15} /> {t('Simpan Media')}</>}
@@ -851,6 +955,11 @@ export function VideoDetectionPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const startedAtRef = useRef<number | null>(null);
 
+  useNavGuard(
+    starting || running,
+    t('Sesi deteksi video sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.'),
+  );
+
   const currentIndex = liveEdge && running ? frames.length - 1 : playIndex;
   const currentFrame = frames[currentIndex];
   const finished = !running && frames.length > 0;
@@ -994,7 +1103,7 @@ export function VideoDetectionPage() {
   };
 
   const saveMedia = async () => {
-    if (!jobResult?.temp_path || !jobResult?.processing_type || !missionId || saving) return;
+    if (!jobResult?.temp_path || !jobResult?.processing_type || !missionId) return;
     if (flightInfoId == null) {
       pushToast({
         tone: 'error',
@@ -1036,7 +1145,7 @@ export function VideoDetectionPage() {
           description={t('Deteksi dan pelacakan objek bergerak pada video misi.')}
           actions={
             <>
-              <button className="btn btn-secondary" disabled={!canSave || saving} onClick={saveMedia}>
+              <button className="btn btn-secondary" disabled={!canSave} onClick={saveMedia}>
                 {saving
                   ? <><RefreshCw size={15} className="spin" /> {t('Menyimpan…')}</>
                   : <><Save size={15} /> {t('Simpan Media')}</>}
@@ -1152,6 +1261,57 @@ export function VideoDetectionPage() {
               )}
             </GlassCard>
 
+
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <GlassCard>
+              <SectionHead icon={<Radio size={15} />} title={t('Sumber Video')} />
+              {RTSP_SOURCE_ENABLED && (
+                <div className="form-group">
+                  <label className="form-label">{t('Jenis Sumber')}</label>
+                  <Segmented
+                    full
+                    value={source}
+                    options={[{ id: 'upload', label: t('Unggah Berkas') }, { id: 'rtsp', label: 'RTSP' }]}
+                    onChange={setSource}
+                  />
+                </div>
+              )}
+
+              {RTSP_SOURCE_ENABLED && source === 'rtsp' ? (
+                <div className="form-group">
+                  <label className="form-label" htmlFor="vid-rtsp">{t('Alamat RTSP')}</label>
+                  <input
+                    id="vid-rtsp"
+                    className="form-input"
+                    value={rtspUrl}
+                    onChange={e => setRtspUrl(e.target.value)}
+                  />
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.55 }}>
+                    {t('Sumber RTSP baru sebatas pratinjau alamat — jalankan deteksi lewat unggah berkas video untuk saat ini.')}
+                  </p>
+                </div>
+              ) : (
+                <div
+                  className={`uploader ${drag ? 'drag' : ''}`}
+                  onClick={() => inputRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); setDrag(true); }}
+                  onDragLeave={() => setDrag(false)}
+                  onDrop={e => { e.preventDefault(); setDrag(false); pick(e.dataTransfer.files?.[0]); }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click(); }}
+                >
+                  <span className="uploader-ring"><UploadCloud size={22} /></span>
+                  <span className="uploader-copy">
+                    <span className="uploader-title">{t('Seret berkas video, atau telusuri')}</span>
+                    <span className="uploader-sub">{t('MP4, AVI, MOV, atau MKV')}</span>
+                  </span>
+                  <span className="btn btn-secondary btn-sm" aria-hidden>{t('Telusuri Berkas')}</span>
+                </div>
+              )}
+            </GlassCard>
             <GlassCard tilt={false}>
               <SectionHead
                 icon={<ListFilter size={15} />}
@@ -1205,56 +1365,6 @@ export function VideoDetectionPage() {
                       })}
                     </tbody>
                   </table>
-                </div>
-              )}
-            </GlassCard>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <GlassCard>
-              <SectionHead icon={<Radio size={15} />} title={t('Sumber Video')} />
-              {RTSP_SOURCE_ENABLED && (
-                <div className="form-group">
-                  <label className="form-label">{t('Jenis Sumber')}</label>
-                  <Segmented
-                    full
-                    value={source}
-                    options={[{ id: 'upload', label: t('Unggah Berkas') }, { id: 'rtsp', label: 'RTSP' }]}
-                    onChange={setSource}
-                  />
-                </div>
-              )}
-
-              {RTSP_SOURCE_ENABLED && source === 'rtsp' ? (
-                <div className="form-group">
-                  <label className="form-label" htmlFor="vid-rtsp">{t('Alamat RTSP')}</label>
-                  <input
-                    id="vid-rtsp"
-                    className="form-input"
-                    value={rtspUrl}
-                    onChange={e => setRtspUrl(e.target.value)}
-                  />
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.55 }}>
-                    {t('Sumber RTSP baru sebatas pratinjau alamat — jalankan deteksi lewat unggah berkas video untuk saat ini.')}
-                  </p>
-                </div>
-              ) : (
-                <div
-                  className={`uploader ${drag ? 'drag' : ''}`}
-                  onClick={() => inputRef.current?.click()}
-                  onDragOver={e => { e.preventDefault(); setDrag(true); }}
-                  onDragLeave={() => setDrag(false)}
-                  onDrop={e => { e.preventDefault(); setDrag(false); pick(e.dataTransfer.files?.[0]); }}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click(); }}
-                >
-                  <span className="uploader-ring"><UploadCloud size={22} /></span>
-                  <span className="uploader-copy">
-                    <span className="uploader-title">{t('Seret berkas video, atau telusuri')}</span>
-                    <span className="uploader-sub">{t('MP4, AVI, MOV, atau MKV')}</span>
-                  </span>
-                  <span className="btn btn-secondary btn-sm" aria-hidden>{t('Telusuri Berkas')}</span>
                 </div>
               )}
             </GlassCard>

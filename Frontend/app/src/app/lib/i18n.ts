@@ -83,6 +83,8 @@ export const EN: Record<string, string> = {
   'Batal': 'Cancel',
   'Batalkan': 'Discard',
   'Tutup': 'Close',
+  'Proses Sedang Berjalan': 'Process In Progress',
+  'Tinggalkan Halaman': 'Leave Page',
   'Simpan': 'Save',
   'Hapus': 'Delete',
   'Ubah': 'Edit',
@@ -281,6 +283,8 @@ export const EN: Record<string, string> = {
   'Estimasi kepadatan massa dengan overlay density map di atas umpan video.':
     'Crowd density estimation with a density-map overlay on the video feed.',
   'Mulai Analisis': 'Start Analysis',
+  'Sesi crowd counting sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.':
+    'A crowd counting session is in progress. Leaving this page will disconnect the session and any unsaved result will be lost.',
   'Umpan Zona A': 'Zone A Feed',
   'Rekaman gimbal Epsilon dengan keluaran density map':
     'Epsilon gimbal recording with density-map output',
@@ -318,6 +322,8 @@ export const EN: Record<string, string> = {
   'Pilih Citra': 'Select Image',
   'Jalankan Deteksi': 'Run Detection',
   'Menganalisis…': 'Analysing…',
+  'Deteksi citra sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.':
+    'Image detection is in progress. Leaving this page will cancel the process and any unsaved result will be lost.',
   'Citra Unggahan': 'Uploaded Image',
   'Hasil Deteksi — Citra Contoh': 'Detection Result — Sample Image',
   'Tarik pembagi untuk membandingkan citra asli dengan keluaran deteksi':
@@ -346,6 +352,8 @@ export const EN: Record<string, string> = {
   'Buka katalog': 'Open catalogue',
   'Deteksi dan pelacakan objek bergerak pada stream langsung.':
     'Detection and tracking of moving objects on the live stream.',
+  'Sesi deteksi video sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.':
+    'A video detection session is in progress. Leaving this page will disconnect the session and any unsaved result will be lost.',
   'Format tidak didukung': 'Format not supported',
   'Gunakan berkas JPG, PNG, atau TIFF.': 'Use a JPG, PNG, or TIFF file.',
 
@@ -354,6 +362,8 @@ export const EN: Record<string, string> = {
   'Peningkatan kualitas citra statis: kontras, ketajaman, dan reduksi derau.':
     'Still-image quality enhancement: contrast, sharpness, and noise reduction.',
   'Muat Citra': 'Load Image',
+  'Proses enhancement citra sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.':
+    'Image enhancement is in progress. Leaving this page will cancel the process and any unsaved result will be lost.',
   'Terapkan': 'Apply',
   'Memproses…': 'Processing…',
   'Hasil Peningkatan — Citra Contoh': 'Enhancement Result — Sample Image',
@@ -374,6 +384,8 @@ export const EN: Record<string, string> = {
   'Peningkatan stream termal dengan 22 palet false color.':
     'Thermal stream enhancement with 22 false-colour palettes.',
   'Mulai Pratinjau': 'Start Preview',
+  'Proses enhancement video sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.':
+    'Video enhancement is in progress. Leaving this page will cancel the process and any unsaved result will be lost.',
   'Rekaman Sebelum dan Sesudah': 'Before and After Recording',
   'Keluaran rantai peningkatan pada umpan gimbal Epsilon':
     'Enhancement chain output on the Epsilon gimbal feed',

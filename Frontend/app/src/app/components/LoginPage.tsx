@@ -7,7 +7,7 @@ import { CountUp, Dots, TypeLine, Magnetic } from './fx';
 import {
   ShieldCheck, ShieldAlert, Loader2, Check, Eye, EyeOff,
   User, KeyRound, ArrowRight, Lock, Radar, CircleDot,
-  Globe2, ScanEye, FileBadge, WifiOff, Award,
+  Globe2, ScanEye, FileBadge, WifiOff, Award,UsersRound,Boxes,Sparkles,LibraryBig
 } from 'lucide-react';
 
 /* Three.js menyentuh objek window saat dimuat, sehingga adegan 3D hanya
@@ -25,10 +25,10 @@ const AUTH_STEPS = [
 /* Kemampuan yang ditonjolkan pada kolom kiri — seluruhnya merujuk fitur
    yang memang tersedia di dalam aplikasi, bukan klaim tambahan. */
 const CAPABILITIES = [
-  { icon: <ScanEye size={16} />, title: 'Analitik Video', desc: 'Crowd counting dan deteksi objek pada umpan EO/IR' },
-  { icon: <Globe2 size={16} />, title: 'Peta Esri', desc: 'Basemap citra dengan proyeksi kerucut pandang' },
-  { icon: <FileBadge size={16} />, title: 'Laporan Resmi', desc: 'Berkas PDF dan Excel berwatermark klasifikasi' },
-  { icon: <WifiOff size={16} />, title: 'Operasi Luring', desc: 'Seluruh fungsi berjalan tanpa jaringan keluar' },
+  { icon: <UsersRound size={16} />, title: 'Crowd Counting', desc: 'Crowd counting dan deteksi objek pada umpan EO/IR' },
+  { icon: <Boxes size={16} />, title: 'Analytic and Object Detection', desc: 'Sistem Intelijen Geospasial Balon Tertambat dengan Kemampuan Analitik dan Deteksi Objek' },
+  { icon: <Sparkles size={16} />, title: 'Digital Analytic Enhancement', desc: 'Modul Sistem Pemrosesan Peningkatan Analitik Digital' },
+  { icon: <LibraryBig size={16} />, title: 'Information & Reporting', desc: 'Modul Sistem Intelijen Geospasial Balon Tambat untuk Informasi dan Pelaporan' },
 ];
 
 export default function LoginPage() {

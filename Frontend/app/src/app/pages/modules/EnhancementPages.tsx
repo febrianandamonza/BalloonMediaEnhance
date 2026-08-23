@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import LicenseGate from '../../components/LicenseGate';
 import GlassCard from '../../components/GlassCard';
-import { useApp } from '../../context';
+import { useApp, useNavGuard } from '../../context';
 import {
   PageHead, Metric, MetricRow, SectionHead, KVList,
   Sparkline, EmptyState, Segmented, Bar,
@@ -63,6 +63,11 @@ export function ImageEnhancementPage() {
   const [missionsLoading, setMissionsLoading] = useState(true);
   const [missionId, setMissionId] = useState('');
   const [flightInfoRecords, setFlightInfoRecords] = useState<FlightInformationRecord[]>([]);
+
+  useNavGuard(
+    busy || saving,
+    t('Proses enhancement citra sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.'),
+  );
 
   /* Enhancement harus dikaitkan ke satu flight mission — dimuat sekali di
      awal supaya operator wajib memilihnya sebelum "Terapkan" bisa dipakai.
@@ -421,6 +426,11 @@ export function VideoEnhancementPage() {
   const [missionsLoading, setMissionsLoading] = useState(true);
   const [missionId, setMissionId] = useState('');
   const [flightInfoRecords, setFlightInfoRecords] = useState<FlightInformationRecord[]>([]);
+
+  useNavGuard(
+    busy || saving,
+    t('Proses enhancement video sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.'),
+  );
 
   /* Sama seperti ImageEnhancementPage — enhancement harus dikaitkan ke satu
      flight mission (hanya yang mission_status.name "Flight"), dan

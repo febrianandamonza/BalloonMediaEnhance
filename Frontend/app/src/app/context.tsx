@@ -75,6 +75,17 @@ interface AppContextType {
   /* Navigation */
   currentPage: string;
   setCurrentPage: (page: string) => void;
+  /** Dipanggil halaman modul untuk memasang/melepas penjaga navigasi.
+      Kirim null untuk melepasnya. Dipakai lewat [[useNavGuard]]. */
+  setNavGuard: (message: string | null) => void;
+  /** Halaman tujuan yang tertahan menunggu konfirmasi operator — null
+      bila tidak ada dialog navigasi yang perlu ditampilkan. Dibaca oleh
+      NavGuardModal. */
+  pendingNav: { page: string; message: string } | null;
+  /** Operator memilih tetap pindah — navigasi dilanjutkan dan dialog ditutup. */
+  confirmPendingNav: () => void;
+  /** Operator membatalkan — dialog ditutup, halaman tidak berubah. */
+  cancelPendingNav: () => void;
   /* Sidebar */
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
@@ -130,6 +141,19 @@ export function useApp() {
   return ctx;
 }
 
+/** Memasang penjaga navigasi selagi `active` bernilai true — operator
+    yang mencoba pindah halaman atau me-reload/menutup tab akan diminta
+    konfirmasi lewat `message`, supaya proses yang sedang berjalan
+    (analisis, sesi live, penyimpanan) tidak hilang percuma. Dilepas
+    otomatis begitu `active` kembali false atau komponen unmount. */
+export function useNavGuard(active: boolean, message: string) {
+  const { setNavGuard } = useApp();
+  useEffect(() => {
+    setNavGuard(active ? message : null);
+    return () => setNavGuard(null);
+  }, [active, message, setNavGuard]);
+}
+
 /* ===== Persistence ===== */
 const SESSION_KEY = 'skystar.session';
 /** Timestamp absolut (epoch ms) hasil GET /auth/me → expires_in. Disimpan
@@ -158,7 +182,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>('id');
   const [platformState, setPlatformState] = useState<PlatformState>('operational');
   const [shutdownAt, setShutdownAt] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [currentPage, setCurrentPageRaw] = useState('dashboard');
+  /* Pesan konfirmasi navigasi — dipasang halaman modul selagi ada proses
+     berjalan (analisis/penyimpanan) yang akan hilang percuma kalau
+     operator berpindah halaman atau me-reload di tengah jalan. Disimpan
+     juga di ref supaya setCurrentPage/beforeunload selalu membaca nilai
+     terbaru tanpa perlu didefinisikan ulang tiap render. */
+  const [navGuardMessage, setNavGuardMessageState] = useState<string | null>(null);
+  const navGuardMessageRef = useRef<string | null>(null);
+  useEffect(() => { navGuardMessageRef.current = navGuardMessage; }, [navGuardMessage]);
+  const currentPageRef = useRef(currentPage);
+  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
+
+  const setNavGuard = useCallback((message: string | null) => {
+    setNavGuardMessageState(message);
+  }, []);
+
+  /* Halaman tujuan yang menunggu konfirmasi operator — NavGuardModal
+     membaca ini untuk menampilkan dialognya sendiri (bukan window.confirm
+     bawaan peramban, supaya tampilannya konsisten dengan modal lain). */
+  const [pendingNav, setPendingNav] = useState<{ page: string; message: string } | null>(null);
+
+  /* Navigasi lewat sidebar, dashboard, notifikasi, dsb. semuanya memanggil
+     fungsi ini — jadi cukup dijaga di satu tempat. Reload/tutup tab
+     dijaga terpisah lewat listener beforeunload di bawah (peramban tidak
+     mengizinkan dialog itu diberi tampilan custom). */
+  const setCurrentPage = useCallback((page: string) => {
+    if (navGuardMessageRef.current && page !== currentPageRef.current) {
+      setPendingNav({ page, message: navGuardMessageRef.current });
+      return;
+    }
+    setCurrentPageRaw(page);
+  }, []);
+
+  const confirmPendingNav = useCallback(() => {
+    setPendingNav(pending => {
+      if (pending) setCurrentPageRaw(pending.page);
+      return null;
+    });
+  }, []);
+
+  const cancelPendingNav = useCallback(() => setPendingNav(null), []);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!navGuardMessage) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [navGuardMessage]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [account, setAccount] = useState<OperatorAccount | null>(null);
   /* epoch ms — kapan access token dari backend kedaluwarsa (hasil
@@ -508,7 +582,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch { /* noop */ }
     setAccount(null);
     setSessionExpiresAt(null);
-    setCurrentPage('dashboard');
+    /* Lewat setter mentah, bukan setCurrentPage: logout (termasuk yang
+       otomatis lewat kedaluwarsa sesi) tidak boleh tertahan dialog
+       konfirmasi navigasi — sesi memang sudah harus berakhir. */
+    setCurrentPageRaw('dashboard');
     setLoginPhase('login');
   }, []);
 
@@ -613,7 +690,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lang, setLang, t,
       platformState, shutdownAt, executeShutdown, restorePlatform,
       offline: platformState === 'shutdown',
-      currentPage, setCurrentPage,
+      currentPage, setCurrentPage, setNavGuard,
+      pendingNav, confirmPendingNav, cancelPendingNav,
       sidebarCollapsed, toggleSidebar,
       account, login, logout, loginPhase, setLoginPhase,
       licenses, activeLicenseIds, isLicenseActive, isLicensed, licenseForPage,

@@ -208,8 +208,10 @@ summary:focus-visible,
   to { transform: translate(-50%, -50%) scale(1); opacity: 0; }
 }
 
-/* Isi tombol harus tetap di atas riak. */
-.btn > * { position: relative; z-index: 1; }
+/* Isi tombol harus tetap di atas riak — .m-ripple dikecualikan karena
+   ia butuh position: absolute agar tidak ikut memuaikan lebar/tinggi
+   tombol saat animasinya berjalan (lihat definisi .m-ripple di atas). */
+.btn > *:not(.m-ripple) { position: relative; z-index: 1; }
 
 /* =====================================================================
    5. TOMBOL

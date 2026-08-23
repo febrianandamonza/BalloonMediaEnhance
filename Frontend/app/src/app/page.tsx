@@ -5,6 +5,7 @@ import { AppProvider, useApp } from './context';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import EmergencyButton from './components/EmergencyButton';
+import NavGuardModal from './components/NavGuardModal';
 import AnimatedBackground from './components/AnimatedBackground';
 import ToastHost from './components/ToastHost';
 import MotionLayer from './components/MotionLayer';
@@ -93,6 +94,7 @@ function AppContent() {
         </main>
       </div>
       <EmergencyButton />
+      <NavGuardModal />
       <ToastHost />
       {/* Mengukur posisi pil dan rel; tidak merender apa pun sendiri. */}
       <MotionLayer />
