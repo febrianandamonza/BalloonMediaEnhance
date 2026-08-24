@@ -30,6 +30,8 @@ from api.flight_information import router as flight_information_router
 from api.audit_module import router as audit_module_router
 from api.audit_log import router as audit_log_router
 from api.media import router as media_router
+from api.notification import router as notification_router
+from api.dashboard import router as dashboard_router
 
 
 app = FastAPI(
@@ -68,6 +70,8 @@ app.include_router(balloon_router)
 app.include_router(audit_module_router)
 app.include_router(audit_log_router)
 app.include_router(media_router)
+app.include_router(notification_router)
+app.include_router(dashboard_router)
 
 app.include_router(enhance_router)
 app.include_router(detection_router)

@@ -92,3 +92,10 @@ class FlightMission(Base):
         back_populates="missions"
     )
 
+    flight_information = relationship(
+        "FlightInformation",
+        back_populates="mission",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
+

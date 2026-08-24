@@ -69,5 +69,12 @@ class FlightInformation(Base):
     )
 
     mission = relationship(
-        "FlightMission"
+        "FlightMission",
+        back_populates="flight_information"
+    )
+
+    media = relationship(
+        "Media",
+        back_populates="flight_information",
+        cascade="all, delete-orphan"
     )

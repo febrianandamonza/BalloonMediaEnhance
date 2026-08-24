@@ -65,7 +65,8 @@ class Media(Base):
     )
 
     flight_information = relationship(
-        "FlightInformation"
+        "FlightInformation",
+        back_populates="media"
     )
 
     uploader = relationship(
