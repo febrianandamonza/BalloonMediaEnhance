@@ -5,6 +5,23 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 
+class NotificationCreate(BaseModel):
+
+    title: str
+
+    description: str | None = None
+
+    level: str
+
+    type: str
+
+    status: str = "terbuka"
+
+    source: str | None = None
+
+    metadata: dict | None = None
+
+
 class NotificationResponse(BaseModel):
 
     id: int

@@ -15,6 +15,41 @@ class NotificationRepository(
             Notification
         )
 
+    def create_notification(
+        self,
+        db,
+        title,
+        description,
+        level,
+        type,
+        status,
+        source,
+        metadata
+    ):
+
+        now = datetime.utcnow()
+
+        notification = Notification(
+            title=title,
+            description=description,
+            level=level,
+            type=type,
+            status=status,
+            isRead=False,
+            source=source,
+            metadata_=metadata,
+            createdAt=now,
+            updatedAt=now
+        )
+
+        db.add(notification)
+
+        db.commit()
+        db.refresh(notification)
+
+        return notification
+    
+
     def get_all(self, db):
 
         return (
