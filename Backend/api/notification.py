@@ -8,7 +8,10 @@ from database.database import get_db
 
 from services.notification_service import NotificationService
 
-from schemas.notification_schema import NotificationResponse
+from schemas.notification_schema import (
+    NotificationResponse,
+    NotificationCreate
+                                         )
 
 
 router = APIRouter(
@@ -17,6 +20,22 @@ router = APIRouter(
 )
 
 service = NotificationService()
+
+
+@router.post(
+    "",
+    response_model=NotificationResponse,
+    status_code=201
+)
+def create_notification(
+    data: NotificationCreate,
+    db: Session = Depends(get_db)
+):
+
+    return service.create(
+        db,
+        data
+    )
 
 
 @router.get(

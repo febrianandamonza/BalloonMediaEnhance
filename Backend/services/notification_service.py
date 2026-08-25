@@ -13,6 +13,24 @@ class NotificationService(
             NotificationRepository()
         )
 
+
+    def create(
+        self,
+        db,
+        data
+    ):
+
+        return self.repository.create_notification(
+            db=db,
+            title=data.title,
+            description=data.description,
+            level=data.level,
+            type=data.type,
+            status=data.status,
+            source=data.source,
+            metadata=data.metadata
+        )
+
     def get_all(self, db):
 
         return self.repository.get_all(db)
