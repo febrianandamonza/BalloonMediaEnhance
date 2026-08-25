@@ -43,7 +43,7 @@ function missionStatusName(m: FlightMissionRecord): string {
 }
 
 export default function BalloonManagementPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [balloons, setBalloons] = useState<Balloon[]>([]);
   /* Misi aktif — dipakai semata untuk mengecek apakah balon yang sedang
      diedit sedang dalam penerbangan (mission_status "Flight"), sebelum
@@ -74,10 +74,19 @@ export default function BalloonManagementPage() {
       } catch (err) {
         console.error('Gagal memuat data balon:', err);
         pushToast({ tone: 'warning', title: t('Gagal memuat data balon'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
+        notify({
+          title: t('Gagal memuat data balon'),
+          detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+          severity: 'peringatan',
+          category: 'Operasional',
+          source: 'Balloon Management',
+          page: 'balloons',
+          silent: true,
+        });
       }
     };
     fetchBalloons();
-  }, [pushToast, t]);
+  }, [pushToast, notify, t]);
 
   /* true bila ada misi berstatus "Flight" yang ditugaskan ke balon ini —
      dicocokkan lewat balloon_id atau, kalau relasi GET tidak menyertakan
@@ -115,9 +124,27 @@ export default function BalloonManagementPage() {
         title: t('Data balon diperbarui'),
         detail: `${data.name}${data.serialNumber ? ` · ${data.serialNumber}` : ''}`,
       });
+      notify({
+        title: t('Data balon diperbarui'),
+        detail: `${data.name}${data.serialNumber ? ` · ${data.serialNumber}` : ''}`,
+        severity: 'informasi',
+        category: 'Operasional',
+        source: 'Balloon Management',
+        page: 'balloons',
+        silent: true,
+      });
     } catch (err) {
       console.error('Gagal memperbarui data balon:', err);
       pushToast({ tone: 'warning', title: t('Gagal menyimpan perubahan'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
+      notify({
+        title: t('Gagal menyimpan perubahan'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Balloon Management',
+        page: 'balloons',
+        silent: true,
+      });
     }
   };
 
@@ -132,9 +159,27 @@ export default function BalloonManagementPage() {
         title: t('Balon ditambahkan'),
         detail: `${data.name}${data.serialNumber ? ` · ${data.serialNumber}` : ''}`,
       });
+      notify({
+        title: t('Balon ditambahkan'),
+        detail: `${data.name}${data.serialNumber ? ` · ${data.serialNumber}` : ''}`,
+        severity: 'informasi',
+        category: 'Operasional',
+        source: 'Balloon Management',
+        page: 'balloons',
+        silent: true,
+      });
     } catch (err) {
       console.error('Gagal membuat balon:', err);
       pushToast({ tone: 'warning', title: t('Gagal menambahkan balon'), detail: t('Tidak bisa terhubung ke server. Pastikan data valid.') });
+      notify({
+        title: t('Gagal menambahkan balon'),
+        detail: t('Tidak bisa terhubung ke server. Pastikan data valid.'),
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Balloon Management',
+        page: 'balloons',
+        silent: true,
+      });
     }
   };
 

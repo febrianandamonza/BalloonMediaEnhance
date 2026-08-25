@@ -89,6 +89,37 @@ export interface CreateLocationPayload {
   longitude: number;
 }
 
+/** Payload POST /api/v1/notifications — dibuat lewat notify() di
+    context.tsx, satu-satunya titik masuk notifikasi (lihat lib/weather.ts
+    untuk salah satu sumbernya, pemantauan cuaca berkala). */
+export interface CreateNotificationPayload {
+  title: string;
+  description: string;
+  level: string;
+  type: string;
+  status: string;
+  source: string;
+  metadata?: Record<string, unknown>;
+}
+
+/** Satu baris dari respons GET /api/v1/notifications — sumber data utama
+    Pusat Notifikasi/AlertsPage (lihat notificationFromRecord di
+    lib/notifications.ts untuk pemetaannya ke AppNotification). */
+export interface NotificationRecord {
+  id: string | number;
+  title?: string;
+  description?: string;
+  level?: string;
+  type?: string;
+  status?: string;
+  /** Status baca — sumber kebenaran untuk read/unread (bukan `status`). */
+  isRead?: boolean;
+  source?: string;
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
 /** Satu baris dari respons GET /api/v1/balloons — opsi platform balon pada
     formulir Misi Baru, dan baris tabel pada halaman Balloon Management. */
 export interface BalloonRecord {
@@ -662,6 +693,25 @@ class ApiService {
     return this.request<unknown>(`/balloons/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
   }
 
+  async createNotification(payload: CreateNotificationPayload) {
+    return this.request<unknown>('/notifications', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getNotifications() {
+    return this.request<NotificationRecord[]>('/notifications');
+  }
+
+  async markNotificationRead(id: string | number) {
+    return this.request<unknown>(`/notifications/${id}/read`, { method: 'PATCH' });
+  }
+
+  async markAllNotificationsRead() {
+    return this.request<unknown>('/notifications/read-all', { method: 'PATCH' });
+  }
+
   async getOperators() {
     return this.request<OperatorRecord[]>('/users/operators');
   }
@@ -755,6 +805,11 @@ class ApiService {
   /** Sumber data Logbook Penerbangan (FlightInfoPage). */
   async getFlightMissions() {
     return this.request<FlightMissionRecord[]>('/flight-missions');
+  }
+
+  /** Dipakai modal Detail Misi pada GeoInt Visualisation. */
+  async getFlightMissionById(id: string | number) {
+    return this.request<FlightMissionRecord>(`/flight-missions/${id}`);
   }
 
   /** Dipakai aksi Play to Flight / End Flight untuk mengubah status_id. */

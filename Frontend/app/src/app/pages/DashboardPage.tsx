@@ -6,11 +6,16 @@ import GlassCard from '../components/GlassCard';
 import { SectionHead, KVList, Sparkline, Metric, MetricRow } from '../components/ui';
 import { LICENSE_CATALOG, LICENSE_BY_ID, daysUntilExpiry, type LicenseId } from '../lib/licensing';
 import { CountUp, Reveal, SpotlightCard, AreaSpark, Magnetic } from '../components/fx';
+import api, {
+  type FlightMissionRecord, type FlightInformationRecord,
+  type FlightSimulationRecord, type MediaRecord,
+} from '../services/api';
+import { clockTime } from '../lib/notifications';
 import {
   Radar, Radio, Timer, HeartPulse, BellRing, KeyRound, ShieldCheck, ShieldAlert,
   UsersRound, ScanSearch, Map, PlaneTakeoff, Anchor, FlaskConical, FileBarChart2,
   MonitorPlay, Wand2, Cable, ArrowUpRight, Activity, Gauge, Wind, Waves,
-  Thermometer, Cpu, AlertTriangle, Info, CircleDot,
+  Thermometer, AlertTriangle, Info, CircleDot, ClipboardCheck, CheckCheck,
 } from 'lucide-react';
 
 /* Three.js menyentuh objek window saat dimuat, sehingga bola dunia hanya
@@ -64,18 +69,117 @@ const QUICK_ACTIONS: {
   { page: 'media-source', label: 'Surveillance Media', icon: <MonitorPlay size={17} />, lic: null },
 ];
 
+/* mission_status kadang string mentah, kadang objek relasi {id, name} —
+   duplikasi lokal dari pola yang sama di InfoPages.tsx (helper kecil
+   tidak dibagi lintas modul halaman). */
+function missionStatusName(m: FlightMissionRecord): string {
+  const status = m.mission_status;
+  return (typeof status === 'string' ? status : status?.name) ?? '';
+}
+
+/** "01:42" dari selisih waktu — dipakai untuk durasi terbang yang masih
+    berjalan (bukan formatDurationHM di InfoPages.tsx, yang memformat
+    nilai `duration` statis yang baru terisi backend setelah mendarat). */
+function elapsedHHMM(ms: number): string {
+  const totalMin = Math.max(0, Math.floor(ms / 60_000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 export default function DashboardPage() {
-  const { setCurrentPage, account, licenses, activeLicenseIds, isLicenseActive, offline, t } = useApp();
+  const {
+    setCurrentPage, account, licenses, activeLicenseIds, isLicenseActive, offline, t,
+    notifications, lang,
+  } = useApp();
 
   /* Saat daya platform diputus, seluruh pembacaan langsung berhenti
      diperbarui. Nilainya diganti tanda pisah agar tidak ada angka lama
      yang tampak seolah masih hidup. */
   const live = (v: string) => (offline ? '—' : v);
 
-  const uptime = useMemo(() => series(3, 30, 99.6, 0.6, 1), []);
   const detections = useMemo(() => series(17, 30, 142, 70, 0), []);
-  const density = useMemo(() => series(29, 30, 340, 180, 0), []);
   const gpu = useMemo(() => series(41, 30, 72, 24, 0), []);
+  const simulationTrend = useMemo(() => series(29, 30, 20, 10, 0), []);
+  const mediaTrend = useMemo(() => series(53, 30, 180, 60, 0), []);
+
+  const [missions, setMissions] = useState<FlightMissionRecord[]>([]);
+  const [flightInfo, setFlightInfo] = useState<FlightInformationRecord[]>([]);
+  const [simulations, setSimulations] = useState<FlightSimulationRecord[]>([]);
+  const [media, setMedia] = useState<MediaRecord[]>([]);
+  const [dashLoading, setDashLoading] = useState(true);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      api.getFlightMissions().catch(() => []),
+      api.getFlightInformation().catch(() => []),
+      api.getFlightSimulations().catch(() => []),
+      api.getMedia().catch(() => []),
+    ]).then(([missionRows, infoRows, simRows, mediaRows]) => {
+      if (cancelled) return;
+      setMissions(missionRows);
+      setFlightInfo(infoRows);
+      setSimulations(simRows);
+      setMedia(mediaRows);
+    }).finally(() => { if (!cancelled) setDashLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  /* Menit berjalan untuk misi yang masih Flight — cukup berdetak tiap 30
+     detik, bukan tiap detik seperti LiveClock, karena granularitas yang
+     ditampilkan hanya HH:MM. */
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const infoByMission = useMemo(() => {
+    const map = new globalThis.Map<string, FlightInformationRecord>();
+    for (const info of flightInfo) map.set(String(info.mission_id), info);
+    return map;
+  }, [flightInfo]);
+
+  const missionStatusCounts = useMemo(() => {
+    const counts = { Planned: 0, Flight: 0, Done: 0 };
+    for (const m of missions) {
+      const name = missionStatusName(m);
+      if (name === 'Planned' || name === 'Flight' || name === 'Done') counts[name] += 1;
+    }
+    return counts;
+  }, [missions]);
+
+  const flyingMissions = useMemo(() => missions
+    .filter(m => missionStatusName(m) === 'Flight')
+    .map(m => {
+      const info = infoByMission.get(String(m.id));
+      const takeoff = info?.takeoff_time ? new Date(info.takeoff_time).getTime() : null;
+      return {
+        code: m.mission_code ?? String(m.id),
+        name: m.mission_name ?? m.mission_code ?? String(m.id),
+        leader: info?.mission_leader ?? '—',
+        elapsed: takeoff ? elapsedHHMM(now - takeoff) : '00:00',
+        altitude: info?.max_altitude ?? 0,
+      };
+    }), [missions, infoByMission, now]);
+
+  const simulationTotal = simulations.length;
+  const mediaCount = media.length;
+  const mediaSizeMb = useMemo(
+    () => Math.round(media.reduce((n, m) => n + (m.file_size ?? 0), 0) / (1024 ** 2)),
+    [media],
+  );
+
+  /* Unread top-5 by id desc — /notifications tidak punya query param, dan
+     data ini sudah dimuat+dipoll secara global oleh context.tsx (dipakai
+     lonceng), jadi diturunkan dari situ, bukan fetch baru. Entri
+     pendingSync (id sementara lokal) disingkirkan karena id-nya bukan id
+     backend asli. */
+  const topAlerts = useMemo(() => notifications
+    .filter(n => !n.read && !n.pendingSync)
+    .sort((a, b) => Number(b.id) - Number(a.id))
+    .slice(0, 5), [notifications]);
 
   const activeCount = activeLicenseIds.length;
   const openModules = LICENSE_CATALOG
@@ -99,18 +203,18 @@ export default function DashboardPage() {
         <span className="dash-hero-fade" aria-hidden />
 
         <div className="dash-hero-body">
-          <span className="dash-hero-eyebrow">
+          {/* <span className="dash-hero-eyebrow">
             <CircleDot size={10} /> {account?.stationCode ?? 'GCS'} · {account?.siteName ?? 'Stasiun Lapangan'}
-          </span>
+          </span> */}
           <h1 className="dash-hero-title">{t('Mission Dashboard')}</h1>
           <p className="dash-hero-sub">
             {t('Pengawasan udara tertambat dengan pemrosesan analitik sepenuhnya lokal — seluruh umpan, model, dan arsip tetap berada di dalam stasiun.')}
           </p>
 
-          <div className="dash-hero-stats">
+          {/* <div className="dash-hero-stats">
             <span>
               <b><LiveClock /></b>
-              <i>{t('Waktu Misi (WIB)')}</i>
+              <i>{t('Waktu Saat ini (WIB)')}</i>
             </span>
             <span>
               <b style={{ color: offline ? 'var(--danger-400)' : 'var(--success-400)' }}>
@@ -126,9 +230,9 @@ export default function DashboardPage() {
               <b>{offline ? '—' : <CountUp to={107} suffix=" mnt" />}</b>
               <i>{t('Durasi Misi #25')}</i>
             </span>
-          </div>
+          </div> */}
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
+          {/* <div style={{ display: 'flex', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
             <Magnetic strength={0.2}>
               <button className="btn btn-primary sheen" onClick={() => setCurrentPage('crowd')}>
                 <UsersRound size={15} /> Mulai Pengawasan
@@ -137,35 +241,27 @@ export default function DashboardPage() {
             <button className="btn btn-glass" onClick={() => setCurrentPage('licenses')}>
               <KeyRound size={15} /> License Manager
             </button>
-          </div>
+          </div> */}
         </div>
       </div>
 
       {/* ===== Kartu statistik ===== */}
       <div className="dash-stats">
         <StatCard
-          icon={<Radar size={20} />} accent="var(--accent-emerald)" delay={0}
-          label={t('Ketersediaan Sistem')} value={offline ? '—' : <CountUp to={99.7} decimals={1} suffix="%" />}
-          sub={t('42 hari 7 jam tanpa henti')} data={uptime} />
+          icon={<FlaskConical size={20} />} accent="var(--accent-cyan)" delay={1}
+          label={t('Total Simulasi Dibuat')} value={dashLoading || offline ? '—' : <CountUp to={simulationTotal} />}
+          sub={t('skenario go/no-go tercatat')} data={simulationTrend} />
         <StatCard
-          icon={<ScanSearch size={20} />} accent="var(--accent-primary)" delay={1}
-          label={t('Deteksi Hari Ini')} value={offline ? '—' : <CountUp to={1284} />}
-          sub={t('objek terlacak sejak 00:00')} data={detections} />
-        <StatCard
-          icon={<UsersRound size={20} />} accent="var(--accent-cyan)" delay={2}
-          label={t('Kepadatan Zona A')} value={offline ? '—' : <CountUp to={342} />}
-          sub={t('estimasi jiwa · puncak 512')} data={density} />
-        <StatCard
-          icon={<Cpu size={20} />} accent="var(--accent-amber)" delay={3}
-          label={t('Utilisasi GPU')} value={offline ? '—' : <CountUp to={78} suffix="%" />}
-          sub={t('inferensi 23 ms per bingkai')} data={gpu} />
+          icon={<MonitorPlay size={20} />} accent="var(--accent-emerald)" delay={2}
+          label={t('Media Tersimpan')} value={dashLoading || offline ? '—' : <CountUp to={mediaCount} />}
+          sub={dashLoading || offline ? '—' : `${mediaSizeMb.toLocaleString('id-ID')} MB ${t('total')}`} data={mediaTrend} />
       </div>
 
       {/* ===== Konten utama ===== */}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 350px', gap: 16, marginTop: 16 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Status lisensi */}
-          <GlassCard tilt={false}>
+          {/* <GlassCard tilt={false}>
             <SectionHead
               icon={<KeyRound size={15} />}
               title={t('Status Lisensi')}
@@ -203,10 +299,14 @@ export default function DashboardPage() {
                 );
               })}
             </div>
-          </GlassCard>
+          </GlassCard> */}
+
+          <FlightMissionsCard missions={flyingMissions} t={t} setCurrentPage={setCurrentPage} loading={dashLoading} />
+
+          <MissionStatusCard counts={missionStatusCounts} t={t} loading={dashLoading} />
 
           {/* Aksi cepat */}
-          <GlassCard tilt={false}>
+          {/* <GlassCard tilt={false}>
             <SectionHead icon={<Activity size={15} />} title={t('Akses Cepat Modul')} sub={t('Modul terkunci membuka halaman aktivasi lisensi')} />
             <div className="quick-grid">
               {QUICK_ACTIONS.map(a => {
@@ -228,10 +328,10 @@ export default function DashboardPage() {
                 );
               })}
             </div>
-          </GlassCard>
+          </GlassCard> */}
 
           {/* Telemetri platform */}
-          <GlassCard tilt={false}>
+          {/* <GlassCard tilt={false}>
             <SectionHead icon={<Gauge size={15} />} title={t('Telemetri Platform')} sub={offline ? t('Data terakhir sebelum pemutusan') : "Pembacaan terkini dari balon dan stasiun penambat"} />
             <MetricRow cols={4}>
               <Metric icon={<Wind size={11} />} label={t('Angin')} value={live("14 km/h")} color="var(--accent-cyan)" foot={t('Barat Laut · aman')} />
@@ -243,7 +343,7 @@ export default function DashboardPage() {
               <Metric icon={<Cable size={11} />} label={t('Kabel Terulur')} value={live("450 m")} foot={t('dari 600 m')} />
               <Metric icon={<Timer size={11} />} label={t('Jam Terbang')} value="904 j" foot={t('akumulasi platform')} />
             </MetricRow>
-          </GlassCard>
+          </GlassCard> */}
         </div>
 
         {/* Kolom kanan */}
@@ -259,22 +359,18 @@ export default function DashboardPage() {
               }
             />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {[
-                { sev: 'peringatan', t: '11:48', msg: 'Hembusan angin 31 km/h mendekati batas aman', src: 'Anemometer GCS-02' },
-                { sev: 'kritis', t: '10:52', msg: 'Objek tidak dikenal memasuki geofence barat laut', src: 'Video Analytic' },
-                { sev: 'peringatan', t: '10:14', msg: 'Resistansi isolasi kabel turun ke 112 MΩ', src: 'Tether Monitor' },
-                { sev: 'peringatan', t: '09:36', msg: 'Kepadatan Zona A melewati ambang 500 jiwa', src: 'Crowd Counting' },
-                { sev: 'informasi', t: '08:41', msg: 'Tekanan helium turun di bawah 155 bar', src: 'Mooring Monitor' },
-              ].map((a, i) => {
-                const color = a.sev === 'kritis' ? 'var(--danger-400)'
-                  : a.sev === 'peringatan' ? 'var(--warning-400)' : 'var(--info-400)';
-                const Icon = a.sev === 'kritis' ? ShieldAlert : a.sev === 'peringatan' ? AlertTriangle : Info;
+              {topAlerts.length === 0 ? (
+                <p className="sc-foot" style={{ padding: '4px 2px' }}>{t('Tidak ada peringatan belum dibaca.')}</p>
+              ) : topAlerts.map(n => {
+                const color = n.severity === 'kritis' ? 'var(--danger-400)'
+                  : n.severity === 'peringatan' ? 'var(--warning-400)' : 'var(--info-400)';
+                const Icon = n.severity === 'kritis' ? ShieldAlert : n.severity === 'peringatan' ? AlertTriangle : Info;
                 return (
-                  <div key={i} className="alert-row" style={{ ['--al' as string]: color }}>
+                  <div key={n.id} className="alert-row" style={{ ['--al' as string]: color }}>
                     <Icon size={14} style={{ color, flexShrink: 0, marginTop: 1 }} />
                     <span style={{ minWidth: 0 }}>
-                      <span className="ar-msg">{a.msg}</span>
-                      <span className="ar-meta">{a.t} WIB · {a.src}</span>
+                      <span className="ar-msg">{t(n.detail || n.title)}</span>
+                      <span className="ar-meta">{clockTime(n.ts, lang)} WIB · {t(n.source)}</span>
                     </span>
                   </div>
                 );
@@ -282,7 +378,7 @@ export default function DashboardPage() {
             </div>
           </GlassCard>
 
-          <GlassCard tilt={false}>
+          {/* <GlassCard tilt={false}>
             <SectionHead icon={<Radar size={15} />} title={t('Ringkasan Stasiun')} />
             <KVList rows={[
               ['Stasiun', account?.station ?? '—'],
@@ -294,14 +390,14 @@ export default function DashboardPage() {
               ['Mode Data', 'Offline (Zero Cloud)'],
               ['Lisensi Berakhir', `${nearestExpiry} hari lagi`],
             ]} />
-          </GlassCard>
+          </GlassCard> */}
 
-          <GlassCard tilt={false}>
+          {/* <GlassCard tilt={false}>
             <SectionHead icon={<Activity size={15} />} title={t('Beban Pemrosesan')} sub={t('30 pembacaan terakhir')} />
             <Sparkline data={gpu} color="var(--accent-amber)" height={70} label={t('Utilisasi GPU')} unit="%" />
             <div style={{ height: 10 }} />
             <Sparkline data={detections} color="var(--accent-primary)" height={70} label={t('Deteksi per menit')} unit="" />
-          </GlassCard>
+          </GlassCard> */}
         </div>
       </div>
     </div>
@@ -341,5 +437,107 @@ function StatCard({
         </div>
       </SpotlightCard>
     </Reveal>
+  );
+}
+
+/* Tile ringkasan lokal — pola dan kelas CSS (lic-summary/lic-summary-tile)
+   sama persis dengan yang dipakai Flight Information untuk tiga tile
+   Planned/Flight/Done ini, supaya bahasa visualnya konsisten alih-alih
+   bar tipis yang meregang aneh saat kartu ini melebar penuh. */
+function StatusTile({
+  icon, accent, label, value, foot,
+}: {
+  icon: React.ReactNode; accent: string; label: string; value: string; foot?: string;
+}) {
+  return (
+    <div className="lic-summary-tile">
+      <span
+        className="ico"
+        style={{
+          background: `color-mix(in srgb, ${accent} 14%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${accent} 24%, transparent)`,
+          color: accent,
+        }}
+      >
+        {icon}
+      </span>
+      <span style={{ minWidth: 0 }}>
+        <span className="lbl">{label}</span>
+        <span className="val" style={{ fontSize: 17 }}>{value}</span>
+        {foot && <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-disabled)', marginTop: 2 }}>{foot}</span>}
+      </span>
+    </div>
+  );
+}
+
+function MissionStatusCard({
+  counts, t, loading,
+}: {
+  counts: { Planned: number; Flight: number; Done: number };
+  t: (s: string) => string;
+  loading?: boolean;
+}) {
+  return (
+    <GlassCard tilt={false}>
+      <SectionHead icon={<Activity size={15} />} title={t('Misi per Status')} sub={t('Distribusi status misi saat ini')} />
+      <div className="lic-summary" style={{ marginBottom: 0 }}>
+        <StatusTile icon={<ClipboardCheck size={19} />} accent="var(--warning-400)" label={t('Planned')} value={loading ? '—' : String(counts.Planned)} foot={t('belum lepas landas')} />
+        <StatusTile icon={<PlaneTakeoff size={19} />} accent="var(--accent-primary)" label={t('Flight')} value={loading ? '—' : String(counts.Flight)} foot={t('sedang berjalan')} />
+        <StatusTile icon={<CheckCheck size={19} />} accent="var(--accent-emerald)" label={t('Done')} value={loading ? '—' : String(counts.Done)} foot={t('sudah selesai')} />
+      </div>
+    </GlassCard>
+  );
+}
+
+function FlightMissionsCard({
+  missions, t, setCurrentPage, loading,
+}: {
+  missions: { code: string; name: string; leader: string; elapsed: string; altitude: number }[];
+  t: (s: string) => string;
+  setCurrentPage: (page: string) => void;
+  loading?: boolean;
+}) {
+  return (
+    <GlassCard tilt={false}>
+      <SectionHead
+        icon={<PlaneTakeoff size={15} />}
+        title={t('Misi Sedang Terbang')}
+        sub={`${loading ? '—' : missions.length} ${t('misi berstatus Flight')}`}
+        right={
+          <button className="btn btn-ghost btn-sm" onClick={() => setCurrentPage('flight-info')}>
+            Kelola <ArrowUpRight size={12} />
+          </button>
+        }
+      />
+      {missions.length === 0 ? (
+        <p className="sc-foot" style={{ padding: '4px 2px' }}>
+          {loading ? t('Memuat…') : t('Tidak ada misi berstatus Flight saat ini.')}
+        </p>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8 }}>
+          {missions.map(m => (
+            <button
+              key={m.code}
+              onClick={() => setCurrentPage('flight-info')}
+              className="select-card on"
+            >
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'var(--accent-primary)' }}>
+                  <PlaneTakeoff size={13} />
+                  <span className="sc-title" style={{ margin: 0 }}>{m.name}</span>
+                </span>
+                <span className="lic-status on" style={{ fontSize: 9, padding: '3px 8px' }}>
+                  <PlaneTakeoff size={10} /> FLIGHT
+                </span>
+              </span>
+              <span className="sc-foot" style={{ fontFamily: 'var(--font-code)' }}>
+                {m.code} · {m.leader}
+              </span>
+              <span className="sc-foot">{t('Terbang')} {m.elapsed} · {m.altitude} m</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </GlassCard>
   );
 }

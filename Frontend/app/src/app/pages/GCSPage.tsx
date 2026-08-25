@@ -101,7 +101,7 @@ function formatBytes(b: number) {
 }
 
 export default function MediaSourcePage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [mediaLoading, setMediaLoading] = useState(true);
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -186,8 +186,17 @@ export default function MediaSourcePage() {
         title: `${rejected.length} berkas ditolak`,
         detail: rejected.map(r => `${r.name}: ${r.message}`).join(' · '),
       });
+      notify({
+        title: `${rejected.length} berkas ditolak`,
+        detail: rejected.map(r => `${r.name}: ${r.message}`).join(' · '),
+        severity: 'peringatan',
+        category: 'Media',
+        source: 'Surveillance Media',
+        page: 'media-source',
+        silent: true,
+      });
     }
-  }, [pushToast]);
+  }, [pushToast, notify]);
 
   /* Kemajuan pemasukan berkas ke penyimpanan lokal. */
   useEffect(() => {
@@ -233,10 +242,19 @@ export default function MediaSourcePage() {
         title: `${finished.length} berkas masuk katalog`,
         detail: finished.map(f => f.name).join(' · '),
       });
+      notify({
+        title: `${finished.length} berkas masuk katalog`,
+        detail: finished.map(f => f.name).join(' · '),
+        severity: 'informasi',
+        category: 'Media',
+        source: 'Surveillance Media',
+        page: 'media-source',
+        silent: true,
+      });
     }, 700);
 
     return () => window.clearTimeout(timer);
-  }, [queue, pushToast]);
+  }, [queue, pushToast, notify]);
 
   /* Sorotan mengikuti kursor pada area unggah. */
   const trackPointer = (e: React.MouseEvent) => {
@@ -253,6 +271,15 @@ export default function MediaSourcePage() {
     setSelected(null);
     if (viewing?.id === id) setViewing(null);
     pushToast({ tone: 'warning', title: 'Berkas dihapus', detail: `${item?.name ?? 'Berkas'} dikeluarkan dari katalog media.` });
+    notify({
+      title: 'Berkas dihapus',
+      detail: `${item?.name ?? 'Berkas'} dikeluarkan dari katalog media.`,
+      severity: 'peringatan',
+      category: 'Media',
+      source: 'Surveillance Media',
+      page: 'media-source',
+      silent: true,
+    });
   };
 
   /* Menyalin berkas ke folder ekspor stasiun. Karena GCS beroperasi
@@ -263,6 +290,15 @@ export default function MediaSourcePage() {
       tone: 'success',
       title: 'Berkas disalin ke folder ekspor',
       detail: `${item.name} · ${formatBytes(item.bytes)} — tujuan D:\\SkyStar\\export.`,
+    });
+    notify({
+      title: 'Berkas disalin ke folder ekspor',
+      detail: `${item.name} · ${formatBytes(item.bytes)} — tujuan D:\\SkyStar\\export.`,
+      severity: 'informasi',
+      category: 'Media',
+      source: 'Surveillance Media',
+      page: 'media-source',
+      silent: true,
     });
   };
 

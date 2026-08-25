@@ -9,11 +9,15 @@ import {
 import { type OperatorAccount } from './lib/auth';
 import { loadLang, saveLang, translate, type Lang } from './lib/i18n';
 import {
-  loadNotifications, saveNotifications, seedNotifications, pickLiveEvent,
-  CATEGORY_PAGE, SEVERITY_RANK, LIVE_INTERVAL_MS,
+  seedNotifications, notificationFromRecord,
+  CATEGORY_PAGE, SEVERITY_RANK, MAX_STORED, NOTIFICATIONS_POLL_INTERVAL_MS,
   type AppNotification, type AlertStatus, type LiveEvent,
 } from './lib/notifications';
-import api from './services/api';
+import api, { type FlightMissionRecord } from './services/api';
+import {
+  fetchCurrentWeather, deriveWeatherLevel, buildWeatherSentence, buildWeatherTitle,
+  WEATHER_POLL_INTERVAL_MS,
+} from './lib/weather';
 
 import { getJakartaNow } from './lib/date';
 
@@ -72,6 +76,8 @@ interface AppContextType {
   restorePlatform: () => void;
   /** true bila platform sedang mati; dipakai halaman modul. */
   offline: boolean;
+  /** true bila perangkat benar-benar terkoneksi internet (navigator.onLine). */
+  isOnline: boolean;
   /* Navigation */
   currentPage: string;
   setCurrentPage: (page: string) => void;
@@ -118,14 +124,18 @@ interface AppContextType {
   unreadCount: number;
   openAlertCount: number;
   /** Mencatat peringatan baru; yang berat sekaligus dimunculkan sebagai toast. */
-  notify: (event: LiveEvent & { page?: string | null }) => void;
-  markRead: (id: number) => void;
+  notify: (event: LiveEvent & { page?: string | null; silent?: boolean }) => void;
+  markRead: (id: string | number) => void;
   markAllRead: () => void;
-  setAlertStatus: (id: number, status: AlertStatus) => void;
-  removeNotification: (id: number) => void;
+  setAlertStatus: (id: string | number, status: AlertStatus) => void;
+  removeNotification: (id: string | number) => void;
   clearNotifications: () => void;
   /** Mengembalikan riwayat ke isi bawaan pabrik. */
   resetNotifications: () => void;
+  /** Menarik ulang GET /api/v1/notifications secara manual — dipakai
+      tombol "Sinkronkan", melengkapi polling otomatis. */
+  syncNotifications: () => void;
+  notifSyncing: boolean;
   notifOpen: boolean;
   setNotifOpen: (open: boolean) => void;
   /* Emergency */
@@ -176,6 +186,14 @@ function emptyLicenseState(): LicenseState {
   }, {} as LicenseState);
 }
 
+/** mission_status kadang berupa string mentah, kadang objek relasi
+    {id, name} — dibaca seragam lewat helper ini (sama seperti pola yang
+    dipakai di InfoPages.tsx/BalloonManagementPage.tsx). */
+function missionStatusName(m: FlightMissionRecord): string {
+  const status = m.mission_status;
+  return (typeof status === 'string' ? status : status?.name) ?? '';
+}
+
 /* ===== Provider ===== */
 export function AppProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>('dark');
@@ -183,6 +201,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [platformState, setPlatformState] = useState<PlatformState>('operational');
   const [shutdownAt, setShutdownAt] = useState<string | null>(null);
   const [currentPage, setCurrentPageRaw] = useState('dashboard');
+
+  /* Status koneksi internet perangkat sesungguhnya — terpisah dari
+     `offline` (yang berarti platform dimatikan secara simulasi). Dibaca
+     dari navigator.onLine dan diperbarui lewat event online/offline. */
+  const [isOnline, setIsOnline] = useState(true);
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    setIsOnline(navigator.onLine);
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
   /* Pesan konfirmasi navigasi — dipasang halaman modul selagi ada proses
      berjalan (analisis/penyimpanan) yang akan hilang percuma kalau
      operator berpindah halaman atau me-reload di tengah jalan. Disimpan
@@ -245,6 +282,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
+  /* Bacaan terkini untuk dipakai di luar setState (mis. markRead perlu
+     tahu pendingSync sebelum memutuskan memanggil backend), tanpa membuat
+     callback yang membacanya ikut berubah identitas setiap notifikasi
+     baru masuk. */
+  const notifRef = useRef<AppNotification[]>([]);
+  useEffect(() => { notifRef.current = notifications; }, [notifications]);
 
   /* Pulihkan tema & sesi terakhir dari penyimpanan peramban.
      localStorage baru tersedia setelah komponen terpasang, sehingga
@@ -308,8 +351,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [theme]);
 
   /* Satu-satunya sumber status lisensi: database lewat refreshLicenseCatalog().
-     Dipanggil sekali saat aplikasi terpasang, lalu diulang tiap
-     LIVE_INTERVAL_MS (pola sama dengan polling notifikasi di bawah) —
+     Dipanggil sekali saat aplikasi terpasang, lalu diulang tiap 5 detik —
      supaya perubahan yang dibuat admin di backend ikut muncul di sesi
      lain (mis. operator) yang sudah terlanjur terbuka, tanpa reload
      manual dan tanpa localStorage di tengah-tengah sama sekali. Setiap
@@ -396,13 +438,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       page: event.page !== undefined ? event.page : CATEGORY_PAGE[event.category],
       reading: event.reading,
       threshold: event.threshold,
+      metadata: event.metadata,
+      pendingSync: true,
     };
-    setNotifications(prev => [entry, ...prev].slice(0, 200));
+    setNotifications(prev => [entry, ...prev].slice(0, MAX_STORED));
+
+    /* Setiap notifikasi ditulis ke backend juga (best-effort). Entri lokal
+       ini punya id sementara (angka acak) sampai penyegaran berkala
+       menemukan baris yang sama dari backend — pencocokan judul+sumber
+       dalam jendela beberapa menit (lihat effect penyegaran) mencegahnya
+       tampil dobel begitu id aslinya datang. */
+    api.createNotification({
+      title: entry.title,
+      description: entry.detail,
+      level: entry.severity,
+      type: entry.category,
+      status: 'unread',
+      source: entry.source,
+      metadata: entry.metadata ?? {},
+    }).catch(() => { });
 
     /* Hanya peringatan berbobot yang memotong perhatian operator lewat
        toast. Yang bersifat informasi cukup menunggu di lonceng — kalau
        semuanya memaksa muncul, tidak ada lagi yang terasa penting. */
-    if (!event.silent && SEVERITY_RANK[entry.severity] >= 2) {
+    if (!event.silent && SEVERITY_RANK[entry.severity] >= 1) {
       pushToast({
         tone: entry.severity === 'kritis' ? 'error' : 'warning',
         title: entry.title,
@@ -414,21 +473,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [pushToast, lang]);
 
-  const markRead = useCallback((id: number) => {
+  const markRead = useCallback((id: string | number) => {
     setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
+    /* Entri dengan id sementara (belum direkonsiliasi dengan baris
+       backend aslinya, lihat notify()/pendingSync) tidak dikenal backend
+       — memanggil endpoint untuknya cuma menghasilkan request gagal yang
+       tidak berguna, jadi dilewati sampai id aslinya datang. */
+    const target = notifRef.current.find(n => n.id === id);
+    if (!target?.pendingSync) {
+      api.markNotificationRead(id).catch(() => { });
+    }
   }, []);
 
   const markAllRead = useCallback(() => {
     setNotifications(prev => prev.map(n => (n.read ? n : { ...n, read: true })));
+    api.markAllNotificationsRead().catch(() => { });
   }, []);
 
   /* Menandai status penanganan sekaligus menganggapnya sudah dibaca —
      mustahil menangani sesuatu yang belum sempat dilihat. */
-  const setAlertStatus = useCallback((id: number, status: AlertStatus) => {
+  const setAlertStatus = useCallback((id: string | number, status: AlertStatus) => {
     setNotifications(prev => prev.map(n => (n.id === id ? { ...n, status, read: true } : n)));
   }, []);
 
-  const removeNotification = useCallback((id: number) => {
+  const removeNotification = useCallback((id: string | number) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
   }, []);
 
@@ -442,43 +510,109 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [notifications],
   );
 
-  /* Riwayat dimuat saat operator masuk dan dikosongkan saat keluar.
-     localStorage baru ada setelah komponen terpasang, jadi pemuatan
-     memang harus terjadi di dalam effect. */
-  /* Penanda ini melewatkan satu kali penulisan tepat setelah pemuatan.
-     Tanpa itu, effect penyimpanan yang berjalan pada commit yang sama
-     masih memegang daftar kosong dan akan menimpa riwayat yang baru saja
-     dibaca dari penyimpanan. */
-  const lewatiSimpan = useRef(true);
-
+  /* Riwayat notifikasi dimuat dari backend, bukan localStorage — GET
+     /api/v1/notifications adalah satu-satunya sumber saat operator masuk. */
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!account) { setNotifications([]); return; }
-    lewatiSimpan.current = true;
-    setNotifications(loadNotifications(account.username));
+    let cancelled = false;
+    api.getNotifications().then(records => {
+      if (cancelled) return;
+      const mapped = records.map(notificationFromRecord).sort((a, b) => b.ts - a.ts).slice(0, MAX_STORED);
+      setNotifications(mapped);
+    }).catch(() => { });
+    return () => { cancelled = true; };
   }, [account]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  useEffect(() => {
-    if (!account) return;
-    if (lewatiSimpan.current) { lewatiSimpan.current = false; return; }
-    /* Daftar kosong pun disimpan — itu keputusan operator, bukan
-       ketiadaan data. */
-    saveNotifications(account.username, notifications);
-  }, [notifications, account]);
+  /* Tarik ulang GET /api/v1/notifications dan gabungkan ke state — dipakai
+     baik oleh polling berkala maupun tombol "Sinkronkan" manual. Entri
+     baru ditambahkan; entri yang masih pendingSync (id sementara dari
+     notify(), lihat AppNotification) ditukar dengan baris asli begitu
+     ditemukan lewat judul+sumber dalam jendela 3 menit — bukan sekadar
+     dilewati, supaya id sementaranya tidak nyangkut selamanya (aksi yang
+     menyentuh backend, mis. tandai dibaca, butuh id asli). Entri lain
+     (bukan pendingSync) tidak pernah ditimpa, supaya status baca/tangani
+     yang baru diubah operator secara lokal tidak terlempar balik (backend
+     belum punya endpoint untuk menyimpan status itu). */
+  const [notifSyncing, setNotifSyncing] = useState(false);
 
-  /* Umpan peristiwa langsung. Berhenti total begitu daya diputus: itulah
-     yang membuat keadaan luring benar-benar terasa mati, bukan sekadar
-     berganti warna. */
-  const notifRef = useRef<AppNotification[]>([]);
-  useEffect(() => { notifRef.current = notifications; }, [notifications]);
+  const syncNotifications = useCallback(async () => {
+    if (!account) return;
+    setNotifSyncing(true);
+    try {
+      const records = await api.getNotifications();
+      setNotifications(prev => {
+        const mapped = records.map(notificationFromRecord);
+        const additions: AppNotification[] = [];
+        let next = prev;
+        let changed = false;
+
+        for (const r of mapped) {
+          if (next.some(n => n.id === r.id)) continue;
+          const pendingIdx = next.findIndex(n =>
+            n.pendingSync && n.title === r.title && n.source === r.source && Math.abs(n.ts - r.ts) < 3 * 60_000,
+          );
+          if (pendingIdx !== -1) {
+            const pending = next[pendingIdx];
+            next = next.map((n, i) => (i === pendingIdx ? { ...r, read: pending.read || r.read } : n));
+            changed = true;
+          } else {
+            additions.push(r);
+          }
+        }
+
+        if (!changed && additions.length === 0) return prev;
+        return [...additions, ...next].sort((a, b) => b.ts - a.ts).slice(0, MAX_STORED);
+      });
+    } catch {
+      /* best-effort — polling/tombol berikutnya akan mencoba lagi */
+    } finally {
+      setNotifSyncing(false);
+    }
+  }, [account]);
 
   useEffect(() => {
     if (!account || platformState === 'shutdown') return;
-    const id = window.setInterval(() => {
-      const recent = notifRef.current.slice(0, 4).map(n => n.title);
-      notify(pickLiveEvent(recent));
-    }, LIVE_INTERVAL_MS);
+    const id = window.setInterval(syncNotifications, NOTIFICATIONS_POLL_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [account, platformState, syncNotifications]);
+
+  /* Pemantauan cuaca berkala pada lokasi tiap misi yang sedang Flight —
+     notify() di bawah yang menulis ke backend sekaligus mendorongnya ke
+     lonceng/AlertsPage. */
+  const weatherCheckRunning = useRef(false);
+
+  useEffect(() => {
+    if (!account || platformState === 'shutdown') return;
+
+    const checkFlightWeather = async () => {
+      if (weatherCheckRunning.current) return;
+      weatherCheckRunning.current = true;
+      try {
+        const missions = await api.getFlightMissions().catch(() => []);
+        const flying = missions.filter(m => missionStatusName(m) === 'Flight');
+
+        await Promise.allSettled(flying.map(async (m) => {
+          const lat = Number(m.location?.latitude);
+          const lon = Number(m.location?.longitude);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+          const missionName = 'Misi ' + String(m.mission_name ?? m.mission_code ?? '');
+          const weather = await fetchCurrentWeather(lat, lon);
+          const level = deriveWeatherLevel(weather.current);
+          const detail = buildWeatherSentence(weather.current, missionName);
+          const title = buildWeatherTitle(new Date());
+
+          notify({ title, detail, severity: level, category: 'Cuaca', source: missionName, metadata: weather });
+        }));
+      } finally {
+        weatherCheckRunning.current = false;
+      }
+    };
+
+    checkFlightWeather();
+    const id = window.setInterval(checkFlightWeather, WEATHER_POLL_INTERVAL_MS);
     return () => window.clearInterval(id);
   }, [account, platformState, notify]);
 
@@ -690,6 +824,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lang, setLang, t,
       platformState, shutdownAt, executeShutdown, restorePlatform,
       offline: platformState === 'shutdown',
+      isOnline,
       currentPage, setCurrentPage, setNavGuard,
       pendingNav, confirmPendingNav, cancelPendingNav,
       sidebarCollapsed, toggleSidebar,
@@ -699,7 +834,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toasts, pushToast, dismissToast, dismissAllToasts,
       notifications, unreadCount, openAlertCount, notify,
       markRead, markAllRead, setAlertStatus, removeNotification,
-      clearNotifications, resetNotifications, notifOpen, setNotifOpen,
+      clearNotifications, resetNotifications, syncNotifications, notifSyncing,
+      notifOpen, setNotifOpen,
       showEmergencyModal, setShowEmergencyModal,
     }}>
       {children}

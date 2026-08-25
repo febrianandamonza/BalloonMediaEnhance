@@ -131,20 +131,20 @@ const moduleLicense03: LicenseDef = {
         'Peningkatan stream video real-time dengan 22+ palet false color termal sesuai Epsilon Manual §5.7.3.',
       page: 'enhance-video',
     },
-    {
-      code: '1.2c',
-      name: 'Interface Integrasi (API) Main Tether Cable',
-      description:
-        'Endpoint REST & WebSocket lokal untuk pertukaran data daya dan data link kabel penambat (Modbus TCP/RTU).',
-      page: 'tether-api',
-    },
-    {
-      code: '1.2d',
-      name: 'Monitoring Checking Capability Tether Cable',
-      description:
-        'Dashboard kesehatan kabel penambat: tegangan, arus, resistansi isolasi, kontinuitas, dan SNR serat optik.',
-      page: 'tether-monitor',
-    },
+    // {
+    //   code: '1.2c',
+    //   name: 'Interface Integrasi (API) Main Tether Cable',
+    //   description:
+    //     'Endpoint REST & WebSocket lokal untuk pertukaran data daya dan data link kabel penambat (Modbus TCP/RTU).',
+    //   page: 'tether-api',
+    // },
+    // {
+    //   code: '1.2d',
+    //   name: 'Monitoring Checking Capability Tether Cable',
+    //   description:
+    //     'Dashboard kesehatan kabel penambat: tegangan, arus, resistansi isolasi, kontinuitas, dan SNR serat optik.',
+    //   page: 'tether-monitor',
+    // },
   ]
 }
 const moduleLicense04: LicenseDef = {

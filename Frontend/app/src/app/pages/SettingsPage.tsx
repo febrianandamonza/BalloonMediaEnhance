@@ -24,7 +24,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 ];
 
 export default function SettingsPage() {
-  const { theme, toggleTheme, account, pushToast, t } = useApp();
+  const { theme, toggleTheme, account, pushToast, notify, t } = useApp();
   const station = account?.stationCode ?? 'GCS';
 
   const [tab, setTab] = useState<Tab>('gimbal');
@@ -48,10 +48,28 @@ export default function SettingsPage() {
     setErrors(errs);
     if (errs.length > 0) {
       pushToast({ tone: 'error', title: `${errs.length} nilai belum sah`, detail: errs[0] });
+      notify({
+        title: `${errs.length} nilai belum sah`,
+        detail: errs[0],
+        severity: 'peringatan',
+        category: 'Sistem',
+        source: 'System Settings',
+        page: 'settings',
+        silent: true,
+      });
       return;
     }
     if (!saveSettings(station, draft)) {
       pushToast({ tone: 'error', title: 'Gagal menyimpan', detail: 'Penyimpanan peramban menolak penulisan.' });
+      notify({
+        title: 'Gagal menyimpan',
+        detail: 'Penyimpanan peramban menolak penulisan.',
+        severity: 'peringatan',
+        category: 'Sistem',
+        source: 'System Settings',
+        page: 'settings',
+        silent: true,
+      });
       return;
     }
     setSaved(draft);
@@ -60,12 +78,30 @@ export default function SettingsPage() {
       title: 'Konfigurasi tersimpan',
       detail: `Pengaturan stasiun ${station} diperbarui dan tetap berlaku pada sesi berikutnya.`,
     });
+    notify({
+      title: 'Konfigurasi tersimpan',
+      detail: `Pengaturan stasiun ${station} diperbarui dan tetap berlaku pada sesi berikutnya.`,
+      severity: 'informasi',
+      category: 'Sistem',
+      source: 'System Settings',
+      page: 'settings',
+      silent: true,
+    });
   };
 
   const revert = () => {
     setDraft(saved);
     setErrors([]);
     pushToast({ tone: 'info', title: 'Perubahan dibatalkan', detail: 'Kolom dikembalikan ke nilai tersimpan.' });
+    notify({
+      title: 'Perubahan dibatalkan',
+      detail: 'Kolom dikembalikan ke nilai tersimpan.',
+      severity: 'informasi',
+      category: 'Sistem',
+      source: 'System Settings',
+      page: 'settings',
+      silent: true,
+    });
   };
 
   const restoreDefaults = () => {
@@ -75,6 +111,15 @@ export default function SettingsPage() {
       tone: 'warning',
       title: 'Nilai bawaan dimuat',
       detail: 'Tekan Simpan untuk menerapkan, atau Batalkan untuk mengurungkan.',
+    });
+    notify({
+      title: 'Nilai bawaan dimuat',
+      detail: 'Tekan Simpan untuk menerapkan, atau Batalkan untuk mengurungkan.',
+      severity: 'peringatan',
+      category: 'Sistem',
+      source: 'System Settings',
+      page: 'settings',
+      silent: true,
     });
   };
 
@@ -483,10 +528,20 @@ function AppearanceTab({
 
 /* =================================================================== */
 function DataTab({ s, set }: { s: StationSettings; set: Setter }) {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
 
-  const maintenance = (title: string, detail: string) =>
+  const maintenance = (title: string, detail: string) => {
     pushToast({ tone: 'success', title, detail });
+    notify({
+      title,
+      detail,
+      severity: 'informasi',
+      category: 'Sistem',
+      source: 'System Settings',
+      page: 'settings',
+      silent: true,
+    });
+  };
 
   return (
     <div className="grid-2">

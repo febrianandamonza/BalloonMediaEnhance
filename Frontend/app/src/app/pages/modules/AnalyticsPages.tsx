@@ -61,7 +61,7 @@ interface CapturedCrowdFrame {
 const CROWD_FRAME_BUFFER = 400;
 
 export function CrowdCountingPage() {
-  const { pushToast, offline, t } = useApp();
+  const { pushToast, notify, offline, t } = useApp();
   const [source, setSource] = useState<'upload' | 'rtsp'>('upload');
   const [rtspUrl, setRtspUrl] = useState('rtsp://192.168.10.100:15004/stream1');
   const [file, setFile] = useState<{ name: string; url: string; raw: File } | null>(null);
@@ -210,6 +210,17 @@ export function CrowdCountingPage() {
               ? `Puncak ${data.summary.max_count.toLocaleString('id-ID')} jiwa · rata-rata ${data.summary.average_count.toLocaleString('id-ID')} jiwa.`
               : undefined,
           });
+          notify({
+            title: t('Sesi crowd counting selesai'),
+            detail: data.summary
+              ? `Puncak ${data.summary.max_count.toLocaleString('id-ID')} jiwa · rata-rata ${data.summary.average_count.toLocaleString('id-ID')} jiwa.`
+              : t('Sesi crowd counting selesai'),
+            severity: 'informasi',
+            category: 'Ambang Batas',
+            source: 'Crowd Counting',
+            page: 'crowd',
+            silent: true,
+          });
         }
       } catch {
         /* pesan bukan JSON — diabaikan */
@@ -218,6 +229,15 @@ export function CrowdCountingPage() {
 
     socket.onerror = () => {
       pushToast({ tone: 'error', title: t('Koneksi crowd counting terputus'), detail: t('WebSocket ke server crowd counting gagal.') });
+      notify({
+        title: t('Koneksi crowd counting terputus'),
+        detail: t('WebSocket ke server crowd counting gagal.'),
+        severity: 'peringatan',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
     };
 
     socket.onclose = () => setRunning(false);
@@ -227,6 +247,15 @@ export function CrowdCountingPage() {
     if (!f) return;
     if (!/\.(mp4|avi|mov|mkv)$/i.test(f.name)) {
       pushToast({ tone: 'error', title: t('Format tidak didukung'), detail: t('Gunakan berkas MP4, AVI, MOV, atau MKV.') });
+      notify({
+        title: t('Format tidak didukung'),
+        detail: t('Gunakan berkas MP4, AVI, MOV, atau MKV.'),
+        severity: 'peringatan',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
       return;
     }
     closeSocket();
@@ -239,14 +268,41 @@ export function CrowdCountingPage() {
     if (starting || running) return;
     if (!missionId) {
       pushToast({ tone: 'error', title: t('Pilih flight mission dahulu'), detail: t('Flight mission wajib dipilih sebelum menjalankan analisis.') });
+      notify({
+        title: t('Pilih flight mission dahulu'),
+        detail: t('Flight mission wajib dipilih sebelum menjalankan analisis.'),
+        severity: 'peringatan',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
       return;
     }
     if (source === 'rtsp') {
       pushToast({ tone: 'info', title: t('Sumber RTSP belum tersedia'), detail: t('Untuk saat ini jalankan analisis lewat unggah berkas video.') });
+      notify({
+        title: t('Sumber RTSP belum tersedia'),
+        detail: t('Untuk saat ini jalankan analisis lewat unggah berkas video.'),
+        severity: 'informasi',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
       return;
     }
     if (!file) {
       pushToast({ tone: 'error', title: t('Unggah berkas video dahulu'), detail: t('Pilih atau seret berkas video sebelum menjalankan analisis.') });
+      notify({
+        title: t('Unggah berkas video dahulu'),
+        detail: t('Pilih atau seret berkas video sebelum menjalankan analisis.'),
+        severity: 'peringatan',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
       return;
     }
     setStarting(true);
@@ -256,8 +312,26 @@ export function CrowdCountingPage() {
       const job = await api.detectCrowdVideo(file.raw);
       openSocket(job.job_id);
       pushToast({ tone: 'info', title: t('Sesi crowd counting dimulai'), detail: t('Model DM-Count dimuat — inferensi berjalan.') });
+      notify({
+        title: t('Sesi crowd counting dimulai'),
+        detail: t('Model DM-Count dimuat — inferensi berjalan.'),
+        severity: 'informasi',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
     } catch {
       pushToast({ tone: 'error', title: t('Gagal memulai analisis'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
+      notify({
+        title: t('Gagal memulai analisis'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
     } finally {
       setStarting(false);
     }
@@ -266,6 +340,15 @@ export function CrowdCountingPage() {
   const stop = () => {
     closeSocket();
     pushToast({ tone: 'success', title: t('Sesi dihentikan'), detail: `${frameCount.toLocaleString('id-ID')} frame diproses · puncak ${peak.toLocaleString('id-ID')} jiwa.` });
+    notify({
+      title: t('Sesi dihentikan'),
+      detail: `${frameCount.toLocaleString('id-ID')} frame diproses · puncak ${peak.toLocaleString('id-ID')} jiwa.`,
+      severity: 'informasi',
+      category: 'Ambang Batas',
+      source: 'Crowd Counting',
+      page: 'crowd',
+      silent: true,
+    });
   };
 
   const saveMedia = async () => {
@@ -275,6 +358,15 @@ export function CrowdCountingPage() {
         tone: 'error',
         title: t('Flight mission belum punya data flight information'),
         detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+      });
+      notify({
+        title: t('Flight mission belum punya data flight information'),
+        detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+        severity: 'peringatan',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
       });
       return;
     }
@@ -290,11 +382,29 @@ export function CrowdCountingPage() {
         title: t('Video hasil crowd counting disimpan'),
         detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; video asli tetap utuh.'),
       });
+      notify({
+        title: t('Video hasil crowd counting disimpan'),
+        detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; video asli tetap utuh.'),
+        severity: 'informasi',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
       closeSocket();
       setFile(null); setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false);
       setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setJobResult(null); setMissionId('');
     } catch {
       pushToast({ tone: 'error', title: t('Gagal menyimpan media'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
+      notify({
+        title: t('Gagal menyimpan media'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
     } finally {
       setSaving(false);
     }
@@ -575,7 +685,7 @@ export function CrowdCountingPage() {
    1.1a — DIGITAL IMAGING ANALYTIC & OBJECT DETECTION
    ===================================================================== */
 export function ImageDetectionPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [file, setFile] = useState<{ name: string; url: string; raw: File } | null>(null);
   const [detectResult, setDetectResult] = useState<DetectImageResult | null>(null);
   const [drag, setDrag] = useState(false);
@@ -636,6 +746,15 @@ export function ImageDetectionPage() {
     if (!f) return;
     if (!/\.(jpe?g|png|tiff?)$/i.test(f.name)) {
       pushToast({ tone: 'error', title: 'Format tidak didukung', detail: 'Gunakan berkas JPG, PNG, atau TIFF.' });
+      notify({
+        title: 'Format tidak didukung',
+        detail: 'Gunakan berkas JPG, PNG, atau TIFF.',
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Imaging Analytic',
+        page: 'detection-image',
+        silent: true,
+      });
       return;
     }
     setFile({ name: f.name, url: URL.createObjectURL(f), raw: f });
@@ -650,10 +769,28 @@ export function ImageDetectionPage() {
        terlihat tidak berefek sama sekali. */
     if (!missionId) {
       pushToast({ tone: 'error', title: t('Pilih flight mission dahulu'), detail: t('Flight mission wajib dipilih sebelum menjalankan deteksi.') });
+      notify({
+        title: t('Pilih flight mission dahulu'),
+        detail: t('Flight mission wajib dipilih sebelum menjalankan deteksi.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Imaging Analytic',
+        page: 'detection-image',
+        silent: true,
+      });
       return;
     }
     if (!file) {
       pushToast({ tone: 'error', title: t('Unggah citra dahulu'), detail: t('Pilih atau seret berkas citra sebelum menjalankan deteksi.') });
+      notify({
+        title: t('Unggah citra dahulu'),
+        detail: t('Pilih atau seret berkas citra sebelum menjalankan deteksi.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Imaging Analytic',
+        page: 'detection-image',
+        silent: true,
+      });
       return;
     }
     setAnalyzing(true);
@@ -665,11 +802,29 @@ export function ImageDetectionPage() {
         title: t('Deteksi selesai'),
         detail: `${result.objects.length} objek ditemukan · ${result.processing_time} ms.`,
       });
+      notify({
+        title: t('Deteksi selesai'),
+        detail: `${result.objects.length} objek ditemukan · ${result.processing_time} ms.`,
+        severity: 'informasi',
+        category: 'Deteksi Objek',
+        source: 'Imaging Analytic',
+        page: 'detection-image',
+        silent: true,
+      });
     } catch {
       pushToast({
         tone: 'error',
         title: t('Gagal menjalankan deteksi'),
         detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+      });
+      notify({
+        title: t('Gagal menjalankan deteksi'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Imaging Analytic',
+        page: 'detection-image',
+        silent: true,
       });
     } finally {
       setAnalyzing(false);
@@ -683,6 +838,15 @@ export function ImageDetectionPage() {
         tone: 'error',
         title: t('Flight mission belum punya data flight information'),
         detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+      });
+      notify({
+        title: t('Flight mission belum punya data flight information'),
+        detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Imaging Analytic',
+        page: 'detection-image',
+        silent: true,
       });
       return;
     }
@@ -698,6 +862,15 @@ export function ImageDetectionPage() {
         title: t('Citra hasil deteksi disimpan'),
         detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; citra asli tetap utuh.'),
       });
+      notify({
+        title: t('Citra hasil deteksi disimpan'),
+        detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; citra asli tetap utuh.'),
+        severity: 'informasi',
+        category: 'Deteksi Objek',
+        source: 'Imaging Analytic',
+        page: 'detection-image',
+        silent: true,
+      });
       setFile(null);
       setDetectResult(null);
       setMissionId('');
@@ -706,6 +879,15 @@ export function ImageDetectionPage() {
         tone: 'error',
         title: t('Gagal menyimpan media'),
         detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+      });
+      notify({
+        title: t('Gagal menyimpan media'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Imaging Analytic',
+        page: 'detection-image',
+        silent: true,
       });
     } finally {
       setSaving(false);
@@ -924,7 +1106,7 @@ function formatElapsed(ms: number) {
 const RTSP_SOURCE_ENABLED = false;
 
 export function VideoDetectionPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [source, setSource] = useState<'upload' | 'rtsp'>('upload');
   const [rtspUrl, setRtspUrl] = useState('rtsp://192.168.10.100:15004/stream1');
   const [file, setFile] = useState<{ name: string; url: string; raw: File } | null>(null);
@@ -1068,6 +1250,15 @@ export function VideoDetectionPage() {
 
     socket.onerror = () => {
       pushToast({ tone: 'error', title: t('Koneksi deteksi terputus'), detail: t('WebSocket ke server deteksi video gagal.') });
+      notify({
+        title: t('Koneksi deteksi terputus'),
+        detail: t('WebSocket ke server deteksi video gagal.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
     };
 
     socket.onclose = () => setRunning(false);
@@ -1077,6 +1268,15 @@ export function VideoDetectionPage() {
     if (!f) return;
     if (!/\.(mp4|avi|mov|mkv)$/i.test(f.name)) {
       pushToast({ tone: 'error', title: t('Format tidak didukung'), detail: t('Gunakan berkas MP4, AVI, MOV, atau MKV.') });
+      notify({
+        title: t('Format tidak didukung'),
+        detail: t('Gunakan berkas MP4, AVI, MOV, atau MKV.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
       return;
     }
     closeSocket();
@@ -1088,14 +1288,41 @@ export function VideoDetectionPage() {
     if (starting || running) return;
     if (!missionId) {
       pushToast({ tone: 'error', title: t('Pilih flight mission dahulu'), detail: t('Flight mission wajib dipilih sebelum menjalankan deteksi.') });
+      notify({
+        title: t('Pilih flight mission dahulu'),
+        detail: t('Flight mission wajib dipilih sebelum menjalankan deteksi.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
       return;
     }
     if (source === 'rtsp') {
       pushToast({ tone: 'info', title: t('Sumber RTSP belum tersedia'), detail: t('Untuk saat ini jalankan deteksi lewat unggah berkas video.') });
+      notify({
+        title: t('Sumber RTSP belum tersedia'),
+        detail: t('Untuk saat ini jalankan deteksi lewat unggah berkas video.'),
+        severity: 'informasi',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
       return;
     }
     if (!file) {
       pushToast({ tone: 'error', title: t('Unggah berkas video dahulu'), detail: t('Pilih atau seret berkas video sebelum menjalankan deteksi.') });
+      notify({
+        title: t('Unggah berkas video dahulu'),
+        detail: t('Pilih atau seret berkas video sebelum menjalankan deteksi.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
       return;
     }
     setStarting(true);
@@ -1105,6 +1332,15 @@ export function VideoDetectionPage() {
       openSocket(job.job_id);
     } catch {
       pushToast({ tone: 'error', title: t('Gagal memulai deteksi'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
+      notify({
+        title: t('Gagal memulai deteksi'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
     } finally {
       setStarting(false);
     }
@@ -1117,6 +1353,15 @@ export function VideoDetectionPage() {
         tone: 'error',
         title: t('Flight mission belum punya data flight information'),
         detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+      });
+      notify({
+        title: t('Flight mission belum punya data flight information'),
+        detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
       });
       return;
     }
@@ -1132,10 +1377,28 @@ export function VideoDetectionPage() {
         title: t('Video hasil deteksi disimpan'),
         detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; video asli tetap utuh.'),
       });
+      notify({
+        title: t('Video hasil deteksi disimpan'),
+        detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; video asli tetap utuh.'),
+        severity: 'informasi',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
       closeSocket();
       setFile(null); setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false); setJobResult(null); setMissionId('');
     } catch {
       pushToast({ tone: 'error', title: t('Gagal menyimpan media'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
+      notify({
+        title: t('Gagal menyimpan media'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
     } finally {
       setSaving(false);
     }

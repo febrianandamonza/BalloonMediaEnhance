@@ -40,10 +40,11 @@ import {
   FlaskConical, Play, CircleCheck, CircleX, CircleAlert, Radio,
   RefreshCw, Eye, Activity, Ruler, Copy, Pencil, Trash2,
   CheckCheck, X, Inbox, ToggleLeft, ToggleRight, Save, Loader2, History, Square,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
   fullTimestamp, loadRules, saveRules, CATEGORIES,
-  type AlertRule, type Severity, type Category,
+  type AlertRule, type Severity, type Category, type AppNotification,
 } from '../../lib/notifications';
 
 function series(seed: number, len: number, base: number, spread: number, digits = 0) {
@@ -109,7 +110,7 @@ const REPORT_TEMPLATES = [
 const CLASSIFICATIONS = ['BIASA', 'TERBATAS', 'RAHASIA', 'SANGAT RAHASIA'];
 
 export function ReportingPage() {
-  const { pushToast, account, t } = useApp();
+  const { pushToast, notify, account, t } = useApp();
   const [template, setTemplate] = useState(REPORT_TEMPLATES[0].id);
   const [format, setFormat] = useState<'pdf' | 'xlsx'>('pdf');
   const [classification, setClassification] = useState('TERBATAS');
@@ -125,6 +126,15 @@ export function ReportingPage() {
         tone: 'success',
         title: 'Laporan berhasil dibuat',
         detail: `${selected.name} · format ${format.toUpperCase()} · klasifikasi ${classification} · watermark ${account?.stationCode ?? 'GCS'}.`,
+      });
+      notify({
+        title: 'Laporan berhasil dibuat',
+        detail: `${selected.name} · format ${format.toUpperCase()} · klasifikasi ${classification} · watermark ${account?.stationCode ?? 'GCS'}.`,
+        severity: 'informasi',
+        category: 'Sistem',
+        source: 'Digital Reporting',
+        page: 'reporting',
+        silent: true,
       });
     }, 1500);
   };
@@ -201,22 +211,44 @@ export function ReportingPage() {
                             <button
                               className="btn btn-ghost btn-sm"
                               title={`Pratinjau ${judul}`}
-                              onClick={() => pushToast({
-                                tone: 'info',
-                                title: 'Membuka pratinjau laporan',
-                                detail: `${judul} — ${fmt}, klasifikasi ${klas}.`,
-                              })}
+                              onClick={() => {
+                                pushToast({
+                                  tone: 'info',
+                                  title: 'Membuka pratinjau laporan',
+                                  detail: `${judul} — ${fmt}, klasifikasi ${klas}.`,
+                                });
+                                notify({
+                                  title: 'Membuka pratinjau laporan',
+                                  detail: `${judul} — ${fmt}, klasifikasi ${klas}.`,
+                                  severity: 'informasi',
+                                  category: 'Sistem',
+                                  source: 'Digital Reporting',
+                                  page: 'reporting',
+                                  silent: true,
+                                });
+                              }}
                             >
                               <Eye size={13} />
                             </button>
                             <button
                               className="btn btn-ghost btn-sm"
                               title={`Unduh ${judul}`}
-                              onClick={() => pushToast({
-                                tone: 'success',
-                                title: 'Laporan diunduh',
-                                detail: `${judul} disalin ke folder ekspor stasiun dalam format ${fmt}.`,
-                              })}
+                              onClick={() => {
+                                pushToast({
+                                  tone: 'success',
+                                  title: 'Laporan diunduh',
+                                  detail: `${judul} disalin ke folder ekspor stasiun dalam format ${fmt}.`,
+                                });
+                                notify({
+                                  title: 'Laporan diunduh',
+                                  detail: `${judul} disalin ke folder ekspor stasiun dalam format ${fmt}.`,
+                                  severity: 'informasi',
+                                  category: 'Sistem',
+                                  source: 'Digital Reporting',
+                                  page: 'reporting',
+                                  silent: true,
+                                });
+                              }}
                             >
                               <Download size={13} />
                             </button>
@@ -300,7 +332,10 @@ export function ReportingPage() {
    1.3b — DIGITAL VISUALISATION INFORMATION GEOINT
    ===================================================================== */
 interface TargetPoint {
-  id: number;
+  /** Id misi asli dari backend — bisa angka atau string (UUID). Sentinel
+      angka negatif dipakai hanya bila backend sama sekali tidak
+      mengirim id (lihat loadDoneTargets). */
+  id: string | number;
   name: string;
   lat: number;
   lon: number;
@@ -366,11 +401,11 @@ ${pts}
 }
 
 export function GeoVisualizationPage() {
-  const { pushToast, account, t } = useApp();
+  const { pushToast, notify, account, t } = useApp();
 
   const [targets, setTargets] = useState<TargetPoint[]>([]);
   const [targetsLoading, setTargetsLoading] = useState(true);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | number | null>(null);
   const [basemap, setBasemap] = useState<BasemapId>('imagery');
   const [showFov, setShowFov] = useState(false);
   const [showRings, setShowRings] = useState(false);
@@ -385,6 +420,13 @@ export function GeoVisualizationPage() {
 
   const [liveCoords, setLiveCoords] = useState<{ lat: number; lon: number } | null>(null);
 
+  /* Modal Detail Misi — dibuka dari klik titik di peta maupun baris
+     Target Bank di sidebar (keduanya lewat pickTarget yang sama). */
+  const [detailTargetId, setDetailTargetId] = useState<string | number | null>(null);
+  const [missionDetail, setMissionDetail] = useState<FlightMissionRecord | null>(null);
+  const [missionDetailInfo, setMissionDetailInfo] = useState<FlightInformationRecord | null>(null);
+  const [missionDetailLoading, setMissionDetailLoading] = useState(false);
+
   /* Titik gelar mengikuti lokasi perangkat bila diizinkan; jika ditolak
      atau gagal, tetap pakai koordinat stasiun yang terkonfigurasi. */
   useEffect(() => {
@@ -397,6 +439,15 @@ export function GeoVisualizationPage() {
           tone: 'warning',
           title: t('Lokasi perangkat tidak tersedia'),
           detail: t('Menggunakan koordinat stasiun yang terkonfigurasi.'),
+        });
+        notify({
+          title: t('Lokasi perangkat tidak tersedia'),
+          detail: t('Menggunakan koordinat stasiun yang terkonfigurasi.'),
+          severity: 'peringatan',
+          category: 'Geofence',
+          source: 'GeoInt Visualisation',
+          page: 'geo-viz',
+          silent: true,
         });
       },
       { enableHighAccuracy: true, maximumAge: 10000 },
@@ -429,7 +480,35 @@ export function GeoVisualizationPage() {
   const pickTarget = (tp: TargetPoint) => {
     setSelectedId(tp.id);
     flyTo(tp.lat, tp.lon);
+    if (typeof tp.id === 'number' && tp.id < 0) {
+      pushToast({
+        tone: 'warning',
+        title: t('Data misi tidak lengkap'),
+        detail: t('Misi ini tidak memiliki id yang valid untuk dimuat detailnya.'),
+      });
+      return;
+    }
+    setDetailTargetId(tp.id);
   };
+
+  /* Detail misi + flight-information digabung berdasarkan mission_id,
+     dipicu setiap kali target baru dipilih (lihat pickTarget). */
+  useEffect(() => {
+    if (detailTargetId == null) return;
+    let cancelled = false;
+    setMissionDetailLoading(true);
+    setMissionDetail(null);
+    setMissionDetailInfo(null);
+    Promise.all([
+      api.getFlightMissionById(detailTargetId).catch(() => null),
+      api.getFlightInformation().catch(() => []),
+    ]).then(([mission, infoRows]) => {
+      if (cancelled) return;
+      setMissionDetail(mission);
+      setMissionDetailInfo(infoRows.find(i => String(i.mission_id) === String(detailTargetId)) ?? null);
+    }).finally(() => { if (!cancelled) setMissionDetailLoading(false); });
+    return () => { cancelled = true; };
+  }, [detailTargetId]);
 
   /* Target Bank dimuat dari misi berstatus Done — setiap misi punya relasi
      location dengan latitude/longitude. Dipanggil sekali saat mount; tidak
@@ -451,9 +530,12 @@ export function GeoVisualizationPage() {
           const range = Math.round(
             Math.sqrt(distanceBetween(camLat, camLon, lat, lon) ** 2 + ALT_AGL ** 2),
           );
-          const rawId = typeof m.id === 'number' ? m.id : Number(m.id);
+          /* Id misi dipakai apa adanya (angka ATAU string/UUID) supaya
+             tetap bisa dicocokkan lewat GET /flight-missions/{id} —
+             sentinel angka negatif hanya untuk kasus backend tidak
+             mengirim id sama sekali. */
           mapped.push({
-            id: Number.isFinite(rawId) ? rawId : -(idx + 1),
+            id: m.id != null && m.id !== '' ? m.id : -(idx + 1),
             name: String(m.mission_name || m.mission_code || `Misi ${idx + 1}`),
             lat, lon, threat: 'rendah', range,
           });
@@ -472,14 +554,41 @@ export function GeoVisualizationPage() {
     const text = `${selected.lat.toFixed(6)}, ${selected.lon.toFixed(6)}`;
     if (await salinTeks(text)) {
       pushToast({ tone: 'success', title: t('Koordinat disalin'), detail: text });
+      notify({
+        title: t('Koordinat disalin'),
+        detail: text,
+        severity: 'informasi',
+        category: 'Geofence',
+        source: 'GeoInt Visualisation',
+        page: 'geo-viz',
+        silent: true,
+      });
     } else {
       pushToast({ tone: 'error', title: t('Gagal menyalin'), detail: t('Peramban menolak akses papan klip.') });
+      notify({
+        title: t('Gagal menyalin'),
+        detail: t('Peramban menolak akses papan klip.'),
+        severity: 'peringatan',
+        category: 'Geofence',
+        source: 'GeoInt Visualisation',
+        page: 'geo-viz',
+        silent: true,
+      });
     }
   };
 
   const exportTargets = (fmt: 'KML' | 'GPX') => {
     if (targets.length === 0) {
       pushToast({ tone: 'warning', title: 'Target Bank kosong', detail: 'Belum ada misi berstatus Done untuk diekspor.' });
+      notify({
+        title: 'Target Bank kosong',
+        detail: 'Belum ada misi berstatus Done untuk diekspor.',
+        severity: 'peringatan',
+        category: 'Geofence',
+        source: 'GeoInt Visualisation',
+        page: 'geo-viz',
+        silent: true,
+      });
       return;
     }
     const stamp = new Date().toISOString().slice(0, 10);
@@ -496,6 +605,15 @@ export function GeoVisualizationPage() {
       tone: 'success',
       title: `Target Lokasi diekspor — ${fmt}`,
       detail: `${targets.length} titik koordinat WGS-84 ditulis ke berkas.`,
+    });
+    notify({
+      title: `Target Lokasi diekspor — ${fmt}`,
+      detail: `${targets.length} titik koordinat WGS-84 ditulis ke berkas.`,
+      severity: 'informasi',
+      category: 'Geofence',
+      source: 'GeoInt Visualisation',
+      page: 'geo-viz',
+      silent: true,
     });
   };
 
@@ -566,9 +684,18 @@ export function GeoVisualizationPage() {
               selected={selected}
               onSelect={pickTarget}
               basemap={basemap}
-              onBasemapFallback={(reason) =>
-                pushToast({ tone: 'warning', title: 'Basemap beralih ke mode luring', detail: reason })
-              }
+              onBasemapFallback={(reason) => {
+                pushToast({ tone: 'warning', title: 'Basemap beralih ke mode luring', detail: reason });
+                notify({
+                  title: 'Basemap beralih ke mode luring',
+                  detail: reason,
+                  severity: 'peringatan',
+                  category: 'Geofence',
+                  source: 'GeoInt Visualisation',
+                  page: 'geo-viz',
+                  silent: true,
+                });
+              }}
               showFov={showFov}
               showRings={showRings}
               showGeofence={showGeofence}
@@ -737,6 +864,42 @@ export function GeoVisualizationPage() {
           </div>
         </div>
       </div>
+
+      {detailTargetId != null && (
+        <div className="modal-backdrop" onClick={() => setDetailTargetId(null)}>
+          <div className="modal lq" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('Detail Misi')}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{t('Detail Misi')}</h3>
+              <button className="modal-x" onClick={() => setDetailTargetId(null)} aria-label={t('Tutup')}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="modal-body">
+              {missionDetailLoading ? (
+                <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>{t('Memuat…')}</div>
+              ) : missionDetail ? (
+                <KVList rows={[
+                  [t('Nama Misi'), missionDetail.mission_name ?? '—'],
+                  [t('Deskripsi'), missionDetail.description ?? '—'],
+                  [t('Balon'), missionDetail.balloon?.balloon_name ?? missionDetail.balloon?.name ?? '—'],
+                  [t('Status'), t(missionStatusName(missionDetail) || '—')],
+                  [t('Pimpinan'), missionDetailInfo?.mission_leader ?? '—'],
+                  [t('Take Off'), missionDetailInfo?.takeoff_time ?? '—'],
+                  [t('Landing'), missionDetailInfo?.landing_time ?? '—'],
+                  [t('Durasi'), missionDetailInfo?.duration != null ? `${missionDetailInfo.duration} menit` : '—'],
+                  [t('Ketinggian Maksimal'), missionDetailInfo?.max_altitude != null ? `${missionDetailInfo.max_altitude} m AGL` : '—'],
+                  [t('Panjang Kabel'), missionDetailInfo?.cable_length != null ? `${missionDetailInfo.cable_length} m` : '—'],
+                ]} />
+              ) : (
+                <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>{t('Data tidak ditemukan.')}</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDetailTargetId(null)}>{t('Tutup')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </LicenseGate>
   );
 }
@@ -768,10 +931,23 @@ export function AlertsPage() {
   const {
     pushToast, t, lang, account, offline,
     notifications, unreadCount, notify,
-    markAllRead, setAlertStatus, removeNotification, resetNotifications,
+    markRead, markAllRead, setAlertStatus, removeNotification, resetNotifications,
+    syncNotifications, notifSyncing,
   } = useApp();
 
   const [filter, setFilter] = useState<'all' | Severity>('all');
+  const [detailNotif, setDetailNotif] = useState<AppNotification | null>(null);
+  const [confirmMarkAll, setConfirmMarkAll] = useState(false);
+
+  const confirmMarkAllRead = () => {
+    markAllRead();
+    setConfirmMarkAll(false);
+  };
+
+  const openDetail = (a: AppNotification) => {
+    markRead(a.id);
+    setDetailNotif(a);
+  };
 
   /* ----- Aturan peringatan ----- */
   const [rules, setRules] = useState<AlertRule[]>([]);
@@ -804,6 +980,27 @@ export function AlertsPage() {
     [notifications, filter],
   );
 
+  /* Riwayat Peringatan dipaginasi 10 baris per halaman. */
+  const ALERTS_PAGE_SIZE = 10;
+  const [alertsPage, setAlertsPage] = useState(1);
+  const alertsPageCount = Math.max(1, Math.ceil(filtered.length / ALERTS_PAGE_SIZE));
+  /* Filter berubah atau riwayat menyusut (mis. dihapus) bisa membuat
+     halaman yang sedang dibuka lewat batas — turunkan sendiri ke halaman
+     valid terakhir alih-alih menampilkan tabel kosong yang membingungkan. */
+  useEffect(() => {
+    setAlertsPage(p => Math.min(p, alertsPageCount));
+  }, [alertsPageCount]);
+  const paged = filtered.slice((alertsPage - 1) * ALERTS_PAGE_SIZE, alertsPage * ALERTS_PAGE_SIZE);
+
+  /* Jendela nomor halaman di sekitar halaman aktif — maksimal 3 tombol
+     angka, digeser supaya tetap 3 nomor selama total halaman mencukupi. */
+  const alertsPageWindow = useMemo(() => {
+    const span = Math.min(3, alertsPageCount);
+    let start = Math.min(Math.max(1, alertsPage - 1), alertsPageCount - span + 1);
+    start = Math.max(1, start);
+    return Array.from({ length: span }, (_, i) => start + i);
+  }, [alertsPage, alertsPageCount]);
+
   const counts = useMemo(() => ({
     kritis: notifications.filter(a => a.severity === 'kritis').length,
     peringatan: notifications.filter(a => a.severity === 'peringatan').length,
@@ -812,7 +1009,7 @@ export function AlertsPage() {
   }), [notifications]);
 
   /* ----- Tindakan pada peringatan ----- */
-  const advance = (id: number, next: 'ditangani' | 'selesai', title: string, prev: 'terbuka' | 'ditangani' | 'selesai') => {
+  const advance = (id: string | number, next: 'ditangani' | 'selesai', title: string, prev: 'terbuka' | 'ditangani' | 'selesai') => {
     setAlertStatus(id, next);
     pushToast({
       tone: 'success',
@@ -822,7 +1019,7 @@ export function AlertsPage() {
     });
   };
 
-  const drop = (id: number, title: string) => {
+  const drop = (id: string | number, title: string) => {
     removeNotification(id);
     pushToast({ tone: 'info', title: t('Peringatan dihapus'), detail: title });
   };
@@ -893,12 +1090,15 @@ export function AlertsPage() {
           description={t('Aturan peringatan berbasis geofence, ambang sensor, dan deteksi intrusi.')}
           actions={
             <>
-              <button className="btn btn-secondary" onClick={markAllRead} disabled={unreadCount === 0}>
+              <button className="btn btn-secondary" onClick={syncNotifications} disabled={notifSyncing}>
+                <RefreshCw size={15} className={notifSyncing ? 'spin' : ''} /> {t('Sinkronkan')}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setConfirmMarkAll(true)} disabled={unreadCount === 0}>
                 <CheckCheck size={15} /> {t('Tandai Semua Dibaca')}
               </button>
-              <button className="btn btn-primary sheen" onClick={openCreate}>
+              {/* <button className="btn btn-primary sheen" onClick={openCreate}>
                 <Plus size={15} /> {t('Buat Aturan')}
-              </button>
+              </button> */}
             </>
           }
         />
@@ -914,10 +1114,10 @@ export function AlertsPage() {
           <Tile icon={<ShieldAlert size={19} />} accent="var(--danger-400)" label={t('Kritis')} value={String(counts.kritis)} />
           <Tile icon={<AlertTriangle size={19} />} accent="var(--warning-400)" label={t('Peringatan')} value={String(counts.peringatan)} />
           <Tile icon={<Info size={19} />} accent="var(--info-400)" label={t('Informasi')} value={String(counts.informasi)} />
-          <Tile icon={<CircleAlert size={19} />} accent="var(--accent-tertiary)" label={t('Belum Ditangani')} value={String(counts.terbuka)} />
+          <Tile icon={<CircleAlert size={19} />} accent="var(--accent-tertiary)" label={t('Belum Dibaca')} value={String(unreadCount)} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 330px', gap: 16 }}>
+        {/* <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 330px', gap: 16 }}> */}
           <GlassCard tilt={false}>
             <SectionHead
               icon={<BellRing size={15} />}
@@ -932,15 +1132,18 @@ export function AlertsPage() {
                     { id: 'peringatan', label: t('Peringatan') },
                     { id: 'informasi', label: t('Info') },
                   ]}
-                  onChange={setFilter}
+                  onChange={v => { setFilter(v); setAlertsPage(1); }}
                 />
               }
             />
             <div className="table-container">
               <table>
-                <thead><tr><th>{t('Waktu')}</th><th>{t('Peringatan')}</th><th>{t('Tingkat')}</th><th>{t('Jenis')}</th><th>{t('Status')}</th><th style={{ textAlign: 'right' }}>{t('Aksi')}</th></tr></thead>
+                <thead><tr><th>{t('Waktu')}</th><th>{t('Peringatan')}</th>
+                <th>{t('Tingkat')}</th><th>{t('Jenis')}</th><th>{t('Dibaca')}</th>
+                {/* <th>{t('Status')}</th> */}
+                <th style={{ textAlign: 'right' }}>{t('Aksi')}</th></tr></thead>
                 <tbody>
-                  {filtered.map(a => (
+                  {paged.map(a => (
                     <tr key={a.id} style={{ opacity: a.status === 'selesai' ? 0.72 : 1 }}>
                       <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>{fullTimestamp(a.ts, lang)}</td>
                       <td>
@@ -959,10 +1162,18 @@ export function AlertsPage() {
                         </span>
                       </td>
                       <td style={{ fontSize: 12 }}>{t(a.category)}</td>
-                      <td><span className={`badge ${STATUS_BADGE[a.status]}`}>{t(a.status)}</span></td>
+                      <td>
+                        <span className={`badge ${a.read ? 'badge-neutral' : 'badge-info'}`}>
+                          {a.read ? t('Sudah Dibaca') : t('Belum Dibaca')}
+                        </span>
+                      </td>
+                      {/* <td><span className={`badge ${STATUS_BADGE[a.status]}`}>{t(a.status)}</span></td> */}
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'inline-flex', gap: 4 }}>
-                          {a.status === 'terbuka' && (
+                          <button className="btn btn-secondary btn-sm" onClick={() => openDetail(a)}>
+                            <Eye size={12} /> {a.read ? t('Detail') : t('Baca')}
+                          </button>
+                          {/* {a.status === 'terbuka' && (
                             <button className="btn btn-secondary btn-sm" onClick={() => advance(a.id, 'ditangani', t(a.title), a.status)}>
                               <Check size={12} /> {t('Tangani')}
                             </button>
@@ -971,14 +1182,14 @@ export function AlertsPage() {
                             <button className="btn btn-secondary btn-sm" onClick={() => advance(a.id, 'selesai', t(a.title), a.status)}>
                               <CheckCheck size={12} /> {t('Tutup')}
                             </button>
-                          )}
-                          <button
+                          )} */}
+                          {/* <button
                             className="btn btn-ghost btn-sm"
                             onClick={() => drop(a.id, t(a.title))}
                             aria-label={`${t('Hapus')}: ${t(a.title)}`}
                           >
                             <Trash2 size={12} />
-                          </button>
+                          </button> */}
                         </div>
                       </td>
                     </tr>
@@ -986,6 +1197,47 @@ export function AlertsPage() {
                 </tbody>
               </table>
             </div>
+            {filtered.length > 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                marginTop: 10, padding: '8px 12px',
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+                borderRadius: 'var(--radius-md)',
+              }}>
+                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                  {t('Halaman')} {alertsPage} {t('dari')} {alertsPageCount}
+                </span>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setAlertsPage(p => Math.max(1, p - 1))}
+                    disabled={alertsPage <= 1}
+                    aria-label={t('Halaman sebelumnya')}
+                  >
+                    <ChevronLeft size={12} />
+                  </button>
+                  {alertsPageWindow.map(p => (
+                    <button
+                      key={p}
+                      className={`btn btn-sm ${p === alertsPage ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setAlertsPage(p)}
+                      aria-current={p === alertsPage ? 'page' : undefined}
+                      aria-label={`${t('Halaman')} ${p}`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setAlertsPage(p => Math.min(alertsPageCount, p + 1))}
+                    disabled={alertsPage >= alertsPageCount}
+                    aria-label={t('Halaman berikutnya')}
+                  >
+                    <ChevronRight size={12} />
+                  </button>
+                </div>
+              </div>
+            )}
             {filtered.length === 0 && (
               <EmptyState
                 icon={<Inbox size={22} />}
@@ -1006,7 +1258,7 @@ export function AlertsPage() {
             )}
           </GlassCard>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'NONE', flexDirection: 'column', gap: 12 }}>
             <GlassCard>
               <SectionHead
                 icon={<Filter size={15} />}
@@ -1094,7 +1346,7 @@ export function AlertsPage() {
               ]} />
             </GlassCard>
           </div>
-        </div>
+        {/* </div> */}
 
         {/* ----- Dialog aturan ----- */}
         {showRuleForm && (
@@ -1199,6 +1451,70 @@ export function AlertsPage() {
             </div>
           </div>
         )}
+
+        {detailNotif && (
+          <div className="modal-backdrop" onClick={() => setDetailNotif(null)}>
+            <div className="modal lq" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('Detail Notifikasi')}>
+              <div className="modal-header">
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{t(detailNotif.title)}</h3>
+                <button className="modal-x" onClick={() => setDetailNotif(null)} aria-label={t('Tutup')}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <KVList rows={[
+                  [t('Waktu'), fullTimestamp(detailNotif.ts, lang)],
+                  [t('Tingkat'), t(detailNotif.severity)],
+                  [t('Jenis'), t(detailNotif.category)],
+                  [t('Sumber'), t(detailNotif.source)],
+                  // [t('Status'), t(detailNotif.status)],
+                ]} />
+                <p style={{ fontSize: 12.5, lineHeight: 1.6, margin: 0, color: 'var(--text-secondary)' }}>
+                  {t(detailNotif.detail)}
+                </p>
+                {/* {detailNotif.metadata && (
+                  <pre style={{
+                    fontSize: 10.5, background: 'rgba(255,255,255,0.03)', padding: 10,
+                    borderRadius: 8, overflowX: 'auto', maxHeight: 220, margin: 0,
+                  }}>
+                    {JSON.stringify(detailNotif.metadata, null, 2)}
+                  </pre>
+                )} */}
+              </div>
+
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setDetailNotif(null)}>{t('Tutup')}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {confirmMarkAll && (
+          <div className="modal-backdrop" onClick={() => setConfirmMarkAll(false)}>
+            <div className="modal lq" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('Tandai Semua Dibaca')}>
+              <div className="modal-header">
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{t('Tandai Semua Dibaca')}</h3>
+                <button className="modal-x" onClick={() => setConfirmMarkAll(false)} aria-label={t('Tutup')}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="modal-body">
+                <p style={{ fontSize: 12.5, lineHeight: 1.6, margin: 0, color: 'var(--text-secondary)' }}>
+                  {t('Semua notifikasi yang belum dibaca akan ditandai sebagai sudah dibaca. Lanjutkan?')}
+                </p>
+              </div>
+
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setConfirmMarkAll(false)}>{t('Batal')}</button>
+                <button className="btn btn-primary" onClick={confirmMarkAllRead}>
+                  <CheckCheck size={15} /> {t('Ya, Tandai Semua')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </LicenseGate>
   );
@@ -1289,7 +1605,7 @@ function missionStatusName(m: FlightMissionRecord): string {
 }
 
 export function FlightInfoPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [checked, setChecked] = useState<boolean[]>(() => CHECKLIST.map((_, i) => i < 9));
 
   const criticalPending = CHECKLIST.filter((c, i) => c.critical && !checked[i]).length;
@@ -1426,12 +1742,22 @@ export function FlightInfoPage() {
       setBalloonOptions(prev => prev.map(b => (String(b.id) === String(balloon.id) ? { ...b, status } : b)));
     } catch (err) {
       console.error(`Gagal mengubah status balon ke ${status}:`, err);
+      const balloonStatusDetail = status === 'Available'
+        ? t('Misi berhasil diakhiri, namun status balon tidak berhasil dikembalikan ke Available. Perbarui manual di Balloon Management.')
+        : t('Penerbangan dimulai, namun status balon tidak berhasil diubah ke Unavailable. Perbarui manual di Balloon Management.');
       pushToast({
         tone: 'warning',
         title: t('Gagal memperbarui status balon'),
-        detail: status === 'Available'
-          ? t('Misi berhasil diakhiri, namun status balon tidak berhasil dikembalikan ke Available. Perbarui manual di Balloon Management.')
-          : t('Penerbangan dimulai, namun status balon tidak berhasil diubah ke Unavailable. Perbarui manual di Balloon Management.'),
+        detail: balloonStatusDetail,
+      });
+      notify({
+        title: t('Gagal memperbarui status balon'),
+        detail: balloonStatusDetail,
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Information',
+        page: 'flight-info',
+        silent: true,
       });
     }
   };
@@ -1460,10 +1786,20 @@ export function FlightInfoPage() {
       const detailText = Array.isArray(apiErr?.detail)
         ? apiErr.detail.map(d => `${d.loc?.[d.loc.length - 1] ?? '?'}: ${d.msg ?? ''}`).join(', ')
         : undefined;
+      const missionStatusDetail = detailText ?? apiErr?.message ?? apiErr?.error ?? (apiErr?.status ? `HTTP ${apiErr.status}` : t('Tidak bisa terhubung ke server. Coba lagi.'));
       pushToast({
         tone: 'error',
         title: t('Gagal memperbarui status misi'),
-        detail: detailText ?? apiErr?.message ?? apiErr?.error ?? (apiErr?.status ? `HTTP ${apiErr.status}` : t('Tidak bisa terhubung ke server. Coba lagi.')),
+        detail: missionStatusDetail,
+      });
+      notify({
+        title: t('Gagal memperbarui status misi'),
+        detail: missionStatusDetail,
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Information',
+        page: 'flight-info',
+        silent: true,
       });
       return false;
     } finally {
@@ -1601,6 +1937,15 @@ export function FlightInfoPage() {
         title: t('Misi baru dibuat'),
         detail: `${draft.missionName} (${draft.missionCode}) — ${missionDuration} ${t('menit direncanakan')}.`,
       });
+      notify({
+        title: t('Misi baru dibuat'),
+        detail: `${draft.missionName} (${draft.missionCode}) — ${missionDuration} ${t('menit direncanakan')}.`,
+        severity: 'informasi',
+        category: 'Operasional',
+        source: 'Flight Information',
+        page: 'flight-info',
+        silent: true,
+      });
       closeMissionForm();
       loadLogbook();
     } catch {
@@ -1608,6 +1953,15 @@ export function FlightInfoPage() {
         tone: 'error',
         title: t('Gagal menyimpan misi'),
         detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+      });
+      notify({
+        title: t('Gagal menyimpan misi'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Information',
+        page: 'flight-info',
+        silent: true,
       });
     } finally {
       setSubmitting(false);
@@ -2410,7 +2764,7 @@ const VERDICT_META: Record<Verdict, { color: string; icon: React.ReactNode; note
 };
 
 export function SimulationPage() {
-  const { pushToast, t, lang, account } = useApp();
+  const { pushToast, notify, t, lang, account } = useApp();
   const [input, setInput] = useState<SimInput>({
     nama: '', wind: 0, gust: 0, visibility: 0, temperature: 0,
     rain: 0, altitude: 0, helium: 0, payload: 0, duration: 0,
@@ -2460,12 +2814,21 @@ export function SimulationPage() {
       .catch(() => {
         if (!cancelled) {
           pushToast({ tone: 'error', title: t('Gagal memuat detail'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
+          notify({
+            title: t('Gagal memuat detail'),
+            detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+            severity: 'peringatan',
+            category: 'Operasional',
+            source: 'Flight Simulation',
+            page: 'simulation',
+            silent: true,
+          });
           setDetailId(null);
         }
       })
       .finally(() => { if (!cancelled) setDetailLoading(false); });
     return () => { cancelled = true; };
-  }, [detailId, pushToast, t]);
+  }, [detailId, pushToast, notify, t]);
 
   const set = (k: keyof Omit<SimInput, 'nama'>) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setInput(p => ({ ...p, [k]: Number(e.target.value) }));
@@ -2483,6 +2846,15 @@ export function SimulationPage() {
         tone: r.verdict === 'GO' ? 'success' : r.verdict === 'MARGINAL' ? 'warning' : 'error',
         title: `Hasil simulasi: ${r.verdict}`,
         detail: VERDICT_META[r.verdict].note,
+      });
+      notify({
+        title: `Hasil simulasi: ${r.verdict}`,
+        detail: VERDICT_META[r.verdict].note,
+        severity: r.verdict === 'GO' ? 'informasi' : 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Simulation',
+        page: 'simulation',
+        silent: true,
       });
     }, 1000);
   };
@@ -2514,6 +2886,15 @@ export function SimulationPage() {
         tone: 'error',
         title: t('Form belum lengkap'),
         detail: `${t('Isi dulu')}: ${missing.join(', ')}.`,
+      });
+      notify({
+        title: t('Form belum lengkap'),
+        detail: `${t('Isi dulu')}: ${missing.join(', ')}.`,
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Simulation',
+        page: 'simulation',
+        silent: true,
       });
       return;
     }
@@ -2547,6 +2928,15 @@ export function SimulationPage() {
         title: t('Simulasi disimpan'),
         detail: `${input.nama} — hasil ${result.verdict} tersimpan ke riwayat.`,
       });
+      notify({
+        title: t('Simulasi disimpan'),
+        detail: `${input.nama} — hasil ${result.verdict} tersimpan ke riwayat.`,
+        severity: 'informasi',
+        category: 'Operasional',
+        source: 'Flight Simulation',
+        page: 'simulation',
+        silent: true,
+      });
       setInput({ nama: '', wind: 0, gust: 0, visibility: 0, temperature: 0, rain: 0, altitude: 0, helium: 0, payload: 0, duration: 0 });
       setResult(null);
       loadHistory();
@@ -2555,6 +2945,15 @@ export function SimulationPage() {
         tone: 'error',
         title: t('Gagal menyimpan simulasi'),
         detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+      });
+      notify({
+        title: t('Gagal menyimpan simulasi'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Simulation',
+        page: 'simulation',
+        silent: true,
       });
     } finally {
       setSaving(false);

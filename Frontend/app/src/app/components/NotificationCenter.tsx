@@ -13,14 +13,16 @@ import React, {
 import { createPortal } from 'react-dom';
 import { useApp } from '../context';
 import { NAV_INDEX } from './Sidebar';
+import { KVList } from './ui';
 import {
-  relativeTime, clockTime, bucketOf, BUCKET_LABEL,
+  relativeTime, clockTime, fullTimestamp, bucketOf, BUCKET_LABEL,
   type AppNotification, type Severity, type Category, type BucketId,
 } from '../lib/notifications';
 import {
-  X, Check, CheckCheck, Trash2, ArrowUpRight, Inbox, BellOff,
-  ShieldAlert, AlertTriangle, Info, Settings2, Undo2,
+  X, Check, CheckCheck, Eye, Trash2, ArrowUpRight, Inbox, BellOff, RefreshCw,
+  ShieldAlert, AlertTriangle, Info, Settings2,
   Wind, Radar, Cable, Gauge, Anchor, SignalHigh, ScanEye, Cpu,
+  Plane, Image, Users, KeyRound,
 } from 'lucide-react';
 
 /* Ikon per kategori — memberi baris identitas visual yang bisa dikenali
@@ -35,6 +37,10 @@ const CATEGORY_ICON: Record<Category, React.ReactNode> = {
   'Keamanan': <ShieldAlert size={14} />,
   'Deteksi Objek': <ScanEye size={14} />,
   'Sistem': <Cpu size={14} />,
+  'Operasional': <Plane size={14} />,
+  'Media': <Image size={14} />,
+  'Akun': <Users size={14} />,
+  'Lisensi': <KeyRound size={14} />,
 };
 
 const SEVERITY_ICON: Record<Severity, React.ReactNode> = {
@@ -43,7 +49,7 @@ const SEVERITY_ICON: Record<Severity, React.ReactNode> = {
   informasi: <Info size={13} />,
 };
 
-type FilterId = 'semua' | 'belum' | 'kritis' | 'tindakan';
+type FilterId = 'semua' | 'belum';
 
 /* ===== Jam bersama =====
    Waktu adalah sumber di luar React, jadi ia dibaca lewat
@@ -76,11 +82,13 @@ const bacaJamPeladen = () => 0;
 export default function NotificationCenter() {
   const {
     notifications, unreadCount, openAlertCount, notifOpen, setNotifOpen,
-    markRead, markAllRead, setAlertStatus, removeNotification, clearNotifications,
+    markRead, markAllRead, clearNotifications,
     setCurrentPage, offline, lang, t, pushToast,
+    syncNotifications, notifSyncing,
   } = useApp();
 
   const [filter, setFilter] = useState<FilterId>('semua');
+  const [detailNotif, setDetailNotif] = useState<AppNotification | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   /* Berdetak tiap 30 detik selama panel terpasang. */
@@ -112,6 +120,9 @@ export default function NotificationCenter() {
          "Urungkan" di sana tidak boleh menutup panel yang sedang
          dipakai. */
       if ((target as Element).closest?.('.toast-stack')) return;
+      /* Modal detail dirender sebagai sibling panel di portal yang sama —
+         klik di dalamnya (termasuk tombol Tutup) bukan klik "di luar". */
+      if ((target as Element).closest?.('.modal-backdrop')) return;
       setNotifOpen(false);
     };
     window.addEventListener('mousedown', onDown);
@@ -127,17 +138,10 @@ export default function NotificationCenter() {
   const counts = useMemo(() => ({
     semua: notifications.length,
     belum: notifications.filter(n => !n.read).length,
-    kritis: notifications.filter(n => n.severity === 'kritis').length,
-    tindakan: notifications.filter(n => n.status === 'terbuka').length,
   }), [notifications]);
 
   const visible = useMemo(() => {
-    const list = notifications.filter(n => {
-      if (filter === 'belum') return !n.read;
-      if (filter === 'kritis') return n.severity === 'kritis';
-      if (filter === 'tindakan') return n.status === 'terbuka';
-      return true;
-    });
+    const list = notifications.filter(n => (filter === 'belum' ? !n.read : true));
     return [...list].sort((a, b) => b.ts - a.ts);
   }, [notifications, filter]);
 
@@ -162,24 +166,9 @@ export default function NotificationCenter() {
     setNotifOpen(false);
   }, [markRead, setCurrentPage, setNotifOpen]);
 
-  const handle = useCallback((n: AppNotification) => {
-    setAlertStatus(n.id, n.status === 'terbuka' ? 'ditangani' : 'selesai');
-    pushToast({
-      tone: 'success',
-      title: n.status === 'terbuka' ? t('Peringatan ditangani') : t('Peringatan ditutup'),
-      detail: t(n.title),
-      action: { label: t('Urungkan'), onClick: () => setAlertStatus(n.id, n.status) },
-    });
-  }, [setAlertStatus, pushToast, t]);
-
-  const dismiss = useCallback((n: AppNotification) => {
-    removeNotification(n.id);
-    pushToast({
-      tone: 'info',
-      title: t('Notifikasi dihapus'),
-      detail: t(n.title),
-    });
-  }, [removeNotification, pushToast, t]);
+  const openDetail = useCallback((n: AppNotification) => {
+    setDetailNotif(n);
+  }, []);
 
   const purge = useCallback(() => {
     const jumlah = notifications.length;
@@ -204,8 +193,6 @@ export default function NotificationCenter() {
   const FILTERS: { id: FilterId; label: string; n: number }[] = [
     { id: 'semua', label: t('Semua'), n: counts.semua },
     { id: 'belum', label: t('Belum Dibaca'), n: counts.belum },
-    { id: 'kritis', label: t('Kritis'), n: counts.kritis },
-    { id: 'tindakan', label: t('Perlu Tindakan'), n: counts.tindakan },
   ];
 
   return createPortal(
@@ -238,6 +225,15 @@ export default function NotificationCenter() {
           <div className="nc-head-tools">
             <button
               className="nc-tool"
+              onClick={syncNotifications}
+              disabled={notifSyncing}
+              title={t('Sinkronkan')}
+              aria-label={t('Sinkronkan')}
+            >
+              <RefreshCw size={15} className={notifSyncing ? 'spin' : ''} />
+            </button>
+            <button
+              className="nc-tool"
               onClick={markAllRead}
               disabled={unreadCount === 0}
               title={t('Tandai semua dibaca')}
@@ -245,7 +241,7 @@ export default function NotificationCenter() {
             >
               <CheckCheck size={15} />
             </button>
-            <button
+            {/* <button
               className="nc-tool"
               onClick={() => { setCurrentPage('alerts'); setNotifOpen(false); }}
               title={t('Atur aturan peringatan')}
@@ -260,7 +256,7 @@ export default function NotificationCenter() {
               aria-label={t('Tutup')}
             >
               <X size={15} />
-            </button>
+            </button> */}
           </div>
         </header>
 
@@ -292,8 +288,6 @@ export default function NotificationCenter() {
               <span className="nc-empty-icon"><Inbox size={22} /></span>
               <p className="nc-empty-title">
                 {filter === 'belum' ? t('Semua notifikasi sudah dibaca')
-                  : filter === 'kritis' ? t('Tidak ada peringatan kritis')
-                  : filter === 'tindakan' ? t('Tidak ada yang menunggu tindakan')
                   : t('Belum ada notifikasi')}
               </p>
               <p className="nc-empty-sub">
@@ -316,9 +310,8 @@ export default function NotificationCenter() {
                   now={now}
                   t={t}
                   onOpen={openSource}
-                  onHandle={handle}
                   onRead={markRead}
-                  onDismiss={dismiss}
+                  onDetail={openDetail}
                 />
               ))}
             </section>
@@ -341,6 +334,43 @@ export default function NotificationCenter() {
           </button>
         </footer>
       </div>
+
+      {detailNotif && (
+        <div className="modal-backdrop" onClick={() => setDetailNotif(null)}>
+          <div className="modal lq" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('Detail Notifikasi')}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{t(detailNotif.title)}</h3>
+              <button className="modal-x" onClick={() => setDetailNotif(null)} aria-label={t('Tutup')}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <KVList rows={[
+                [t('Waktu'), fullTimestamp(detailNotif.ts, lang)],
+                [t('Tingkat'), t(detailNotif.severity)],
+                [t('Jenis'), t(detailNotif.category)],
+                [t('Sumber'), t(detailNotif.source)],
+              ]} />
+              <p style={{ fontSize: 12.5, lineHeight: 1.6, margin: 0, color: 'var(--text-secondary)' }}>
+                {t(detailNotif.detail)}
+              </p>
+              {/* {detailNotif.metadata && (
+                <pre style={{
+                  fontSize: 10.5, background: 'rgba(255,255,255,0.03)', padding: 10,
+                  borderRadius: 8, overflowX: 'auto', maxHeight: 220, margin: 0,
+                }}>
+                  {JSON.stringify(detailNotif.metadata, null, 2)}
+                </pre>
+              )} */}
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDetailNotif(null)}>{t('Tutup')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>,
     akar,
   );
@@ -348,16 +378,15 @@ export default function NotificationCenter() {
 
 /* ===== Satu baris notifikasi ===== */
 function Row({
-  n, lang, now, t, onOpen, onHandle, onRead, onDismiss,
+  n, lang, now, t, onOpen, onRead, onDetail,
 }: {
   n: AppNotification;
   lang: 'id' | 'en';
   now: number;
   t: (s: string) => string;
   onOpen: (n: AppNotification) => void;
-  onHandle: (n: AppNotification) => void;
-  onRead: (id: number) => void;
-  onDismiss: (n: AppNotification) => void;
+  onRead: (id: string | number) => void;
+  onDetail: (n: AppNotification) => void;
 }) {
   const tujuan = n.page ? NAV_INDEX[n.page]?.label : null;
   const bisaDibuka = Boolean(n.page);
@@ -414,34 +443,25 @@ function Row({
 
       {/* Tindakan cepat — muncul saat baris disorot atau difokuskan. */}
       <div className="nc-item-actions">
-        {n.status !== 'selesai' && (
+        {n.read ? (
           <button
             className="nc-act"
-            onClick={() => onHandle(n)}
-            title={n.status === 'terbuka' ? t('Tandai ditangani') : t('Tutup peringatan')}
-            aria-label={n.status === 'terbuka' ? t('Tandai ditangani') : t('Tutup peringatan')}
+            onClick={() => onDetail(n)}
+            title={t('Detail')}
+            aria-label={t('Detail')}
           >
-            {n.status === 'terbuka' ? <Check size={13} /> : <CheckCheck size={13} />}
+            <Eye size={13} />
           </button>
-        )}
-        {!n.read && (
+        ) : (
           <button
             className="nc-act"
-            onClick={() => onRead(n.id)}
-            title={t('Tandai dibaca')}
-            aria-label={t('Tandai dibaca')}
+            onClick={() => { onRead(n.id); onDetail(n); }}
+            title={t('Baca')}
+            aria-label={t('Baca')}
           >
-            <Undo2 size={13} />
+            <Check size={13} />
           </button>
         )}
-        <button
-          className="nc-act danger"
-          onClick={() => onDismiss(n)}
-          title={t('Hapus notifikasi')}
-          aria-label={t('Hapus notifikasi')}
-        >
-          <Trash2 size={13} />
-        </button>
       </div>
     </article>
   );

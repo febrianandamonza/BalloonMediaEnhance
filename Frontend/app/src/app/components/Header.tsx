@@ -7,7 +7,7 @@ import { Bell, Sun, Moon, MapPin, Wifi, WifiOff, Clock } from 'lucide-react';
 
 export default function Header() {
   const {
-    currentPage, sidebarCollapsed, theme, toggleTheme, account, offline, t,
+    currentPage, sidebarCollapsed, theme, toggleTheme, account, offline, isOnline, t,
     notifications, unreadCount, notifOpen, setNotifOpen,
   } = useApp();
   const [clock, setClock] = useState('');
@@ -81,19 +81,20 @@ export default function Header() {
 
         {/* Stasiun aktif — penanda, bukan pemilih: satu sesi terikat pada
             satu stasiun, jadi tidak ada yang bisa dipilih di sini. */}
-        <span className="site-selector" title={account?.siteName ?? 'Stasiun tidak diketahui'}>
+        {/* <span className="site-selector" title={account?.siteName ?? 'Stasiun tidak diketahui'}>
           <MapPin size={13} style={{ opacity: 0.6 }} />
           <span className={`site-status-dot ${offline ? 'offline' : 'online'}`} />
           <span style={{ fontSize: 12.5 }}>{account?.stationCode ?? 'GCS'}</span>
-        </span>
+        </span> */}
 
-        {/* Status tautan data */}
+        {/* Status koneksi internet perangkat — terpisah dari status
+            platform (offline), lihat isOnline di context.tsx. */}
         <span
           className="header-btn"
-          style={{ cursor: 'default', color: offline ? 'var(--danger-400)' : 'var(--success-400)' }}
-          title={offline ? t('PLATFORM OFFLINE') : 'Tautan data balon aktif — 85 Mbps'}
+          style={{ cursor: 'default', color: isOnline ? 'var(--success-400)' : 'var(--danger-400)' }}
+          title={isOnline ? t('Perangkat terkoneksi internet') : t('Tidak ada koneksi internet')}
         >
-          {offline ? <WifiOff size={16} /> : <Wifi size={16} />}
+          {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
         </span>
 
         {/* Lonceng — membuka Pusat Notifikasi. Lencananya menampilkan

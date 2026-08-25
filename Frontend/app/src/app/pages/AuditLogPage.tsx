@@ -58,7 +58,7 @@ function mapAuditLogRecord(record: AuditLogRecord): LogEntry {
 }
 
 export default function AuditLogPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<'all' | Category>('all');
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -80,10 +80,19 @@ export default function AuditLogPage() {
           title: 'Gagal memuat audit trail',
           detail: 'Tidak bisa terhubung ke server. Coba muat ulang halaman.',
         });
+        notify({
+          title: 'Gagal memuat audit trail',
+          detail: 'Tidak bisa terhubung ke server. Coba muat ulang halaman.',
+          severity: 'peringatan',
+          category: 'Keamanan',
+          source: 'Audit Trail',
+          page: 'audit-log',
+          silent: true,
+        });
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [pushToast]);
+  }, [pushToast, notify]);
 
   /* Jejak audit bersifat append-only; entri terbaru ditampilkan di atas
      berdasarkan waktu, bukan diasumsikan dari urutan respons backend. */
@@ -128,6 +137,15 @@ export default function AuditLogPage() {
     a.click();
     URL.revokeObjectURL(url);
     pushToast({ tone: 'success', title: 'Audit trail diekspor', detail: `${filtered.length} entri disimpan sebagai CSV.` });
+    notify({
+      title: 'Audit trail diekspor',
+      detail: `${filtered.length} entri disimpan sebagai CSV.`,
+      severity: 'informasi',
+      category: 'Keamanan',
+      source: 'Audit Trail',
+      page: 'audit-log',
+      silent: true,
+    });
   };
   function formatDates(tanggal: string) {
     const date = new Date(tanggal);

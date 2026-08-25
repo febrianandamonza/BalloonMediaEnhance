@@ -73,8 +73,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'enhance-image', label: 'Imaging Enhancement', icon: <Wand2 size={SZ} /> },
       { id: 'enhance-video', label: 'Video Enhancement', icon: <FilmIcon size={SZ} /> },
-      { id: 'tether-api', label: 'Tether Cable API', icon: <PlugZap size={SZ} /> },
-      { id: 'tether-monitor', label: 'Tether Cable Monitor', icon: <Cable size={SZ} /> },
+      // { id: 'tether-api', label: 'Tether Cable API', icon: <PlugZap size={SZ} /> },
+      // { id: 'tether-monitor', label: 'Tether Cable Monitor', icon: <Cable size={SZ} /> },
     ],
   },
   {
@@ -354,7 +354,7 @@ export default function Sidebar() {
 
         {!collapsed && (
           <div className="sidebar-version">
-            <CircleDot size={9} /> GCS Core v2.0 · Offline Mode
+            <CircleDot size={9} /> Aplikasi v2.0
           </div>
         )}
       </div>

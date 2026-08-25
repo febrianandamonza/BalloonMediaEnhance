@@ -10,12 +10,15 @@
    Dengan begitu ia aman diimpor dari mana pun, termasuk dari kode yang
    dijalankan di sisi peladen saat pembangunan halaman.
    ===================================================================== */
+import type { NotificationRecord } from '../services/api';
 
 export type Severity = 'kritis' | 'peringatan' | 'informasi';
 export type AlertStatus = 'terbuka' | 'ditangani' | 'selesai';
 
 export interface AppNotification {
-  id: number;
+  /** Angka untuk entri yang dibuat lokal (belum dikonfirmasi backend);
+      string bila berasal dari id asli GET /api/v1/notifications. */
+  id: string | number;
   /** Waktu kejadian dalam milidetik sejak epoch. */
   ts: number;
   title: string;
@@ -34,6 +37,13 @@ export interface AppNotification {
   reading?: string;
   /** Ambang yang dilampaui, mis. "30 km/h". */
   threshold?: string;
+  /** Data mentah pendukung, mis. respons API cuaca. */
+  metadata?: Record<string, unknown>;
+  /** true selagi entri ini masih pakai id sementara dari notify() —
+      belum direkonsiliasi dengan baris asli GET /api/v1/notifications.
+      Aksi yang menyentuh backend (mis. tandai dibaca) harus menunggu
+      sampai ini hilang, karena id sementara tidak dikenal backend. */
+  pendingSync?: boolean;
 }
 
 export type Category =
@@ -45,7 +55,11 @@ export type Category =
   | 'Konektivitas'
   | 'Keamanan'
   | 'Deteksi Objek'
-  | 'Sistem';
+  | 'Sistem'
+  | 'Operasional'
+  | 'Media'
+  | 'Akun'
+  | 'Lisensi';
 
 /** Modul yang paling relevan untuk menindaklanjuti tiap kategori. */
 export const CATEGORY_PAGE: Record<Category, string | null> = {
@@ -58,6 +72,10 @@ export const CATEGORY_PAGE: Record<Category, string | null> = {
   'Keamanan': 'audit-log',
   'Deteksi Objek': 'detection-video',
   'Sistem': 'settings',
+  'Operasional': 'flight-info',
+  'Media': 'media-source',
+  'Akun': 'users',
+  'Lisensi': 'licenses',
 };
 
 export const CATEGORIES = Object.keys(CATEGORY_PAGE) as Category[];
@@ -178,42 +196,47 @@ export function seedNotifications(): AppNotification[] {
 }
 
 /* =====================================================================
-   PENYIMPANAN LOKAL
+   SUMBER DATA BACKEND
 
-   Disimpan per stasiun: setiap operator memegang riwayat peringatannya
-   sendiri, sejalan dengan pemisahan lisensi dan pengaturan.
+   Riwayat tidak lagi disimpan di localStorage — GET /api/v1/notifications
+   adalah satu-satunya sumber kebenaran yang dimuat/disegarkan dari
+   context.tsx. Bagian ini hanya memetakan bentuk respons backend
+   (NotificationRecord, lihat services/api.ts) ke model lokal di atas.
    ===================================================================== */
-const key = (username: string) => `skystar.notifications.${username}`;
 
-/** Riwayat dibatasi agar penyimpanan peramban tidak tumbuh tanpa henti. */
-const MAX_STORED = 200;
+/** Riwayat dibatasi agar daftar di memori tidak tumbuh tanpa henti. */
+export const MAX_STORED = 200;
 
-export function loadNotifications(username: string): AppNotification[] {
-  if (typeof window === 'undefined') return seedNotifications();
-  try {
-    const raw = window.localStorage.getItem(key(username));
-    /* Hanya ketiadaan kunci yang berarti "belum pernah dipakai". Riwayat
-       yang sengaja dikosongkan operator adalah keadaan sah dan harus
-       tetap kosong setelah halaman dimuat ulang. */
-    if (raw === null) return seedNotifications();
-    const parsed = JSON.parse(raw) as AppNotification[];
-    if (!Array.isArray(parsed)) return seedNotifications();
-    /* Saring entri cacat agar satu baris rusak tidak merobohkan panel. */
-    return parsed
-      .filter(n => n && typeof n.id === 'number' && typeof n.ts === 'number' && typeof n.title === 'string')
-      .slice(0, MAX_STORED);
-  } catch {
-    return seedNotifications();
-  }
-}
+/** Jeda penyegaran ulang GET /api/v1/notifications oleh panel. */
+export const NOTIFICATIONS_POLL_INTERVAL_MS = 30_000;
 
-export function saveNotifications(username: string, list: AppNotification[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(key(username), JSON.stringify(list.slice(0, MAX_STORED)));
-  } catch {
-    /* kuota penuh atau penyimpanan ditolak → riwayat tetap hidup di memori */
-  }
+const KNOWN_SEVERITIES: Severity[] = ['kritis', 'peringatan', 'informasi'];
+const KNOWN_CATEGORIES: Category[] = [
+  'Cuaca', 'Geofence', 'Tether', 'Ambang Batas', 'Mooring',
+  'Konektivitas', 'Keamanan', 'Deteksi Objek', 'Sistem',
+  'Operasional', 'Media', 'Akun', 'Lisensi',
+];
+
+/** Memetakan satu baris GET /api/v1/notifications ke AppNotification.
+    Nilai `level`/`type` di luar union yang dikenal jatuh ke fallback
+    netral alih-alih ditolak — baris backend yang tidak biasa tetap
+    tampil, bukan menghilang begitu saja dari panel. */
+export function notificationFromRecord(r: NotificationRecord): AppNotification {
+  const severity = KNOWN_SEVERITIES.includes(r.level as Severity) ? (r.level as Severity) : 'informasi';
+  const category = KNOWN_CATEGORIES.includes(r.type as Category) ? (r.type as Category) : 'Sistem';
+  return {
+    id: r.id,
+    ts: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+    title: r.title ?? '',
+    detail: r.description ?? '',
+    severity,
+    category,
+    status: 'terbuka',
+    source: r.source ?? category,
+    read: r.isRead === true,
+    page: CATEGORY_PAGE[category],
+    metadata: r.metadata,
+  };
 }
 
 /* =====================================================================
