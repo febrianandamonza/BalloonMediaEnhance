@@ -429,32 +429,32 @@ export function GeoVisualizationPage() {
 
   /* Titik gelar mengikuti lokasi perangkat bila diizinkan; jika ditolak
      atau gagal, tetap pakai koordinat stasiun yang terkonfigurasi. */
-  useEffect(() => {
-    // console.log(!('geolocation' in navigator))
-    if (!('geolocation' in navigator)) return;
-    const watchId = navigator.geolocation.watchPosition(
-      pos => setLiveCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-      () => {
-        pushToast({
-          tone: 'warning',
-          title: t('Lokasi perangkat tidak tersedia'),
-          detail: t('Menggunakan koordinat stasiun yang terkonfigurasi.'),
-        });
-        notify({
-          title: t('Lokasi perangkat tidak tersedia'),
-          detail: t('Menggunakan koordinat stasiun yang terkonfigurasi.'),
-          severity: 'peringatan',
-          category: 'Geofence',
-          source: 'GeoInt Visualisation',
-          page: 'geo-viz',
-          silent: true,
-        });
-      },
-      { enableHighAccuracy: true, maximumAge: 10000 },
-    );
+  // useEffect(() => {
+  //   // console.log(!('geolocation' in navigator))
+  //   if (!('geolocation' in navigator)) return;
+  //   const watchId = navigator.geolocation.watchPosition(
+  //     pos => setLiveCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+  //     () => {
+  //       pushToast({
+  //         tone: 'warning',
+  //         title: t('Lokasi perangkat tidak tersedia'),
+  //         detail: t('Menggunakan koordinat stasiun yang terkonfigurasi.'),
+  //       });
+  //       notify({
+  //         title: t('Lokasi perangkat tidak tersedia'),
+  //         detail: t('Menggunakan koordinat stasiun yang terkonfigurasi.'),
+  //         severity: 'peringatan',
+  //         category: 'Geofence',
+  //         source: 'GeoInt Visualisation',
+  //         page: 'geo-viz',
+  //         silent: true,
+  //       });
+  //     },
+  //     { enableHighAccuracy: true, maximumAge: 10000 },
+  //   );
 
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
+  //   return () => navigator.geolocation.clearWatch(watchId);
+  // }, []);
 
   const camLat = liveCoords?.lat ?? account?.siteCoords.lat ?? -6.2088;
   const camLon = liveCoords?.lon ?? account?.siteCoords.lon ?? 106.8456;
@@ -479,7 +479,7 @@ export function GeoVisualizationPage() {
 
   const pickTarget = (tp: TargetPoint) => {
     setSelectedId(tp.id);
-    flyTo(tp.lat, tp.lon);
+    flyTo(tp.lat, tp.lon, 16);
     if (typeof tp.id === 'number' && tp.id < 0) {
       pushToast({
         tone: 'warning',
@@ -489,6 +489,19 @@ export function GeoVisualizationPage() {
       return;
     }
     setDetailTargetId(tp.id);
+  };
+  const pickTargetS = (tp: TargetPoint) => {
+    setSelectedId(tp.id);
+    flyTo(tp.lat, tp.lon, 16);
+    if (typeof tp.id === 'number' && tp.id < 0) {
+      pushToast({
+        tone: 'warning',
+        title: t('Data misi tidak lengkap'),
+        detail: t('Misi ini tidak memiliki id yang valid untuk dimuat detailnya.'),
+      });
+      return;
+    }
+    // setDetailTargetId(tp.id);
   };
 
   /* Detail misi + flight-information digabung berdasarkan mission_id,
@@ -520,7 +533,7 @@ export function GeoVisualizationPage() {
       const missions = await api.getFlightMissions().catch(() => []);
       const mapped: TargetPoint[] = [];
       missions
-        .filter(m => missionStatusName(m) === 'Done')
+        // .filter(m => missionStatusName(m) === 'Done')
         .forEach((m, idx) => {
 
           const lat = Number(m.location?.latitude);
@@ -706,7 +719,7 @@ export function GeoVisualizationPage() {
               height={468}
               measureMode={measureMode}
               onMeasure={(r) => setMeasured({ dist: r.dist, bearing: r.bearing })}
-            // focus={focus}
+              focus={focus}
             />
 
             {/* <GlassCard tilt={false}>
@@ -834,7 +847,7 @@ export function GeoVisualizationPage() {
                       key={tp.id}
                       className={`tgt-row ${selectedId === tp.id ? 'on' : ''}`}
                     >
-                      <button className="tgt-main" onClick={() => pickTarget(tp)}>
+                      <button className="tgt-main" onClick={() => pickTargetS(tp)}>
                         <span className="tgt-head">
                           <MapPin size={13} style={{ flexShrink: 0 }} />
                           <span className="tgt-name">{tp.name}</span>
@@ -1118,62 +1131,62 @@ export function AlertsPage() {
         </div>
 
         {/* <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 330px', gap: 16 }}> */}
-          <GlassCard tilt={false}>
-            <SectionHead
-              icon={<BellRing size={15} />}
-              title={t('Riwayat Peringatan')}
-              sub={`${filtered.length} ${t('dari')} ${notifications.length} ${t('entri')}`}
-              right={
-                <Segmented
-                  value={filter}
-                  options={[
-                    { id: 'all', label: t('Semua') },
-                    { id: 'kritis', label: t('Kritis') },
-                    { id: 'peringatan', label: t('Peringatan') },
-                    { id: 'informasi', label: t('Info') },
-                  ]}
-                  onChange={v => { setFilter(v); setAlertsPage(1); }}
-                />
-              }
-            />
-            <div className="table-container">
-              <table>
-                <thead><tr><th>{t('Waktu')}</th><th>{t('Peringatan')}</th>
+        <GlassCard tilt={false}>
+          <SectionHead
+            icon={<BellRing size={15} />}
+            title={t('Riwayat Peringatan')}
+            sub={`${filtered.length} ${t('dari')} ${notifications.length} ${t('entri')}`}
+            right={
+              <Segmented
+                value={filter}
+                options={[
+                  { id: 'all', label: t('Semua') },
+                  { id: 'kritis', label: t('Kritis') },
+                  { id: 'peringatan', label: t('Peringatan') },
+                  { id: 'informasi', label: t('Info') },
+                ]}
+                onChange={v => { setFilter(v); setAlertsPage(1); }}
+              />
+            }
+          />
+          <div className="table-container">
+            <table>
+              <thead><tr><th>{t('Waktu')}</th><th>{t('Peringatan')}</th>
                 <th>{t('Tingkat')}</th><th>{t('Jenis')}</th><th>{t('Dibaca')}</th>
                 {/* <th>{t('Status')}</th> */}
                 <th style={{ textAlign: 'right' }}>{t('Aksi')}</th></tr></thead>
-                <tbody>
-                  {paged.map(a => (
-                    <tr key={a.id} style={{ opacity: a.status === 'selesai' ? 0.72 : 1 }}>
-                      <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>{fullTimestamp(a.ts, lang)}</td>
-                      <td>
-                        <div style={{ fontWeight: a.read ? 600 : 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {!a.read && <span className="nc-unread-dot" style={{ marginTop: 0 }} />}
-                          {t(a.title)}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                          {t('Sumber')}: {t(a.source)}
-                          {a.reading && ` · ${t(a.reading)}${a.threshold ? ` / ${t(a.threshold)}` : ''}`}
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`badge ${SEV_META[a.severity].badge}`} style={{ gap: 4 }}>
-                          {SEV_META[a.severity].icon} {t(a.severity)}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 12 }}>{t(a.category)}</td>
-                      <td>
-                        <span className={`badge ${a.read ? 'badge-neutral' : 'badge-info'}`}>
-                          {a.read ? t('Sudah Dibaca') : t('Belum Dibaca')}
-                        </span>
-                      </td>
-                      {/* <td><span className={`badge ${STATUS_BADGE[a.status]}`}>{t(a.status)}</span></td> */}
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'inline-flex', gap: 4 }}>
-                          <button className="btn btn-secondary btn-sm" onClick={() => openDetail(a)}>
-                            <Eye size={12} /> {a.read ? t('Detail') : t('Baca')}
-                          </button>
-                          {/* {a.status === 'terbuka' && (
+              <tbody>
+                {paged.map(a => (
+                  <tr key={a.id} style={{ opacity: a.status === 'selesai' ? 0.72 : 1 }}>
+                    <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>{fullTimestamp(a.ts, lang)}</td>
+                    <td>
+                      <div style={{ fontWeight: a.read ? 600 : 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {!a.read && <span className="nc-unread-dot" style={{ marginTop: 0 }} />}
+                        {t(a.title)}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        {t('Sumber')}: {t(a.source)}
+                        {a.reading && ` · ${t(a.reading)}${a.threshold ? ` / ${t(a.threshold)}` : ''}`}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`badge ${SEV_META[a.severity].badge}`} style={{ gap: 4 }}>
+                        {SEV_META[a.severity].icon} {t(a.severity)}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>{t(a.category)}</td>
+                    <td>
+                      <span className={`badge ${a.read ? 'badge-neutral' : 'badge-info'}`}>
+                        {a.read ? t('Sudah Dibaca') : t('Belum Dibaca')}
+                      </span>
+                    </td>
+                    {/* <td><span className={`badge ${STATUS_BADGE[a.status]}`}>{t(a.status)}</span></td> */}
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', gap: 4 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openDetail(a)}>
+                          <Eye size={12} /> {a.read ? t('Detail') : t('Baca')}
+                        </button>
+                        {/* {a.status === 'terbuka' && (
                             <button className="btn btn-secondary btn-sm" onClick={() => advance(a.id, 'ditangani', t(a.title), a.status)}>
                               <Check size={12} /> {t('Tangani')}
                             </button>
@@ -1183,169 +1196,169 @@ export function AlertsPage() {
                               <CheckCheck size={12} /> {t('Tutup')}
                             </button>
                           )} */}
-                          {/* <button
+                        {/* <button
                             className="btn btn-ghost btn-sm"
                             onClick={() => drop(a.id, t(a.title))}
                             aria-label={`${t('Hapus')}: ${t(a.title)}`}
                           >
                             <Trash2 size={12} />
                           </button> */}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {filtered.length > 0 && (
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                marginTop: 10, padding: '8px 12px',
-                background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-md)',
-              }}>
-                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-                  {t('Halaman')} {alertsPage} {t('dari')} {alertsPageCount}
-                </span>
-                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {filtered.length > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginTop: 10, padding: '8px 12px',
+              background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)',
+            }}>
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                {t('Halaman')} {alertsPage} {t('dari')} {alertsPageCount}
+              </span>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setAlertsPage(p => Math.max(1, p - 1))}
+                  disabled={alertsPage <= 1}
+                  aria-label={t('Halaman sebelumnya')}
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                {alertsPageWindow.map(p => (
                   <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setAlertsPage(p => Math.max(1, p - 1))}
-                    disabled={alertsPage <= 1}
-                    aria-label={t('Halaman sebelumnya')}
+                    key={p}
+                    className={`btn btn-sm ${p === alertsPage ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setAlertsPage(p)}
+                    aria-current={p === alertsPage ? 'page' : undefined}
+                    aria-label={`${t('Halaman')} ${p}`}
                   >
-                    <ChevronLeft size={12} />
+                    {p}
                   </button>
-                  {alertsPageWindow.map(p => (
-                    <button
-                      key={p}
-                      className={`btn btn-sm ${p === alertsPage ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setAlertsPage(p)}
-                      aria-current={p === alertsPage ? 'page' : undefined}
-                      aria-label={`${t('Halaman')} ${p}`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setAlertsPage(p => Math.min(alertsPageCount, p + 1))}
-                    disabled={alertsPage >= alertsPageCount}
-                    aria-label={t('Halaman berikutnya')}
-                  >
-                    <ChevronRight size={12} />
-                  </button>
-                </div>
+                ))}
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setAlertsPage(p => Math.min(alertsPageCount, p + 1))}
+                  disabled={alertsPage >= alertsPageCount}
+                  aria-label={t('Halaman berikutnya')}
+                >
+                  <ChevronRight size={12} />
+                </button>
               </div>
-            )}
-            {filtered.length === 0 && (
-              <EmptyState
-                icon={<Inbox size={22} />}
-                title={t('Tidak ada peringatan')}
-                description={
-                  notifications.length === 0
-                    ? t('Riwayat kosong. Peringatan baru akan muncul begitu ambang aturan terlampaui.')
-                    : t('Tidak ditemukan peringatan pada tingkat yang dipilih.')
-                }
-                action={
-                  notifications.length === 0
-                    ? <button className="btn btn-secondary btn-sm" onClick={resetNotifications}>
-                      <RefreshCw size={12} /> {t('Muat Riwayat Contoh')}
-                    </button>
-                    : undefined
-                }
-              />
-            )}
+            </div>
+          )}
+          {filtered.length === 0 && (
+            <EmptyState
+              icon={<Inbox size={22} />}
+              title={t('Tidak ada peringatan')}
+              description={
+                notifications.length === 0
+                  ? t('Riwayat kosong. Peringatan baru akan muncul begitu ambang aturan terlampaui.')
+                  : t('Tidak ditemukan peringatan pada tingkat yang dipilih.')
+              }
+              action={
+                notifications.length === 0
+                  ? <button className="btn btn-secondary btn-sm" onClick={resetNotifications}>
+                    <RefreshCw size={12} /> {t('Muat Riwayat Contoh')}
+                  </button>
+                  : undefined
+              }
+            />
+          )}
+        </GlassCard>
+
+        <div style={{ display: 'NONE', flexDirection: 'column', gap: 12 }}>
+          <GlassCard>
+            <SectionHead
+              icon={<Filter size={15} />}
+              title={t('Aturan Peringatan')}
+              sub={`${rules.filter(r => r.enabled).length} ${t('dari')} ${rules.length} ${t('aktif')}`}
+              right={
+                <button className="btn btn-ghost btn-sm" onClick={openCreate} aria-label={t('Buat Aturan')}>
+                  <Plus size={13} />
+                </button>
+              }
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {rules.map(r => (
+                <div key={r.id} className={`rule-row ${r.enabled ? '' : 'off'}`}>
+                  <div className="rule-top">
+                    <span className={`rule-dot ${r.severity}`} aria-hidden="true" />
+                    <span className="rule-name">{t(r.name)}</span>
+                  </div>
+                  <div className="rule-bottom">
+                    <span className="rule-cond">
+                      {t(r.metric)} {r.operator} {t(r.threshold)}
+                    </span>
+                    <span className="rule-acts">
+                      <button
+                        className="rule-act"
+                        onClick={() => toggleRule(r)}
+                        title={r.enabled ? t('Nonaktifkan') : t('Aktifkan')}
+                        aria-label={`${r.enabled ? t('Nonaktifkan') : t('Aktifkan')}: ${t(r.name)}`}
+                      >
+                        {r.enabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                      </button>
+                      <button
+                        className="rule-act"
+                        onClick={() => testRule(r)}
+                        title={t('Uji aturan')}
+                        aria-label={`${t('Uji aturan')}: ${t(r.name)}`}
+                      >
+                        <Play size={12} />
+                      </button>
+                      <button
+                        className="rule-act"
+                        onClick={() => openEdit(r)}
+                        title={t('Ubah')}
+                        aria-label={`${t('Ubah')}: ${t(r.name)}`}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        className="rule-act danger"
+                        onClick={() => deleteRule(r)}
+                        title={t('Hapus')}
+                        aria-label={`${t('Hapus')}: ${t(r.name)}`}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {rules.length === 0 && (
+                <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '8px 0', lineHeight: 1.6 }}>
+                  {t('Belum ada aturan. Tanpa aturan, tidak ada ambang yang diawasi.')}
+                </p>
+              )}
+            </div>
           </GlassCard>
 
-          <div style={{ display: 'NONE', flexDirection: 'column', gap: 12 }}>
-            <GlassCard>
-              <SectionHead
-                icon={<Filter size={15} />}
-                title={t('Aturan Peringatan')}
-                sub={`${rules.filter(r => r.enabled).length} ${t('dari')} ${rules.length} ${t('aktif')}`}
-                right={
-                  <button className="btn btn-ghost btn-sm" onClick={openCreate} aria-label={t('Buat Aturan')}>
-                    <Plus size={13} />
-                  </button>
-                }
-              />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {rules.map(r => (
-                  <div key={r.id} className={`rule-row ${r.enabled ? '' : 'off'}`}>
-                    <div className="rule-top">
-                      <span className={`rule-dot ${r.severity}`} aria-hidden="true" />
-                      <span className="rule-name">{t(r.name)}</span>
-                    </div>
-                    <div className="rule-bottom">
-                      <span className="rule-cond">
-                        {t(r.metric)} {r.operator} {t(r.threshold)}
-                      </span>
-                      <span className="rule-acts">
-                        <button
-                          className="rule-act"
-                          onClick={() => toggleRule(r)}
-                          title={r.enabled ? t('Nonaktifkan') : t('Aktifkan')}
-                          aria-label={`${r.enabled ? t('Nonaktifkan') : t('Aktifkan')}: ${t(r.name)}`}
-                        >
-                          {r.enabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                        </button>
-                        <button
-                          className="rule-act"
-                          onClick={() => testRule(r)}
-                          title={t('Uji aturan')}
-                          aria-label={`${t('Uji aturan')}: ${t(r.name)}`}
-                        >
-                          <Play size={12} />
-                        </button>
-                        <button
-                          className="rule-act"
-                          onClick={() => openEdit(r)}
-                          title={t('Ubah')}
-                          aria-label={`${t('Ubah')}: ${t(r.name)}`}
-                        >
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          className="rule-act danger"
-                          onClick={() => deleteRule(r)}
-                          title={t('Hapus')}
-                          aria-label={`${t('Hapus')}: ${t(r.name)}`}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {rules.length === 0 && (
-                  <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '8px 0', lineHeight: 1.6 }}>
-                    {t('Belum ada aturan. Tanpa aturan, tidak ada ambang yang diawasi.')}
-                  </p>
-                )}
-              </div>
-            </GlassCard>
+          <GlassCard>
+            <SectionHead icon={<Radio size={15} />} title={t('Kanal Notifikasi')} />
+            <ConfigToggle label={t('Notifikasi dalam aplikasi')} initial={true} />
+            <ConfigToggle label={t('Alarm suara pada peringatan kritis')} initial={true} />
+            <ConfigToggle label={t('Catat ke Audit Trail')} initial={true} />
+            <ConfigToggle label={t('Teruskan ke stasiun GCS lain')} initial={false} />
+            <ConfigToggle label={t('Sertakan dalam laporan harian otomatis')} initial={false} />
+          </GlassCard>
 
-            <GlassCard>
-              <SectionHead icon={<Radio size={15} />} title={t('Kanal Notifikasi')} />
-              <ConfigToggle label={t('Notifikasi dalam aplikasi')} initial={true} />
-              <ConfigToggle label={t('Alarm suara pada peringatan kritis')} initial={true} />
-              <ConfigToggle label={t('Catat ke Audit Trail')} initial={true} />
-              <ConfigToggle label={t('Teruskan ke stasiun GCS lain')} initial={false} />
-              <ConfigToggle label={t('Sertakan dalam laporan harian otomatis')} initial={false} />
-            </GlassCard>
-
-            <GlassCard>
-              <SectionHead icon={<Activity size={15} />} title={t('Eskalasi Bertingkat')} />
-              <KVList rows={[
-                [t('Tingkat 1 — Informasi'), t('Operator stasiun')],
-                [t('Tingkat 2 — Peringatan'), t('Operator + Supervisor')],
-                [t('Tingkat 3 — Kritis'), t('Seluruh peran + Commander')],
-                [t('Batas Waktu Tanggapan'), t('5 menit (kritis)')],
-                [t('Tindakan Otomatis'), t('Rekam video 60 detik')],
-              ]} />
-            </GlassCard>
-          </div>
+          <GlassCard>
+            <SectionHead icon={<Activity size={15} />} title={t('Eskalasi Bertingkat')} />
+            <KVList rows={[
+              [t('Tingkat 1 — Informasi'), t('Operator stasiun')],
+              [t('Tingkat 2 — Peringatan'), t('Operator + Supervisor')],
+              [t('Tingkat 3 — Kritis'), t('Seluruh peran + Commander')],
+              [t('Batas Waktu Tanggapan'), t('5 menit (kritis)')],
+              [t('Tindakan Otomatis'), t('Rekam video 60 detik')],
+            ]} />
+          </GlassCard>
+        </div>
         {/* </div> */}
 
         {/* ----- Dialog aturan ----- */}
