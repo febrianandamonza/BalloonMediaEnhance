@@ -79,8 +79,18 @@ export interface LocationRecord {
   [key: string]: unknown;
 }
 
+/** Payload POST /api/v1/locations — dibuat otomatis saat Simpan Misi dari
+    titik yang diklik pada peta pratinjau lokasi (FlightInfoPage). */
+export interface CreateLocationPayload {
+  name: string;
+  city: string;
+  province: string;
+  latitude: number;
+  longitude: number;
+}
+
 /** Satu baris dari respons GET /api/v1/balloons — opsi platform balon pada
-    formulir Misi Baru. */
+    formulir Misi Baru, dan baris tabel pada halaman Balloon Management. */
 export interface BalloonRecord {
   id: string | number;
   name?: string;
@@ -91,6 +101,21 @@ export interface BalloonRecord {
   status?: string;
   [key: string]: unknown;
 }
+
+/** Payload POST /api/v1/balloons — membuat platform balon baru dari
+    halaman Balloon Management. Backend memakai `balloon_name` (bukan
+    `name`) dan mengharapkan `capacity`/`max_altitude` sebagai angka. */
+export interface CreateBalloonPayload {
+  balloon_name: string;
+  serial_number?: string;
+  capacity?: number;
+  max_altitude?: number;
+  status?: string;
+}
+
+/** Payload PUT /api/v1/balloons/{balloon_id} — semua field opsional
+    karena editor mengirim hanya yang diubah operator. */
+export type UpdateBalloonPayload = Partial<CreateBalloonPayload>;
 
 /** Satu baris dari respons GET /api/v1/operators — opsi operator penanggung
     jawab misi pada formulir Misi Baru. */
@@ -159,10 +184,14 @@ export interface EnhanceImageResult {
     responsnya sama dengan /enhance/image. */
 export type EnhanceVideoResult = EnhanceImageResult;
 
-/** Satu objek yang terdeteksi pada respons /detect/image. */
+/** Satu objek yang terdeteksi pada respons /detect/image, atau satu
+    pesan WebSocket /detect/ws/{job_id}. `color` (hex, mis. "#00FF00")
+    ditetapkan backend per kelas objek — dipakai VideoDetectionPage untuk
+    mewarnai baris "Hasil Deteksi" sesuai kelasnya alih-alih warna baku. */
 export interface DetectedObject {
   class: string;
   confidence: number;
+  color?: string;
 }
 
 /** Respons POST /api/v1/detect/image — dipakai ImageDetectionPage. Sama
@@ -614,8 +643,23 @@ class ApiService {
     return this.request<LocationRecord[]>('/locations');
   }
 
+  async createLocation(payload: CreateLocationPayload) {
+    return this.request<LocationRecord>('/locations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getBalloons() {
     return this.request<BalloonRecord[]>('/balloons');
+  }
+
+  async createBalloon(payload: CreateBalloonPayload) {
+    return this.request<unknown>('/balloons', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async updateBalloon(id: string, payload: UpdateBalloonPayload) {
+    return this.request<unknown>(`/balloons/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
   }
 
   async getOperators() {

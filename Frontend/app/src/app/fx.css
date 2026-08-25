@@ -716,6 +716,10 @@
   border-bottom: none;
 }
 .esri-wrap .leaflet-control-attribution a { color: var(--text-secondary) !important; }
+.esri-wrap .leaflet-bottom.leaflet-right { display: none; }
+
+/* Kotak hasil pencarian lokasi pada field "Pilih Lokasi" */
+.geo-combo-option:hover { background: rgba(255, 255, 255, 0.05); }
 .esri-wrap .leaflet-popup-content-wrapper {
   background: rgba(11, 15, 25, 0.94);
   backdrop-filter: blur(16px);

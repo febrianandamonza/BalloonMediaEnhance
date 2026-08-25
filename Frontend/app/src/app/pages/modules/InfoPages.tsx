@@ -308,18 +308,8 @@ interface TargetPoint {
   range: number;
 }
 
-/* Titik awal Target Bank. Setelah stasiun berjalan, daftar ini dapat
-   ditambah lewat penandaan langsung di peta dan dihapus per entri. */
-const SEED_TARGETS: TargetPoint[] = [
-  { id: 1, name: 'Gerbang Alpha', lat: -6.1951, lon: 106.8320, threat: 'sedang', range: 1248 },
-  { id: 2, name: 'Lapangan Utama', lat: -6.2012, lon: 106.8401, threat: 'tinggi', range: 968 },
-  { id: 3, name: 'Jembatan Utara', lat: -6.1889, lon: 106.8477, threat: 'rendah', range: 2314 },
-  { id: 4, name: 'Pos Pemeriksaan B', lat: -6.2103, lon: 106.8512, threat: 'sedang', range: 1702 },
-  { id: 5, name: 'Dermaga Timur', lat: -6.2044, lon: 106.8629, threat: 'rendah', range: 3105 },
-];
-
-const THREAT_BADGE = { rendah: 'badge-neutral', sedang: 'badge-warning', tinggi: 'badge-danger' } as const;
-const THREAT_ORDER: TargetPoint['threat'][] = ['rendah', 'sedang', 'tinggi'];
+/* Target Bank tidak lagi diisi manual — daftar ini dimuat dari misi
+   berstatus Done (GET /flight-missions), lihat loadDoneTargets(). */
 
 /* Menyimpan berkas ke perangkat operator. Karena stasiun tertutup,
    "ekspor" berarti menulis salinan ke penyimpanan lokal — bukan
@@ -342,7 +332,7 @@ const xml = (s: string) =>
 function buildKML(targets: TargetPoint[], station: string, lat: number, lon: number): string {
   const marks = targets.map(tp => `    <Placemark>
       <name>${xml(tp.name)}</name>
-      <description>Tingkat ancaman: ${tp.threat} — jarak ${tp.range} m dari titik gelar</description>
+      <description>Lokasi misi selesai — jarak ${tp.range} m dari titik gelar</description>
       <Point><coordinates>${tp.lon.toFixed(6)},${tp.lat.toFixed(6)},0</coordinates></Point>
     </Placemark>`).join('\n');
 
@@ -363,7 +353,7 @@ ${marks}
 function buildGPX(targets: TargetPoint[], station: string): string {
   const pts = targets.map(tp => `  <wpt lat="${tp.lat.toFixed(6)}" lon="${tp.lon.toFixed(6)}">
     <name>${xml(tp.name)}</name>
-    <desc>Tingkat ancaman: ${tp.threat} — jarak ${tp.range} m</desc>
+    <desc>Lokasi misi selesai — jarak ${tp.range} m</desc>
     <sym>Flag</sym>
   </wpt>`).join('\n');
 
@@ -378,23 +368,45 @@ ${pts}
 export function GeoVisualizationPage() {
   const { pushToast, account, t } = useApp();
 
-  const [targets, setTargets] = useState<TargetPoint[]>(SEED_TARGETS);
-  const [selectedId, setSelectedId] = useState<number | null>(SEED_TARGETS[1].id);
+  const [targets, setTargets] = useState<TargetPoint[]>([]);
+  const [targetsLoading, setTargetsLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [basemap, setBasemap] = useState<BasemapId>('imagery');
-  const [showFov, setShowFov] = useState(true);
-  const [showRings, setShowRings] = useState(true);
-  const [showGeofence, setShowGeofence] = useState(true);
+  const [showFov, setShowFov] = useState(false);
+  const [showRings, setShowRings] = useState(false);
+  const [showGeofence, setShowGeofence] = useState(false);
   const [showTrack, setShowTrack] = useState(false);
   const [fovDeg, setFovDeg] = useState(34);
 
   /* Alat kerja peta */
-  const [markMode, setMarkMode] = useState(false);
   const [measureMode, setMeasureMode] = useState(false);
   const [measured, setMeasured] = useState<{ dist: number; bearing: number } | null>(null);
   const [focus, setFocus] = useState<{ lat: number; lon: number; zoom?: number; nonce: number } | null>(null);
 
-  const camLat = account?.siteCoords.lat ?? -6.2088;
-  const camLon = account?.siteCoords.lon ?? 106.8456;
+  const [liveCoords, setLiveCoords] = useState<{ lat: number; lon: number } | null>(null);
+
+  /* Titik gelar mengikuti lokasi perangkat bila diizinkan; jika ditolak
+     atau gagal, tetap pakai koordinat stasiun yang terkonfigurasi. */
+  useEffect(() => {
+    // console.log(!('geolocation' in navigator))
+    if (!('geolocation' in navigator)) return;
+    const watchId = navigator.geolocation.watchPosition(
+      pos => setLiveCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => {
+        pushToast({
+          tone: 'warning',
+          title: t('Lokasi perangkat tidak tersedia'),
+          detail: t('Menggunakan koordinat stasiun yang terkonfigurasi.'),
+        });
+      },
+      { enableHighAccuracy: true, maximumAge: 10000 },
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  const camLat = liveCoords?.lat ?? account?.siteCoords.lat ?? -6.2088;
+  const camLon = liveCoords?.lon ?? account?.siteCoords.lon ?? 106.8456;
   const station = account?.stationCode ?? 'GCS';
   const ALT_AGL = 450;
 
@@ -419,41 +431,41 @@ export function GeoVisualizationPage() {
     flyTo(tp.lat, tp.lon);
   };
 
-  /* Menempatkan titik baru dari klik di peta. */
-  const addTarget = (lat: number, lon: number) => {
-    const range = Math.round(
-      Math.sqrt(distanceBetween(camLat, camLon, lat, lon) ** 2 + ALT_AGL ** 2),
-    );
-    const id = Math.max(0, ...targets.map(tp => tp.id)) + 1;
-    const tp: TargetPoint = { id, name: `Titik Baru ${id}`, lat, lon, threat: 'rendah', range };
-    setTargets(prev => [...prev, tp]);
-    setSelectedId(id);
-    setMarkMode(false);
-    pushToast({
-      tone: 'success',
-      title: `${tp.name} ditambahkan`,
-      detail: `${lat.toFixed(5)}, ${lon.toFixed(5)} · jarak miring ${range.toLocaleString('id-ID')} m.`,
-    });
-  };
+  /* Target Bank dimuat dari misi berstatus Done — setiap misi punya relasi
+     location dengan latitude/longitude. Dipanggil sekali saat mount; tidak
+     bergantung pada camLat/camLon (yang terus berubah lewat watchPosition)
+     supaya tidak memicu fetch berulang. */
+  const loadDoneTargets = async () => {
+    setTargetsLoading(true);
+    try {
+      const missions = await api.getFlightMissions().catch(() => []);
+      const mapped: TargetPoint[] = [];
+      missions
+        .filter(m => missionStatusName(m) === 'Done')
+        .forEach((m, idx) => {
 
-  const removeTarget = (tp: TargetPoint) => {
-    setTargets(prev => prev.filter(x => x.id !== tp.id));
-    if (selectedId === tp.id) setSelectedId(null);
-    pushToast({ tone: 'warning', title: `${tp.name} dihapus dari Target Bank` });
-  };
-
-  /* Menaikkan tingkat ancaman secara berputar: rendah → sedang → tinggi. */
-  const cycleThreat = (tp: TargetPoint) => {
-    const next = THREAT_ORDER[(THREAT_ORDER.indexOf(tp.threat) + 1) % THREAT_ORDER.length];
-    setTargets(prev => prev.map(x => (x.id === tp.id ? { ...x, threat: next } : x)));
-  };
-
-  const renameTarget = (tp: TargetPoint) => {
-    const name = window.prompt('Nama titik target', tp.name);
-    if (name && name.trim()) {
-      setTargets(prev => prev.map(x => (x.id === tp.id ? { ...x, name: name.trim() } : x)));
+          const lat = Number(m.location?.latitude);
+          const lon = Number(m.location?.longitude);
+          // console.log(!Number.isFinite(lat) || !Number.isFinite(lon))
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+          const range = Math.round(
+            Math.sqrt(distanceBetween(camLat, camLon, lat, lon) ** 2 + ALT_AGL ** 2),
+          );
+          const rawId = typeof m.id === 'number' ? m.id : Number(m.id);
+          mapped.push({
+            id: Number.isFinite(rawId) ? rawId : -(idx + 1),
+            name: String(m.mission_name || m.mission_code || `Misi ${idx + 1}`),
+            lat, lon, threat: 'rendah', range,
+          });
+        });
+      setTargets(mapped);
+      setSelectedId(mapped[0]?.id ?? null);
+    } finally {
+      setTargetsLoading(false);
     }
   };
+
+  useEffect(() => { loadDoneTargets(); }, []);
 
   const copyCoords = async () => {
     if (!selected) return;
@@ -467,7 +479,7 @@ export function GeoVisualizationPage() {
 
   const exportTargets = (fmt: 'KML' | 'GPX') => {
     if (targets.length === 0) {
-      pushToast({ tone: 'warning', title: 'Target Bank kosong', detail: 'Tandai minimal satu titik sebelum mengekspor.' });
+      pushToast({ tone: 'warning', title: 'Target Bank kosong', detail: 'Belum ada misi berstatus Done untuk diekspor.' });
       return;
     }
     const stamp = new Date().toISOString().slice(0, 10);
@@ -482,7 +494,7 @@ export function GeoVisualizationPage() {
     }
     pushToast({
       tone: 'success',
-      title: `Target Bank diekspor — ${fmt}`,
+      title: `Target Lokasi diekspor — ${fmt}`,
       detail: `${targets.length} titik koordinat WGS-84 ditulis ke berkas.`,
     });
   };
@@ -507,31 +519,24 @@ export function GeoVisualizationPage() {
           }
         />
 
-        <div className="geo-layout">
+        <div className="geo-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0px, 1fr) 451px', gap: '16px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
             {/* ---- Bilah alat peta ---- */}
             <div className="map-toolbar">
               <button
-                className={`map-tool ${markMode ? 'on' : ''}`}
-                onClick={() => { setMarkMode(v => !v); setMeasureMode(false); }}
-                title={t('Tempatkan titik target dengan mengklik peta')}
-              >
-                <MapPin size={14} /> Tandai Titik
-              </button>
-              <button
                 className={`map-tool ${measureMode ? 'on' : ''}`}
-                onClick={() => { setMeasureMode(v => !v); setMarkMode(false); setMeasured(null); }}
+                onClick={() => { setMeasureMode(v => !v); setMeasured(null); }}
                 title={t('Ukur jarak dan baringan antara dua titik')}
               >
                 <Ruler size={14} /> Ukur Jarak
               </button>
-              <button
+              {/* <button
                 className="map-tool"
                 onClick={() => flyTo(camLat, camLon, 14)}
                 title={t('Kembali ke titik gelar stasiun')}
               >
                 <Crosshair size={14} /> Pusatkan Stasiun
-              </button>
+              </button> */}
               <button
                 className="map-tool"
                 onClick={copyCoords}
@@ -568,27 +573,20 @@ export function GeoVisualizationPage() {
               showRings={showRings}
               showGeofence={showGeofence}
               showTrack={showTrack}
+              showStation={false}
+              initialZoom={5}
               fovDeg={fovDeg}
               height={468}
-              markMode={markMode}
-              onMapClick={addTarget}
               measureMode={measureMode}
               onMeasure={(r) => setMeasured({ dist: r.dist, bearing: r.bearing })}
-              focus={focus}
+            // focus={focus}
             />
 
-            <GlassCard tilt={false}>
+            {/* <GlassCard tilt={false}>
               <SectionHead
                 icon={<Crosshair size={15} />}
                 title={t('Solusi Geolokasi')}
                 sub={selected ? `Target terkunci — ${selected.name}` : 'Belum ada target terpilih'}
-                right={
-                  selected && (
-                    <span className={`badge ${THREAT_BADGE[selected.threat]}`}>
-                      ancaman {selected.threat}
-                    </span>
-                  )
-                }
               />
               {solution && selected ? (
                 <MetricRow cols={4}>
@@ -608,88 +606,99 @@ export function GeoVisualizationPage() {
                   description={t('Klik penanda target atau salah satu entri Target Bank untuk menghitung solusi geolokasi.')}
                 />
               )}
-            </GlassCard>
+            </GlassCard> */}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-            <GlassCard>
-              <SectionHead icon={<Layers size={15} />} title={t('Basemap')} sub={t('Sumber ubin peta')} />
-              <div className="lyr-pick">
-                {BASEMAPS.map(b => (
-                  <button
-                    key={b.id}
-                    className={basemap === b.id ? 'on' : ''}
-                    onClick={() => setBasemap(b.id)}
-                    style={{ padding: '7px 9px', textAlign: 'left' }}
-                  >
-                    <span className="sw-chip" style={{ background: b.chip }} />
-                    <span style={{ minWidth: 0, display: 'block' }}>
-                      <span style={{ display: 'block', fontWeight: 600 }}>{b.label}</span>
-                      <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
-                        {b.note}
+            <div style={{ display: 'none' }}>
+              <GlassCard>
+                <SectionHead icon={<Layers size={15} />} title={t('Basemap')} sub={t('Sumber ubin peta')} />
+                <div className="lyr-pick">
+                  {BASEMAPS.map(b => (
+                    <button
+                      key={b.id}
+                      className={basemap === b.id ? 'on' : ''}
+                      onClick={() => setBasemap(b.id)}
+                      style={{ padding: '7px 9px', textAlign: 'left' }}
+                    >
+                      <span className="sw-chip" style={{ background: b.chip }} />
+                      <span style={{ minWidth: 0, display: 'block' }}>
+                        <span style={{ display: 'block', fontWeight: 600 }}>{b.label}</span>
+                        <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+                          {b.note}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <p className="note-inline">
-                {t('Bila jaringan keluar ditutup, peta berpindah sendiri ke Grid Referensi Lokal tanpa kehilangan lapisan taktis.')}
-              </p>
-            </GlassCard>
+                    </button>
+                  ))}
+                </div>
+                <p className="note-inline">
+                  {t('Bila jaringan keluar ditutup, peta berpindah sendiri ke Grid Referensi Lokal tanpa kehilangan lapisan taktis.')}
+                </p>
+              </GlassCard>
+              <GlassCard>
+                <SectionHead icon={<Eye size={15} />} title={t('Lapisan Taktis')} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <Switch checked={showFov} onChange={setShowFov}
+                    label={t('Kerucut pandang kamera')} hint={t('Proyeksi FOV menuju target terkunci')} />
+                  <Switch checked={showRings} onChange={setShowRings}
+                    label={t('Cincin jangkauan')} hint={t('Radius 1, 2, dan 3 km dari titik gelar')} />
+                  <Switch checked={showGeofence} onChange={setShowGeofence}
+                    label={t('Poligon geofence')} hint={t('Batas area tanggung jawab stasiun')} />
+                  <Switch checked={showTrack} onChange={setShowTrack}
+                    label={t('Jejak lintasan balon')} hint={t('Simpangan platform akibat angin')} />
+                </div>
 
-            <GlassCard>
-              <SectionHead icon={<Eye size={15} />} title={t('Lapisan Taktis')} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <Switch checked={showFov} onChange={setShowFov}
-                  label={t('Kerucut pandang kamera')} hint={t('Proyeksi FOV menuju target terkunci')} />
-                <Switch checked={showRings} onChange={setShowRings}
-                  label={t('Cincin jangkauan')} hint={t('Radius 1, 2, dan 3 km dari titik gelar')} />
-                <Switch checked={showGeofence} onChange={setShowGeofence}
-                  label={t('Poligon geofence')} hint={t('Batas area tanggung jawab stasiun')} />
-                <Switch checked={showTrack} onChange={setShowTrack}
-                  label={t('Jejak lintasan balon')} hint={t('Simpangan platform akibat angin')} />
-              </div>
+                <div className="slider-row" style={{ marginTop: 12 }}>
+                  <label htmlFor="fov-range">
+                    Bukaan FOV
+                    <b className="tabnum">{fovDeg}°</b>
+                  </label>
+                  <input
+                    id="fov-range"
+                    type="range"
+                    min={6}
+                    max={60}
+                    step={2}
+                    value={fovDeg}
+                    onChange={e => setFovDeg(Number(e.target.value))}
+                  />
+                  <span className="slider-foot">
+                    Setara zoom optik {(60 / fovDeg).toFixed(1)}× pada gimbal Epsilon
+                  </span>
+                </div>
+              </GlassCard>
+            </div>
 
-              <div className="slider-row" style={{ marginTop: 12 }}>
-                <label htmlFor="fov-range">
-                  Bukaan FOV
-                  <b className="tabnum">{fovDeg}°</b>
-                </label>
-                <input
-                  id="fov-range"
-                  type="range"
-                  min={6}
-                  max={60}
-                  step={2}
-                  value={fovDeg}
-                  onChange={e => setFovDeg(Number(e.target.value))}
-                />
-                <span className="slider-foot">
-                  Setara zoom optik {(60 / fovDeg).toFixed(1)}× pada gimbal Epsilon
-                </span>
-              </div>
-            </GlassCard>
+
 
             <GlassCard>
               <SectionHead
                 icon={<Target size={15} />}
-                title={t('Target Bank')}
+                title={t('Titik Ballon')}
                 sub={`${targets.length} titik tersimpan`}
                 right={
                   <button
-                    className={`btn btn-sm sheen ${markMode ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => { setMarkMode(v => !v); setMeasureMode(false); }}
+                    className="btn btn-sm btn-secondary sheen"
+                    onClick={() => loadDoneTargets()}
+                    disabled={targetsLoading}
+                    title={t('Muat ulang dari misi Done')}
                   >
-                    <Plus size={12} /> {markMode ? 'Batal' : 'Tandai'}
+                    <RefreshCw size={12} className={targetsLoading ? 'spin' : ''} /> {t('Muat Ulang')}
                   </button>
                 }
               />
 
-              {targets.length === 0 ? (
+              {targetsLoading ? (
+                <EmptyState
+                  icon={<RefreshCw size={22} className="spin" />}
+                  title={t('Memuat…')}
+                  description={t('Mengambil lokasi dari misi berstatus Done.')}
+                />
+              ) : targets.length === 0 ? (
                 <EmptyState
                   icon={<MapPin size={22} />}
                   title={t('Target Bank kosong')}
-                  description={t('Aktifkan Tandai Titik, lalu klik pada peta untuk menambahkan koordinat.')}
+                  description={t('Titik akan muncul setelah ada misi yang selesai (status Done).')}
                 />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -709,29 +718,13 @@ export function GeoVisualizationPage() {
                           ).toLocaleString('id-ID')} m
                         </span>
                       </button>
-
-                      <span className="tgt-actions">
-                        <button
-                          className={`badge ${THREAT_BADGE[tp.threat]}`}
-                          onClick={() => cycleThreat(tp)}
-                          title={t('Ubah tingkat ancaman')}
-                        >
-                          {tp.threat}
-                        </button>
-                        <button onClick={() => renameTarget(tp)} title={t('Ubah nama')} aria-label={`Ubah nama ${tp.name}`}>
-                          <Pencil size={12} />
-                        </button>
-                        <button onClick={() => removeTarget(tp)} title={t('Hapus titik')} aria-label={`Hapus ${tp.name}`}>
-                          <Trash2 size={12} />
-                        </button>
-                      </span>
                     </div>
                   ))}
                 </div>
               )}
             </GlassCard>
 
-            <GlassCard>
+            {/* <GlassCard>
               <SectionHead icon={<Navigation size={15} />} title={t('Sikap Kamera')} />
               <KVList rows={[
                 ['Azimut Gimbal', solution ? `${solution.azimuth.toFixed(1)}°` : '—'],
@@ -740,7 +733,7 @@ export function GeoVisualizationPage() {
                 ['Ketinggian Platform', `${ALT_AGL} m AGL`],
                 ['Sistem Referensi', 'WGS-84 / EPSG:3857'],
               ]} />
-            </GlassCard>
+            </GlassCard> */}
           </div>
         </div>
       </div>
@@ -1263,8 +1256,21 @@ interface MissionDraft {
 const EMPTY_MISSION_DRAFT: MissionDraft = {
   simulationId: '', missionCode: '#26', missionName: '', description: '',
   locationId: '', balloonId: '', operatorId: '', takeoffAt: '', landingAt: '',
-  maxAltitude: 450, cableLength: 450, weather: '', remark: '',
+  maxAltitude: 450, cableLength: 300, weather: '', remark: '',
 };
+
+/* MAX_CABLE_LENGTH: batas panjang kabel penambat operasional, tetap
+   untuk semua misi — tidak bergantung pada balon yang dipilih. */
+const MAX_CABLE_LENGTH = 300;
+
+/** "2 jam 5 menit" — dipakai bersisian dengan angka total menit pada
+    field Durasi (yang tetap dikirim ke backend dalam menit), supaya
+    operator tidak perlu menghitung sendiri dari angka mentah. */
+function formatDurationHM(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h} jam ${m} menit`;
+}
 
 /* mission_status.name pada flight-missions: "Planned" | "Flight" | "Done" —
    dipakai badge Status dan tombol Aksi pada Logbook Penerbangan. status_id
@@ -1307,6 +1313,21 @@ export function FlightInfoPage() {
   const [detailMissionId, setDetailMissionId] = useState<string | number | null>(null);
   const [playMissionId, setPlayMissionId] = useState<string | number | null>(null);
   const [endMissionId, setEndMissionId] = useState<string | number | null>(null);
+  /* Misi yang tombol "Play to Flight"-nya diklik namun balonnya sedang
+     Unavailable — memicu modal peringatan alih-alih checklist pra-terbang. */
+  const [balloonUnavailableMissionId, setBalloonUnavailableMissionId] = useState<string | number | null>(null);
+
+  /* Pratinjau titik di peta untuk field "Pilih Lokasi" — hanya tampilan,
+     TIDAK dikirim ke backend. Lokasi misi tetap merujuk ke location_id
+     dari daftar /locations lewat dropdown yang sudah ada. */
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [pickedCoords, setPickedCoords] = useState<{ lat: number; lon: number } | null>(null);
+
+  /* Pencarian nama lokasi pada field "Pilih Lokasi" — filter client-side,
+     sama seperti pola pencarian di halaman admin lain (mis. Balloon
+     Management), karena endpoint /locations tidak punya parameter query. */
+  const [locationQuery, setLocationQuery] = useState('');
+  const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
 
   /* Logbook Penerbangan: /flight-missions untuk baris misi, /flight-information
      dipakai hanya untuk mengambil mission_leader lewat pencocokan mission_id
@@ -1357,15 +1378,69 @@ export function FlightInfoPage() {
     return map;
   }, [locationOptions]);
 
+  const filteredLocationOptions = useMemo(() => {
+    const q = locationQuery.trim().toLowerCase();
+    if (!q) return locationOptions;
+    return locationOptions.filter(l =>
+      String(l.name ?? l.location_name ?? l.id).toLowerCase().includes(q));
+  }, [locationOptions, locationQuery]);
+
   const balloonIdBySerial = useMemo(() => {
     const map = new globalThis.Map<string, string | number>();
     for (const b of balloonOptions) if (b.serial_number) map.set(b.serial_number, b.id);
     return map;
   }, [balloonOptions]);
 
+  /* GET /flight-missions menyertakan relasi balloon tanpa id (cuma
+     name/serial_number) — status paling akurat diambil dari daftar
+     lengkap /balloons yang sudah dimuat lewat balloonOptions, dicocokkan
+     lewat id (bila ada) atau serial_number sebagai jalan pintasnya. */
+  const resolveMissionBalloon = (mission: FlightMissionRecord): BalloonRecord | undefined => {
+    const balloonId = mission.balloon_id ?? balloonIdBySerial.get(mission.balloon?.serial_number ?? '');
+    if (balloonId != null) {
+      const byId = balloonOptions.find(b => String(b.id) === String(balloonId));
+      if (byId) return byId;
+    }
+    return mission.balloon ?? undefined;
+  };
+
+  /* Sama seperti tile ringkasan di Balloon Management: hanya status
+     "Available" (tanpa peduli besar/kecil huruf) yang dianggap siap
+     terbang — status kosong/lainnya dianggap tidak tersedia. */
+  const isBalloonAvailable = (balloon: BalloonRecord | undefined) => (balloon?.status ?? '').toLowerCase() === 'available';
+
+  /* Dipakai confirmTakeoff (→ Unavailable) & confirmEndFlight (→ Available)
+     supaya siklus status balon mengikuti siklus misi tanpa operator harus
+     mengubahnya manual di Balloon Management. PUT /balloons/{id} adalah
+     full-replace, jadi kelima field wajib dikirim ulang — bukan cuma
+     status — kalau tidak field lain berisiko ikut kosong di backend. */
+  const applyBalloonStatus = async (balloon: BalloonRecord, status: 'Available' | 'Unavailable') => {
+    try {
+      await api.updateBalloon(String(balloon.id), {
+        balloon_name: balloon.name ?? balloon.balloon_name ?? '',
+        serial_number: balloon.serial_number ?? '',
+        capacity: Number(balloon.capacity) || 0,
+        max_altitude: Number(balloon.max_altitude) || 0,
+        status,
+      });
+      setBalloonOptions(prev => prev.map(b => (String(b.id) === String(balloon.id) ? { ...b, status } : b)));
+    } catch (err) {
+      console.error(`Gagal mengubah status balon ke ${status}:`, err);
+      pushToast({
+        tone: 'warning',
+        title: t('Gagal memperbarui status balon'),
+        detail: status === 'Available'
+          ? t('Misi berhasil diakhiri, namun status balon tidak berhasil dikembalikan ke Available. Perbarui manual di Balloon Management.')
+          : t('Penerbangan dimulai, namun status balon tidak berhasil diubah ke Unavailable. Perbarui manual di Balloon Management.'),
+      });
+    }
+  };
+
   /* Backend memvalidasi PUT /flight-missions/{id} sebagai full-replace, jadi
-     seluruh field asli misi dikirim ulang — cuma status_id yang berubah. */
-  const setMissionStatus = async (mission: FlightMissionRecord, statusId: number) => {
+     seluruh field asli misi dikirim ulang — cuma status_id yang berubah.
+     Mengembalikan status keberhasilan supaya pemanggil (mis. confirmEndFlight)
+     tahu apakah aman melanjutkan langkah berikutnya. */
+  const setMissionStatus = async (mission: FlightMissionRecord, statusId: number): Promise<boolean> => {
     setActionMissionId(mission.id);
     try {
       await api.updateFlightMission(mission.id, {
@@ -1378,6 +1453,7 @@ export function FlightInfoPage() {
         status_id: statusId,
       });
       await loadLogbook();
+      return true;
     } catch (err) {
       console.error('updateFlightMission gagal:', err);
       const apiErr = err as { status?: number; message?: string; error?: string; detail?: { loc?: string[]; msg?: string }[] };
@@ -1389,6 +1465,7 @@ export function FlightInfoPage() {
         title: t('Gagal memperbarui status misi'),
         detail: detailText ?? apiErr?.message ?? apiErr?.error ?? (apiErr?.status ? `HTTP ${apiErr.status}` : t('Tidak bisa terhubung ke server. Coba lagi.')),
       });
+      return false;
     } finally {
       setActionMissionId(null);
     }
@@ -1397,14 +1474,31 @@ export function FlightInfoPage() {
   const confirmTakeoff = async () => {
     const mission = missions.find(m => m.id === playMissionId);
     if (!mission || criticalPending > 0) return;
-    await setMissionStatus(mission, 2);
+    const ok = await setMissionStatus(mission, 2);
+
+    /* Balon ditandai Unavailable begitu penerbangan dimulai, supaya guard
+       "Play to Flight" pada misi lain menolak balon yang sama sampai
+       misi ini benar-benar diakhiri lewat confirmEndFlight. */
+    if (ok) {
+      const balloon = resolveMissionBalloon(mission);
+      if (balloon) await applyBalloonStatus(balloon, 'Unavailable');
+    }
+
     setPlayMissionId(null);
   };
 
   const confirmEndFlight = async () => {
     const mission = missions.find(m => m.id === endMissionId);
     if (!mission) return;
-    await setMissionStatus(mission, 3);
+    const ok = await setMissionStatus(mission, 3);
+
+    /* Balon dikembalikan ke Available begitu misinya selesai, supaya
+       langsung bisa ditugaskan lagi lewat Play to Flight di misi lain. */
+    if (ok) {
+      const balloon = resolveMissionBalloon(mission);
+      if (balloon) await applyBalloonStatus(balloon, 'Available');
+    }
+
     setEndMissionId(null);
   };
 
@@ -1435,9 +1529,18 @@ export function FlightInfoPage() {
     return Math.round((end - start) / 60000);
   }, [draft.takeoffAt, draft.landingAt]);
 
+  /* Batas ketinggian mengikuti data balon yang dipilih — undefined bila
+     belum ada balon dipilih atau balonnya tidak melaporkan max_altitude. */
+  const selectedBalloonMaxAltitude = useMemo(() => {
+    const selected = balloonOptions.find(b => String(b.id) === draft.balloonId);
+    const raw = selected?.max_altitude;
+    const n = raw != null ? Number(raw) : NaN;
+    return Number.isFinite(n) ? n : undefined;
+  }, [balloonOptions, draft.balloonId]);
+
   const missionReady = draft.missionCode.trim() !== ''
     && draft.missionName.trim() !== ''
-    && draft.locationId !== ''
+    && pickedCoords !== null
     && draft.balloonId !== ''
     && draft.operatorId !== ''
     && draft.takeoffAt !== ''
@@ -1447,23 +1550,35 @@ export function FlightInfoPage() {
   const closeMissionForm = () => {
     setShowMissionForm(false);
     setDraft(EMPTY_MISSION_DRAFT);
+    setShowLocationPicker(false);
+    setPickedCoords(null);
+    setLocationQuery('');
+    setLocationDropdownOpen(false);
   };
 
-  /* Simpan dua langkah: flight-missions dulu (dapat id-nya), baru
-     flight-information yang merujuk ke id tersebut. Kalau langkah kedua
-     gagal, misi di langkah pertama sudah terlanjur tersimpan di backend —
+  /* Simpan tiga langkah: locations dulu (titik dari peta pratinjau, dapat
+     id-nya), lalu flight-missions memakai location_id tersebut, baru
+     flight-information yang merujuk ke id misi. Kalau langkah berikutnya
+     gagal, langkah sebelumnya sudah terlanjur tersimpan di backend —
      operator diberi tahu lewat toast agar bisa memeriksa/mengulang. */
   const submitMission = async () => {
-    if (!missionReady || submitting) return;
+    if (!missionReady || submitting || !pickedCoords) return;
     setSubmitting(true);
     try {
-      // console.log("draft", draft);
+      const location = await api.createLocation({
+        name: draft.missionName,
+        city: '-',
+        province: '-',
+        latitude: pickedCoords.lat,
+        longitude: pickedCoords.lon,
+      });
+
       const mission = await api.createFlightMission({
         simulation_id: draft.simulationId || null,
         mission_name: draft.missionName,
         mission_code: draft.missionCode,
         description: draft.description,
-        location_id: draft.locationId,
+        location_id: location.id,
         balloon_id: draft.balloonId,
         status_id: 1,
       });
@@ -1498,6 +1613,7 @@ export function FlightInfoPage() {
       setSubmitting(false);
     }
   };
+
 
   const detailMission = detailMissionId != null ? (missions.find(m => m.id === detailMissionId) ?? null) : null;
   const detailInfo = detailMissionId != null ? (infoByMission.get(String(detailMissionId)) ?? null) : null;
@@ -1557,7 +1673,7 @@ export function FlightInfoPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>{t('Misi')}</th><th>{t('Tanggal')}</th><th>{t('Lepas Landas')}</th>
+                    <th>{t('Misi')}</th><th>{t('Lepas Landas')}</th>
                     <th>{t('Mendarat')}</th><th>{t('Durasi')}</th><th>{t('Ketinggian')}</th>
                     <th>{t('Pimpinan')}</th><th>{t('Status')}</th><th>{t('Aksi')}</th>
                   </tr>
@@ -1572,16 +1688,22 @@ export function FlightInfoPage() {
                     return (
                       <tr key={String(m.id)}>
                         <td className="font-mono" style={{ fontWeight: 700 }}>{m.mission_code ?? m.mission_name ?? String(m.id)}</td>
-                        <td className="font-mono text-xs">{info?.takeoff_time ? info.takeoff_time.slice(0, 10) : '—'}</td>
-                        <td className="font-mono text-xs">{info?.takeoff_time ? info.takeoff_time.slice(11, 16) : '—'}</td>
-                        <td className="font-mono text-xs">{info?.landing_time ? info.landing_time.slice(11, 16) : '—'}</td>
-                        <td className="font-mono text-xs">{info?.duration != null ? `${info.duration} mnt` : '—'}</td>
+                        <td className="font-mono text-xs">{info?.takeoff_time ? info.takeoff_time.slice(0, 16).replace('T', ' ') : '—'}</td>
+                        <td className="font-mono text-xs">{info?.landing_time ? info.landing_time.slice(0, 16).replace('T', ' ') : '—'}</td>
+                        <td className="font-mono text-xs">{info?.duration != null ? formatDurationHM(info.duration) : '—'}</td>
                         <td className="font-mono text-xs">{info?.max_altitude != null ? `${info.max_altitude} m` : '—'}</td>
                         <td style={{ fontSize: 12 }}>{leader}</td>
                         <td><span className={`badge badge-${meta.tone}`}>{t(meta.label)}</span></td>
                         <td>
                           {statusName === 'Planned' && (
-                            <button className="btn btn-secondary btn-sm" disabled={isActing} onClick={() => setPlayMissionId(m.id)}>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              disabled={isActing}
+                              onClick={() => {
+                                if (isBalloonAvailable(resolveMissionBalloon(m))) setPlayMissionId(m.id);
+                                else setBalloonUnavailableMissionId(m.id);
+                              }}
+                            >
                               <Play size={12} /> {t('Play to Flight')}
                             </button>
                           )}
@@ -1666,37 +1788,133 @@ export function FlightInfoPage() {
                   />
                 </RuleField>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div >
                   <RuleField label={t('Pilih Lokasi')}>
-                    <select
-                      className="form-input"
-                      value={draft.locationId}
-                      onChange={e => setDraft(d => ({ ...d, locationId: e.target.value }))}
-                    >
-                      <option value="">{t('Pilih…')}</option>
-                      {locationOptions.map(l => (
-                        <option key={String(l.id)} value={String(l.id)}>
-                          {String(l.name ?? l.location_name ?? l.id)}
-                        </option>
-                      ))}
-                    </select>
+                    <div style={{ display: 'none', gap: 6 }}>
+                      <div style={{ position: 'relative', flex: 1 }}>
+                        <input
+                          className="form-input"
+                          placeholder={t('Cari nama lokasi…')}
+                          value={locationQuery}
+                          onFocus={() => setLocationDropdownOpen(true)}
+                          onChange={e => {
+                            setLocationQuery(e.target.value);
+                            setLocationDropdownOpen(true);
+                            if (draft.locationId) setDraft(d => ({ ...d, locationId: '' }));
+                          }}
+                          onBlur={() => setLocationDropdownOpen(false)}
+                        />
+                        {locationDropdownOpen && (
+                          <div style={{
+                            position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 20,
+                            background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+                            borderRadius: 'var(--radius-sm)', maxHeight: 180, overflowY: 'auto',
+                            boxShadow: '0 12px 28px -12px rgba(0,0,0,0.5)',
+                          }}>
+                            {filteredLocationOptions.length === 0 && (
+                              <div style={{ padding: '8px 10px', fontSize: 12, color: 'var(--text-muted)' }}>
+                                {t('Lokasi tidak ditemukan')}
+                              </div>
+                            )}
+                            {filteredLocationOptions.map(l => (
+                              <div
+                                key={String(l.id)}
+                                className="geo-combo-option"
+                                onMouseDown={() => {
+                                  setDraft(d => ({ ...d, locationId: String(l.id) }));
+                                  setLocationQuery(String(l.name ?? l.location_name ?? l.id));
+                                  setLocationDropdownOpen(false);
+                                }}
+                                style={{ padding: '8px 10px', fontSize: 12.5, cursor: 'pointer' }}
+                              >
+                                {String(l.name ?? l.location_name ?? l.id)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        title={t('Pilih di peta (pratinjau)')}
+                        onClick={() => setShowLocationPicker(v => !v)}
+                      >
+                        <MapPin size={14} />
+                      </button>
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <EsriMap
+                        camLat={pickedCoords?.lat ?? -6.2088}
+                        camLon={pickedCoords?.lon ?? 106.8456}
+                        altitude={0}
+                        targets={[]}
+                        selected={null}
+                        onSelect={() => { }}
+                        basemap="imagery"
+                        markMode
+                        onMapClick={(lat, lon) => setPickedCoords({ lat, lon })}
+                        height={220}
+                      />
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                        {pickedCoords
+                          ? `${t('Pratinjau titik')}: ${pickedCoords.lat.toFixed(5)}°, ${pickedCoords.lon.toFixed(5)}°`
+                          : t('Klik pada peta untuk pratinjau koordinat.')}
+                        {' — '}
+                        {t('Lokasi misi tetap ditentukan dari daftar di atas.')}
+                      </div>
+                    </div>
+                    {/* {showLocationPicker && (
+                      <div style={{ marginTop: 8 }}>
+                        <EsriMap
+                          camLat={pickedCoords?.lat ?? -6.2088}
+                          camLon={pickedCoords?.lon ?? 106.8456}
+                          altitude={0}
+                          targets={[]}
+                          selected={null}
+                          onSelect={() => { }}
+                          basemap="imagery"
+                          markMode
+                          onMapClick={(lat, lon) => setPickedCoords({ lat, lon })}
+                          height={220}
+                        />
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                          {pickedCoords
+                            ? `${t('Pratinjau titik')}: ${pickedCoords.lat.toFixed(5)}°, ${pickedCoords.lon.toFixed(5)}°`
+                            : t('Klik pada peta untuk pratinjau koordinat.')}
+                          {' — '}
+                          {t('Lokasi misi tetap ditentukan dari daftar di atas.')}
+                        </div>
+                      </div>
+                    )} */}
                   </RuleField>
-                  <RuleField label={t('Pilih Balon')}>
-                    <select
-                      className="form-input"
-                      value={draft.balloonId}
-                      onChange={e => setDraft(d => ({ ...d, balloonId: e.target.value }))}
-                    >
-                      <option value="">{t('Pilih…')}</option>
-                      {balloonOptions.map(b => (
-                        <option key={String(b.id)} value={String(b.id)}>
-                          {String(b.name ?? b.balloon_name ?? b.id)}
-                        </option>
-                      ))}
-                    </select>
-                  </RuleField>
-                </div>
 
+                </div>
+                <RuleField label={t('Pilih Balon')}>
+                  <select
+                    className="form-input"
+                    value={draft.balloonId}
+                    onChange={e => {
+                      const balloonId = e.target.value;
+                      /* Ketinggian maksimal mengikuti data balon yang dipilih —
+                         diisi otomatis begitu balon dipilih, operator masih
+                         bisa menurunkannya tapi dibatasi max di field-nya. */
+                      const selected = balloonOptions.find(b => String(b.id) === balloonId);
+                      const cap = selected?.max_altitude != null ? Number(selected.max_altitude) : undefined;
+                      setDraft(d => ({
+                        ...d,
+                        balloonId,
+                        maxAltitude: cap != null && Number.isFinite(cap) ? cap : d.maxAltitude,
+                      }));
+                    }}
+                  >
+                    <option value="">{t('Pilih…')}</option>
+                    {balloonOptions.map(b => (
+                      <option key={String(b.id)} value={String(b.id)}>
+                        {String(b.name ?? b.balloon_name ?? b.id)}
+                      </option>
+                    ))}
+                  </select>
+                </RuleField>
                 <RuleField label={t('Pilih Operator Misi')}>
                   <select
                     className="form-input"
@@ -1751,25 +1969,40 @@ export function FlightInfoPage() {
                   </p>
                 )}
 
-                <RuleField label={t('Durasi (menit)')}>
-                  <input className="form-input" value={missionDuration > 0 ? missionDuration : '—'} readOnly disabled />
+                <RuleField label={t('Durasi')}>
+                  <input
+                    className="form-input"
+                    value={missionDuration > 0 ? `${formatDurationHM(missionDuration)} (${missionDuration} menit)` : '—'}
+                    readOnly
+                    disabled
+                  />
                 </RuleField>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <RuleField label={t('Ketinggian Maksimal (m AGL)')}>
+                  <RuleField label={
+                    selectedBalloonMaxAltitude != null
+                      ? `${t('Ketinggian Maksimal (m AGL)')} — max ${selectedBalloonMaxAltitude} m`
+                      : t('Ketinggian Maksimal (m AGL)')
+                  }>
                     <input
                       type="number"
                       className="form-input"
                       value={draft.maxAltitude}
-                      onChange={e => setDraft(d => ({ ...d, maxAltitude: Number(e.target.value) }))}
+                      max={selectedBalloonMaxAltitude}
+                      onChange={e => {
+                        const raw = Number(e.target.value);
+                        const capped = selectedBalloonMaxAltitude != null ? Math.min(raw, selectedBalloonMaxAltitude) : raw;
+                        setDraft(d => ({ ...d, maxAltitude: capped }));
+                      }}
                     />
                   </RuleField>
-                  <RuleField label={t('Panjang Kabel (m)')}>
+                  <RuleField label={`${t('Panjang Kabel (m)')} — max ${MAX_CABLE_LENGTH} m`}>
                     <input
                       type="number"
                       className="form-input"
                       value={draft.cableLength}
-                      onChange={e => setDraft(d => ({ ...d, cableLength: Number(e.target.value) }))}
+                      max={MAX_CABLE_LENGTH}
+                      onChange={e => setDraft(d => ({ ...d, cableLength: Math.min(Number(e.target.value), MAX_CABLE_LENGTH) }))}
                     />
                   </RuleField>
                 </div>
@@ -1901,6 +2134,46 @@ export function FlightInfoPage() {
             </div>
           </div>
         )}
+
+        {/* ----- Modal peringatan — balon sedang Unavailable ----- */}
+        {balloonUnavailableMissionId != null && (() => {
+          const mission = missions.find(m => m.id === balloonUnavailableMissionId);
+          const balloon = mission ? resolveMissionBalloon(mission) : undefined;
+          const balloonLabel = balloon?.name ?? balloon?.balloon_name ?? t('Balon pada misi ini');
+          return (
+            <div className="modal-backdrop" onClick={() => setBalloonUnavailableMissionId(null)}>
+              <div className="modal lq" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('Balon Tidak Tersedia')}>
+                <div className="modal-header">
+                  <h3 className="danger-head" style={{ margin: 0, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertTriangle size={17} /> {t('Balon Tidak Tersedia')}
+                  </h3>
+                  <button className="modal-x" onClick={() => setBalloonUnavailableMissionId(null)} aria-label={t('Tutup')}>
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="modal-body">
+                  <div className="danger-callout">
+                    <AlertTriangle size={16} />
+                    <span>{balloonLabel} — {t('status saat ini Unavailable')}</span>
+                  </div>
+                  <p className="modal-lead" style={{ marginTop: 10 }}>
+                    {t('Balon yang ditugaskan pada misi ini sedang dalam kondisi terbang (atau belum dikembalikan ke Available setelah misi sebelumnya). Penerbangan tidak dapat dimulai selagi statusnya Unavailable.')}
+                  </p>
+                  <p className="modal-note">
+                    {t('Periksa dan perbarui status balon di Balloon Management sebelum mencoba lagi.')}
+                  </p>
+                </div>
+
+                <div className="modal-footer">
+                  <button className="btn btn-secondary" onClick={() => setBalloonUnavailableMissionId(null)}>
+                    {t('Tutup')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ----- Modal konfirmasi End Flight ----- */}
         {endMissionId != null && (

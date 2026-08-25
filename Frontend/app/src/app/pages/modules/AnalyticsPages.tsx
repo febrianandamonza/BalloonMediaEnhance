@@ -1013,9 +1013,17 @@ export function VideoDetectionPage() {
      jumlah kemunculannya pada frame ini — bukan lagi daftar per-objek
      yang diurutkan/ditampilkan berdasarkan confidence. */
   const classCounts = useMemo(() => {
-    const counts = new globalThis.Map<string, number>();
-    for (const o of visible) counts.set(o.class, (counts.get(o.class) ?? 0) + 1);
-    return Array.from(counts, ([cls, count]) => ({ cls, count })).sort((a, b) => b.count - a.count);
+    /* Warna diambil dari objek pertama tiap kelas — backend menetapkan
+       satu warna tetap per kelas (mis. person → #00FF00), jadi objek
+       manapun dalam kelas yang sama sudah cukup mewakilinya. */
+    const counts = new globalThis.Map<string, { count: number; color?: string }>();
+    for (const o of visible) {
+      const entry = counts.get(o.class);
+      if (entry) entry.count += 1;
+      else counts.set(o.class, { count: 1, color: o.color });
+    }
+    return Array.from(counts, ([cls, v]) => ({ cls, count: v.count, color: v.color }))
+      .sort((a, b) => b.count - a.count);
   }, [visible]);
 
   const closeSocket = () => {
@@ -1341,9 +1349,11 @@ export function VideoDetectionPage() {
                       <tr><th>{t('Kelas Objek')}</th><th>{t('Jumlah')}</th></tr>
                     </thead>
                     <tbody>
-                      {classCounts.map(({ cls, count }) => {
+                      {classCounts.map(({ cls, count, color: classColor }) => {
                         const pct = Math.round((count / classCounts[0].count) * 100);
-                        const color = cls === 'person' ? 'var(--accent-emerald)' : 'var(--accent-primary)';
+                        /* Fallback ke warna baku hanya bila backend belum
+                           mengirim `color` untuk kelas ini. */
+                        const color = classColor || (cls === 'person' ? 'var(--accent-emerald)' : 'var(--accent-primary)');
                         return (
                           <tr key={cls}>
                             <td style={{ fontWeight: 600 }}>

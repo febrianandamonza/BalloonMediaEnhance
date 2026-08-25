@@ -99,6 +99,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'licenses', label: 'License Manager', icon: <KeyRound size={SZ} /> },
       { id: 'users', label: 'User Management', icon: <UserCog size={SZ} /> },
+      { id: 'balloons', label: 'Balloon Management', icon: <Anchor size={SZ} /> },
       { id: 'audit-log', label: 'Audit Trail', icon: <ScrollText size={SZ} /> },
       // { id: 'settings', label: 'System Settings', icon: <SlidersHorizontal size={SZ} /> },
     ],
