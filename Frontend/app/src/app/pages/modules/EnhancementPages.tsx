@@ -46,7 +46,7 @@ const IMAGE_FILTERS = [
 type FilterId = typeof IMAGE_FILTERS[number]['id'];
 
 export function ImageEnhancementPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [file, setFile] = useState<{ name: string; url: string; raw: File } | null>(null);
   const [enhanceResult, setEnhanceResult] = useState<EnhanceImageResult | null>(null);
   const [drag, setDrag] = useState(false);
@@ -102,6 +102,15 @@ export function ImageEnhancementPage() {
     if (!f) return;
     if (!/\.(jpe?g|png|tiff?)$/i.test(f.name)) {
       pushToast({ tone: 'error', title: 'Format tidak didukung', detail: 'Gunakan berkas JPG, PNG, atau TIFF.' });
+      notify({
+        title: 'Format tidak didukung',
+        detail: 'Gunakan berkas JPG, PNG, atau TIFF.',
+        severity: 'peringatan',
+        category: 'Media',
+        source: 'Imaging Enhancement',
+        page: 'enhance-image',
+        silent: true,
+      });
       return;
     }
     setFile({ name: f.name, url: URL.createObjectURL(f), raw: f });
@@ -123,11 +132,29 @@ export function ImageEnhancementPage() {
         title: t('Penajaman diterapkan'),
         detail: `${result.processing_type} · ${result.processing_time} ms`,
       });
+      notify({
+        title: t('Penajaman diterapkan'),
+        detail: `${result.processing_type} · ${result.processing_time} ms`,
+        severity: 'informasi',
+        category: 'Media',
+        source: 'Imaging Enhancement',
+        page: 'enhance-image',
+        silent: true,
+      });
     } catch {
       pushToast({
         tone: 'error',
         title: t('Gagal menerapkan enhancement'),
         detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+      });
+      notify({
+        title: t('Gagal menerapkan enhancement'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Media',
+        source: 'Imaging Enhancement',
+        page: 'enhance-image',
+        silent: true,
       });
     } finally {
       setBusy(false);
@@ -141,6 +168,15 @@ export function ImageEnhancementPage() {
         tone: 'error',
         title: t('Flight mission belum punya data flight information'),
         detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+      });
+      notify({
+        title: t('Flight mission belum punya data flight information'),
+        detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+        severity: 'peringatan',
+        category: 'Media',
+        source: 'Imaging Enhancement',
+        page: 'enhance-image',
+        silent: true,
       });
       return;
     }
@@ -156,6 +192,15 @@ export function ImageEnhancementPage() {
         title: t('Citra hasil olahan disimpan'),
         detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; citra asli tetap utuh.'),
       });
+      notify({
+        title: t('Citra hasil olahan disimpan'),
+        detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; citra asli tetap utuh.'),
+        severity: 'informasi',
+        category: 'Media',
+        source: 'Imaging Enhancement',
+        page: 'enhance-image',
+        silent: true,
+      });
       /* Simpan menutup satu siklus enhancement — semua state dikembalikan
          ke awal supaya operator mulai bersih untuk citra berikutnya. */
       setFile(null);
@@ -167,6 +212,15 @@ export function ImageEnhancementPage() {
         tone: 'error',
         title: t('Gagal menyimpan media'),
         detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+      });
+      notify({
+        title: t('Gagal menyimpan media'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Media',
+        source: 'Imaging Enhancement',
+        page: 'enhance-image',
+        silent: true,
       });
     } finally {
       setSaving(false);
@@ -335,11 +389,22 @@ export function ImageEnhancementPage() {
               <button
                 className="btn btn-secondary btn-sm"
                 disabled={!applied}
-                onClick={() => pushToast({
-                  tone: 'success',
-                  title: 'Citra hasil olahan disimpan',
-                  detail: 'Berkas baru ditambahkan ke katalog Surveillance Media; citra asli tetap utuh.',
-                })}
+                onClick={() => {
+                  pushToast({
+                    tone: 'success',
+                    title: 'Citra hasil olahan disimpan',
+                    detail: 'Berkas baru ditambahkan ke katalog Surveillance Media; citra asli tetap utuh.',
+                  });
+                  notify({
+                    title: 'Citra hasil olahan disimpan',
+                    detail: 'Berkas baru ditambahkan ke katalog Surveillance Media; citra asli tetap utuh.',
+                    severity: 'informasi',
+                    category: 'Media',
+                    source: 'Imaging Enhancement',
+                    page: 'enhance-image',
+                    silent: true,
+                  });
+                }}
               >
                 <Save size={13} /> Simpan Hasil
               </button>
@@ -408,7 +473,7 @@ const PALETTES: { id: string; label: string; from: string; to: string; mid?: str
 ];
 
 export function VideoEnhancementPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [palette, setPalette] = useState('whitehot');
   const [denoise, setDenoise] = useState(20);
   const [contrast, setContrast] = useState(15);
@@ -465,6 +530,15 @@ export function VideoEnhancementPage() {
     if (!f) return;
     if (!/\.(mp4|mov|avi|mkv|webm)$/i.test(f.name)) {
       pushToast({ tone: 'error', title: 'Format tidak didukung', detail: 'Gunakan berkas MP4, MOV, AVI, MKV, atau WEBM.' });
+      notify({
+        title: 'Format tidak didukung',
+        detail: 'Gunakan berkas MP4, MOV, AVI, MKV, atau WEBM.',
+        severity: 'peringatan',
+        category: 'Media',
+        source: 'Video Enhancement',
+        page: 'enhance-video',
+        silent: true,
+      });
       return;
     }
     setFile({ name: f.name, url: URL.createObjectURL(f), raw: f });
@@ -484,11 +558,29 @@ export function VideoEnhancementPage() {
         title: t('Peningkatan diterapkan'),
         detail: `${result.processing_type} · ${result.processing_time} ms`,
       });
+      notify({
+        title: t('Peningkatan diterapkan'),
+        detail: `${result.processing_type} · ${result.processing_time} ms`,
+        severity: 'informasi',
+        category: 'Media',
+        source: 'Video Enhancement',
+        page: 'enhance-video',
+        silent: true,
+      });
     } catch {
       pushToast({
         tone: 'error',
         title: t('Gagal menerapkan enhancement'),
         detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+      });
+      notify({
+        title: t('Gagal menerapkan enhancement'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Media',
+        source: 'Video Enhancement',
+        page: 'enhance-video',
+        silent: true,
       });
     } finally {
       setBusy(false);
@@ -502,6 +594,15 @@ export function VideoEnhancementPage() {
         tone: 'error',
         title: t('Flight mission belum punya data flight information'),
         detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+      });
+      notify({
+        title: t('Flight mission belum punya data flight information'),
+        detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+        severity: 'peringatan',
+        category: 'Media',
+        source: 'Video Enhancement',
+        page: 'enhance-video',
+        silent: true,
       });
       return;
     }
@@ -517,6 +618,15 @@ export function VideoEnhancementPage() {
         title: t('Video hasil olahan disimpan'),
         detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; video asli tetap utuh.'),
       });
+      notify({
+        title: t('Video hasil olahan disimpan'),
+        detail: t('Berkas baru ditambahkan ke katalog Surveillance Media; video asli tetap utuh.'),
+        severity: 'informasi',
+        category: 'Media',
+        source: 'Video Enhancement',
+        page: 'enhance-video',
+        silent: true,
+      });
       setFile(null);
       setEnhanceResult(null);
       setApplied(false);
@@ -526,6 +636,15 @@ export function VideoEnhancementPage() {
         tone: 'error',
         title: t('Gagal menyimpan media'),
         detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+      });
+      notify({
+        title: t('Gagal menyimpan media'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Media',
+        source: 'Video Enhancement',
+        page: 'enhance-video',
+        silent: true,
       });
     } finally {
       setSaving(false);
@@ -700,7 +819,7 @@ const ENDPOINTS = [
 ];
 
 export function TetherAPIPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [selected, setSelected] = useState(ENDPOINTS[0]);
 
   const sample = useMemo(() => JSON.stringify({
@@ -724,8 +843,26 @@ export function TetherAPIPage() {
   const copy = async () => {
     if (await salinTeks(sample)) {
       pushToast({ tone: 'success', title: t('Contoh respons disalin'), detail: t('Payload JSON tersalin ke papan klip.') });
+      notify({
+        title: t('Contoh respons disalin'),
+        detail: t('Payload JSON tersalin ke papan klip.'),
+        severity: 'informasi',
+        category: 'Konektivitas',
+        source: 'Tether Cable API',
+        page: 'tether-api',
+        silent: true,
+      });
     } else {
       pushToast({ tone: 'error', title: t('Gagal menyalin'), detail: t('Peramban menolak akses papan klip.') });
+      notify({
+        title: t('Gagal menyalin'),
+        detail: t('Peramban menolak akses papan klip.'),
+        severity: 'peringatan',
+        category: 'Konektivitas',
+        source: 'Tether Cable API',
+        page: 'tether-api',
+        silent: true,
+      });
     }
   };
 
@@ -793,11 +930,22 @@ export function TetherAPIPage() {
                 right={
                   <button
                     className="btn btn-primary btn-sm"
-                    onClick={() => pushToast({
-                      tone: 'success',
-                      title: 'Kunci akses baru diterbitkan',
-                      detail: 'Salin kunci sekarang — nilai penuhnya hanya ditampilkan satu kali.',
-                    })}
+                    onClick={() => {
+                      pushToast({
+                        tone: 'success',
+                        title: 'Kunci akses baru diterbitkan',
+                        detail: 'Salin kunci sekarang — nilai penuhnya hanya ditampilkan satu kali.',
+                      });
+                      notify({
+                        title: 'Kunci akses baru diterbitkan',
+                        detail: 'Salin kunci sekarang — nilai penuhnya hanya ditampilkan satu kali.',
+                        severity: 'informasi',
+                        category: 'Konektivitas',
+                        source: 'Tether Cable API',
+                        page: 'tether-api',
+                        silent: true,
+                      });
+                    }}
                   >
                     <Plus size={13} /> Terbitkan
                   </button>
@@ -862,7 +1010,7 @@ function SummaryStat({ icon, accent, label, value }: { icon: React.ReactNode; ac
    1.2d — MONITORING CHECKING CAPABILITY TETHER CABLE
    ===================================================================== */
 export function TetherMonitorPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [testing, setTesting] = useState(false);
 
   const voltage = useMemo(() => series(11, 40, 230, 6, 1), []);
@@ -878,6 +1026,15 @@ export function TetherMonitorPage() {
         tone: 'success',
         title: 'Diagnostik kabel selesai',
         detail: 'Seluruh parameter berada dalam batas operasi. Tidak ditemukan anomali.',
+      });
+      notify({
+        title: 'Diagnostik kabel selesai',
+        detail: 'Seluruh parameter berada dalam batas operasi. Tidak ditemukan anomali.',
+        severity: 'informasi',
+        category: 'Tether',
+        source: 'Tether Cable Monitor',
+        page: 'tether-monitor',
+        silent: true,
       });
     }, 1600);
   };

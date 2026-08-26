@@ -94,6 +94,10 @@ export interface EsriMapProps {
   /** Bukaan sudut kerucut pandang kamera, derajat */
   fovDeg?: number;
   height?: number | string;
+  /** Tampilkan penanda titik gelar (stasiun) di tengah peta. Default true. */
+  showStation?: boolean;
+  /** Tingkat zoom awal saat peta pertama kali dibuat. Default 14. */
+  initialZoom?: number;
 
   /* ---- Alat kerja peta ---- */
   /** Klik pada peta menempatkan titik target baru */
@@ -110,6 +114,7 @@ export default function EsriMap({
   camLat, camLon, altitude = 450, targets, selected, onSelect,
   basemap, onBasemapFallback,
   showFov = true, showRings = true, showGeofence = true, showTrack = false,
+  showStation = true, initialZoom = 14,
   fovDeg = 34, height = 420,
   markMode = false, onMapClick, measureMode = false, onMeasure, focus = null,
 }: EsriMapProps) {
@@ -153,7 +158,7 @@ export default function EsriMap({
 
     const map = L.map(hostRef.current, {
       center: [camLat, camLon],
-      zoom: 14,
+      zoom: initialZoom,
       zoomControl: true,
       attributionControl: true,
       /* Lapisan vektor digambar sebagai SVG, bukan kanvas.
@@ -401,23 +406,25 @@ export default function EsriMap({
     layer.clearLayers();
 
     /* Titik gelar balon */
-    L.marker([camLat, camLon], {
-      icon: L.divIcon({
-        className: 'mk-balloon',
-        html:
-          `<span class="mk-pin" style="color:#60a5fa;width:26px;height:26px">
-             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-               <path d="M12 2a7 7 0 0 1 7 7c0 4-3.5 7.5-7 11-3.5-3.5-7-7-7-11a7 7 0 0 1 7-7Z"/>
-               <circle cx="12" cy="9" r="2.2"/>
-             </svg>
-           </span>
-           <span class="mk-label">TAMBAT · ${altitude} m AGL</span>`,
-        iconSize: [26, 26],
-        iconAnchor: [13, 13],
-      }),
-      zIndexOffset: 1000,
-    }).addTo(layer);
+    if (showStation) {
+      L.marker([camLat, camLon], {
+        icon: L.divIcon({
+          className: 'mk-balloon',
+          html:
+            `<span class="mk-pin" style="color:#60a5fa;width:26px;height:26px">
+               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                 <path d="M12 2a7 7 0 0 1 7 7c0 4-3.5 7.5-7 11-3.5-3.5-7-7-7-11a7 7 0 0 1 7-7Z"/>
+                 <circle cx="12" cy="9" r="2.2"/>
+               </svg>
+             </span>
+             <span class="mk-label" style="display:none">Lokasi Saya · ${altitude} m AGL</span>`,
+          iconSize: [26, 26],
+          iconAnchor: [13, 13],
+        }),
+        zIndexOffset: 1000,
+      }).addTo(layer);
+    }
 
     /* Target Bank */
     targets.forEach(t => {
@@ -445,7 +452,7 @@ export default function EsriMap({
       m.on('click', () => onSelect(t));
       m.addTo(layer);
     });
-  }, [camLat, camLon, altitude, targets, selected, onSelect]);
+  }, [camLat, camLon, altitude, targets, selected, onSelect, showStation]);
 
   /* ---- Pelaporan hasil ukur ke panel induk ----
      Dipisahkan dari penangan klik dengan sengaja. Memanggil setState
@@ -566,7 +573,7 @@ export default function EsriMap({
           className="sw-chip"
           style={{ background: activeDef.chip, width: 20, height: 20, borderRadius: 5, flexShrink: 0 }}
         />
-        <span>
+        <span style={{ display: 'none' }}>
           <span className="hud-k">Basemap</span>
           <span className="hud-v" style={{ fontFamily: 'var(--font-sans)', fontSize: 11.5 }}>
             {degraded ? 'Grid Referensi Lokal · luring' : activeDef.label}

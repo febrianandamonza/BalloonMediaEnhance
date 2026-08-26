@@ -57,7 +57,7 @@ const PERMISSIONS: { perm: string; allow: Operator['role'][] }[] = [
 ];
 
 export default function UserManagementPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [users, setUsers] = useState<Operator[]>([]);
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | Operator['role']>('all');
@@ -166,12 +166,30 @@ export default function UserManagementPage() {
         title: t('Data operator diperbarui'),
         detail: `${data.fullName} · ${data.role} · ${data.station}`,
       });
+      notify({
+        title: t('Data operator diperbarui'),
+        detail: `${data.fullName} · ${data.role} · ${data.station}`,
+        severity: 'informasi',
+        category: 'Akun',
+        source: 'User Management',
+        page: 'users',
+        silent: true,
+      });
     } catch (err) {
       console.error('Gagal memperbarui data:', err);
       pushToast({
         tone: 'warning',
         title: 'Error',
         detail: 'Gagal menyimpan perubahan ke server.',
+      });
+      notify({
+        title: 'Error',
+        detail: 'Gagal menyimpan perubahan ke server.',
+        severity: 'peringatan',
+        category: 'Akun',
+        source: 'User Management',
+        page: 'users',
+        silent: true,
       });
     }
   };
@@ -193,6 +211,15 @@ export default function UserManagementPage() {
         onClick: () => setUsers(prev =>
           prev.some(x => x.id === korban.id) ? prev : [...prev, korban].sort((a, b) => a.id - b.id)),
       },
+    });
+    notify({
+      title: t('Akun dihapus'),
+      detail: `${korban.fullName} (${korban.username})`,
+      severity: 'informasi',
+      category: 'Akun',
+      source: 'User Management',
+      page: 'users',
+      silent: true,
     });
   };
 
@@ -420,9 +447,27 @@ export default function UserManagementPage() {
           setUsers(prev => [...prev, { ...opData, id: newId }]);
           setShowForm(false);
           pushToast({ tone: 'success', title: 'Operator ditambahkan', detail: `${op.fullName} (${op.username}) terdaftar sebagai ${op.role}.` });
+          notify({
+            title: 'Operator ditambahkan',
+            detail: `${op.fullName} (${op.username}) terdaftar sebagai ${op.role}.`,
+            severity: 'informasi',
+            category: 'Akun',
+            source: 'User Management',
+            page: 'users',
+            silent: true,
+          });
         } catch (err) {
           console.error('Gagal membuat akun:', err);
           pushToast({ tone: 'warning', title: 'Pendaftaran Gagal', detail: 'Tidak dapat membuat akun baru. Pastikan data valid.' });
+          notify({
+            title: 'Pendaftaran Gagal',
+            detail: 'Tidak dapat membuat akun baru. Pastikan data valid.',
+            severity: 'peringatan',
+            category: 'Akun',
+            source: 'User Management',
+            page: 'users',
+            silent: true,
+          });
         }
       }} />}
     </div>

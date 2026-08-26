@@ -122,7 +122,9 @@ export function distanceBetween(lat1: number, lon1: number, lat2: number, lon2: 
    Titik pada Target Bank
    --------------------------------------------------------------------- */
 export interface MapTarget {
-  id: number;
+  /** Id misi asli dari backend — bisa berupa angka atau string (UUID),
+      jadi jangan dipaksa jadi number (lihat GeoVisualizationPage). */
+  id: string | number;
   name: string;
   lat: number;
   lon: number;

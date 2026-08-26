@@ -40,10 +40,11 @@ import {
   FlaskConical, Play, CircleCheck, CircleX, CircleAlert, Radio,
   RefreshCw, Eye, Activity, Ruler, Copy, Pencil, Trash2,
   CheckCheck, X, Inbox, ToggleLeft, ToggleRight, Save, Loader2, History, Square,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
   fullTimestamp, loadRules, saveRules, CATEGORIES,
-  type AlertRule, type Severity, type Category,
+  type AlertRule, type Severity, type Category, type AppNotification,
 } from '../../lib/notifications';
 
 function series(seed: number, len: number, base: number, spread: number, digits = 0) {
@@ -109,7 +110,7 @@ const REPORT_TEMPLATES = [
 const CLASSIFICATIONS = ['BIASA', 'TERBATAS', 'RAHASIA', 'SANGAT RAHASIA'];
 
 export function ReportingPage() {
-  const { pushToast, account, t } = useApp();
+  const { pushToast, notify, account, t } = useApp();
   const [template, setTemplate] = useState(REPORT_TEMPLATES[0].id);
   const [format, setFormat] = useState<'pdf' | 'xlsx'>('pdf');
   const [classification, setClassification] = useState('TERBATAS');
@@ -125,6 +126,15 @@ export function ReportingPage() {
         tone: 'success',
         title: 'Laporan berhasil dibuat',
         detail: `${selected.name} · format ${format.toUpperCase()} · klasifikasi ${classification} · watermark ${account?.stationCode ?? 'GCS'}.`,
+      });
+      notify({
+        title: 'Laporan berhasil dibuat',
+        detail: `${selected.name} · format ${format.toUpperCase()} · klasifikasi ${classification} · watermark ${account?.stationCode ?? 'GCS'}.`,
+        severity: 'informasi',
+        category: 'Sistem',
+        source: 'Digital Reporting',
+        page: 'reporting',
+        silent: true,
       });
     }, 1500);
   };
@@ -201,22 +211,44 @@ export function ReportingPage() {
                             <button
                               className="btn btn-ghost btn-sm"
                               title={`Pratinjau ${judul}`}
-                              onClick={() => pushToast({
-                                tone: 'info',
-                                title: 'Membuka pratinjau laporan',
-                                detail: `${judul} — ${fmt}, klasifikasi ${klas}.`,
-                              })}
+                              onClick={() => {
+                                pushToast({
+                                  tone: 'info',
+                                  title: 'Membuka pratinjau laporan',
+                                  detail: `${judul} — ${fmt}, klasifikasi ${klas}.`,
+                                });
+                                notify({
+                                  title: 'Membuka pratinjau laporan',
+                                  detail: `${judul} — ${fmt}, klasifikasi ${klas}.`,
+                                  severity: 'informasi',
+                                  category: 'Sistem',
+                                  source: 'Digital Reporting',
+                                  page: 'reporting',
+                                  silent: true,
+                                });
+                              }}
                             >
                               <Eye size={13} />
                             </button>
                             <button
                               className="btn btn-ghost btn-sm"
                               title={`Unduh ${judul}`}
-                              onClick={() => pushToast({
-                                tone: 'success',
-                                title: 'Laporan diunduh',
-                                detail: `${judul} disalin ke folder ekspor stasiun dalam format ${fmt}.`,
-                              })}
+                              onClick={() => {
+                                pushToast({
+                                  tone: 'success',
+                                  title: 'Laporan diunduh',
+                                  detail: `${judul} disalin ke folder ekspor stasiun dalam format ${fmt}.`,
+                                });
+                                notify({
+                                  title: 'Laporan diunduh',
+                                  detail: `${judul} disalin ke folder ekspor stasiun dalam format ${fmt}.`,
+                                  severity: 'informasi',
+                                  category: 'Sistem',
+                                  source: 'Digital Reporting',
+                                  page: 'reporting',
+                                  silent: true,
+                                });
+                              }}
                             >
                               <Download size={13} />
                             </button>
@@ -300,7 +332,10 @@ export function ReportingPage() {
    1.3b — DIGITAL VISUALISATION INFORMATION GEOINT
    ===================================================================== */
 interface TargetPoint {
-  id: number;
+  /** Id misi asli dari backend — bisa angka atau string (UUID). Sentinel
+      angka negatif dipakai hanya bila backend sama sekali tidak
+      mengirim id (lihat loadDoneTargets). */
+  id: string | number;
   name: string;
   lat: number;
   lon: number;
@@ -308,18 +343,8 @@ interface TargetPoint {
   range: number;
 }
 
-/* Titik awal Target Bank. Setelah stasiun berjalan, daftar ini dapat
-   ditambah lewat penandaan langsung di peta dan dihapus per entri. */
-const SEED_TARGETS: TargetPoint[] = [
-  { id: 1, name: 'Gerbang Alpha', lat: -6.1951, lon: 106.8320, threat: 'sedang', range: 1248 },
-  { id: 2, name: 'Lapangan Utama', lat: -6.2012, lon: 106.8401, threat: 'tinggi', range: 968 },
-  { id: 3, name: 'Jembatan Utara', lat: -6.1889, lon: 106.8477, threat: 'rendah', range: 2314 },
-  { id: 4, name: 'Pos Pemeriksaan B', lat: -6.2103, lon: 106.8512, threat: 'sedang', range: 1702 },
-  { id: 5, name: 'Dermaga Timur', lat: -6.2044, lon: 106.8629, threat: 'rendah', range: 3105 },
-];
-
-const THREAT_BADGE = { rendah: 'badge-neutral', sedang: 'badge-warning', tinggi: 'badge-danger' } as const;
-const THREAT_ORDER: TargetPoint['threat'][] = ['rendah', 'sedang', 'tinggi'];
+/* Target Bank tidak lagi diisi manual — daftar ini dimuat dari misi
+   berstatus Done (GET /flight-missions), lihat loadDoneTargets(). */
 
 /* Menyimpan berkas ke perangkat operator. Karena stasiun tertutup,
    "ekspor" berarti menulis salinan ke penyimpanan lokal — bukan
@@ -342,7 +367,7 @@ const xml = (s: string) =>
 function buildKML(targets: TargetPoint[], station: string, lat: number, lon: number): string {
   const marks = targets.map(tp => `    <Placemark>
       <name>${xml(tp.name)}</name>
-      <description>Tingkat ancaman: ${tp.threat} — jarak ${tp.range} m dari titik gelar</description>
+      <description>Lokasi misi selesai — jarak ${tp.range} m dari titik gelar</description>
       <Point><coordinates>${tp.lon.toFixed(6)},${tp.lat.toFixed(6)},0</coordinates></Point>
     </Placemark>`).join('\n');
 
@@ -363,7 +388,7 @@ ${marks}
 function buildGPX(targets: TargetPoint[], station: string): string {
   const pts = targets.map(tp => `  <wpt lat="${tp.lat.toFixed(6)}" lon="${tp.lon.toFixed(6)}">
     <name>${xml(tp.name)}</name>
-    <desc>Tingkat ancaman: ${tp.threat} — jarak ${tp.range} m</desc>
+    <desc>Lokasi misi selesai — jarak ${tp.range} m</desc>
     <sym>Flag</sym>
   </wpt>`).join('\n');
 
@@ -376,25 +401,63 @@ ${pts}
 }
 
 export function GeoVisualizationPage() {
-  const { pushToast, account, t } = useApp();
+  const { pushToast, notify, account, t } = useApp();
 
-  const [targets, setTargets] = useState<TargetPoint[]>(SEED_TARGETS);
-  const [selectedId, setSelectedId] = useState<number | null>(SEED_TARGETS[1].id);
+  const [targets, setTargets] = useState<TargetPoint[]>([]);
+  const [targetsLoading, setTargetsLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | number | null>(null);
   const [basemap, setBasemap] = useState<BasemapId>('imagery');
-  const [showFov, setShowFov] = useState(true);
-  const [showRings, setShowRings] = useState(true);
-  const [showGeofence, setShowGeofence] = useState(true);
+  const [showFov, setShowFov] = useState(false);
+  const [showRings, setShowRings] = useState(false);
+  const [showGeofence, setShowGeofence] = useState(false);
   const [showTrack, setShowTrack] = useState(false);
   const [fovDeg, setFovDeg] = useState(34);
 
   /* Alat kerja peta */
-  const [markMode, setMarkMode] = useState(false);
   const [measureMode, setMeasureMode] = useState(false);
   const [measured, setMeasured] = useState<{ dist: number; bearing: number } | null>(null);
   const [focus, setFocus] = useState<{ lat: number; lon: number; zoom?: number; nonce: number } | null>(null);
 
-  const camLat = account?.siteCoords.lat ?? -6.2088;
-  const camLon = account?.siteCoords.lon ?? 106.8456;
+  const [liveCoords, setLiveCoords] = useState<{ lat: number; lon: number } | null>(null);
+
+  /* Modal Detail Misi — dibuka dari klik titik di peta maupun baris
+     Target Bank di sidebar (keduanya lewat pickTarget yang sama). */
+  const [detailTargetId, setDetailTargetId] = useState<string | number | null>(null);
+  const [missionDetail, setMissionDetail] = useState<FlightMissionRecord | null>(null);
+  const [missionDetailInfo, setMissionDetailInfo] = useState<FlightInformationRecord | null>(null);
+  const [missionDetailLoading, setMissionDetailLoading] = useState(false);
+
+  /* Titik gelar mengikuti lokasi perangkat bila diizinkan; jika ditolak
+     atau gagal, tetap pakai koordinat stasiun yang terkonfigurasi. */
+  // useEffect(() => {
+  //   // console.log(!('geolocation' in navigator))
+  //   if (!('geolocation' in navigator)) return;
+  //   const watchId = navigator.geolocation.watchPosition(
+  //     pos => setLiveCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+  //     () => {
+  //       pushToast({
+  //         tone: 'warning',
+  //         title: t('Lokasi perangkat tidak tersedia'),
+  //         detail: t('Menggunakan koordinat stasiun yang terkonfigurasi.'),
+  //       });
+  //       notify({
+  //         title: t('Lokasi perangkat tidak tersedia'),
+  //         detail: t('Menggunakan koordinat stasiun yang terkonfigurasi.'),
+  //         severity: 'peringatan',
+  //         category: 'Geofence',
+  //         source: 'GeoInt Visualisation',
+  //         page: 'geo-viz',
+  //         silent: true,
+  //       });
+  //     },
+  //     { enableHighAccuracy: true, maximumAge: 10000 },
+  //   );
+
+  //   return () => navigator.geolocation.clearWatch(watchId);
+  // }, []);
+
+  const camLat = liveCoords?.lat ?? account?.siteCoords.lat ?? -6.2088;
+  const camLon = liveCoords?.lon ?? account?.siteCoords.lon ?? 106.8456;
   const station = account?.stationCode ?? 'GCS';
   const ALT_AGL = 450;
 
@@ -416,58 +479,129 @@ export function GeoVisualizationPage() {
 
   const pickTarget = (tp: TargetPoint) => {
     setSelectedId(tp.id);
-    flyTo(tp.lat, tp.lon);
+    flyTo(tp.lat, tp.lon, 16);
+    if (typeof tp.id === 'number' && tp.id < 0) {
+      pushToast({
+        tone: 'warning',
+        title: t('Data misi tidak lengkap'),
+        detail: t('Misi ini tidak memiliki id yang valid untuk dimuat detailnya.'),
+      });
+      return;
+    }
+    setDetailTargetId(tp.id);
+  };
+  const pickTargetS = (tp: TargetPoint) => {
+    setSelectedId(tp.id);
+    flyTo(tp.lat, tp.lon, 16);
+    if (typeof tp.id === 'number' && tp.id < 0) {
+      pushToast({
+        tone: 'warning',
+        title: t('Data misi tidak lengkap'),
+        detail: t('Misi ini tidak memiliki id yang valid untuk dimuat detailnya.'),
+      });
+      return;
+    }
+    // setDetailTargetId(tp.id);
   };
 
-  /* Menempatkan titik baru dari klik di peta. */
-  const addTarget = (lat: number, lon: number) => {
-    const range = Math.round(
-      Math.sqrt(distanceBetween(camLat, camLon, lat, lon) ** 2 + ALT_AGL ** 2),
-    );
-    const id = Math.max(0, ...targets.map(tp => tp.id)) + 1;
-    const tp: TargetPoint = { id, name: `Titik Baru ${id}`, lat, lon, threat: 'rendah', range };
-    setTargets(prev => [...prev, tp]);
-    setSelectedId(id);
-    setMarkMode(false);
-    pushToast({
-      tone: 'success',
-      title: `${tp.name} ditambahkan`,
-      detail: `${lat.toFixed(5)}, ${lon.toFixed(5)} · jarak miring ${range.toLocaleString('id-ID')} m.`,
-    });
-  };
+  /* Detail misi + flight-information digabung berdasarkan mission_id,
+     dipicu setiap kali target baru dipilih (lihat pickTarget). */
+  useEffect(() => {
+    if (detailTargetId == null) return;
+    let cancelled = false;
+    setMissionDetailLoading(true);
+    setMissionDetail(null);
+    setMissionDetailInfo(null);
+    Promise.all([
+      api.getFlightMissionById(detailTargetId).catch(() => null),
+      api.getFlightInformation().catch(() => []),
+    ]).then(([mission, infoRows]) => {
+      if (cancelled) return;
+      setMissionDetail(mission);
+      setMissionDetailInfo(infoRows.find(i => String(i.mission_id) === String(detailTargetId)) ?? null);
+    }).finally(() => { if (!cancelled) setMissionDetailLoading(false); });
+    return () => { cancelled = true; };
+  }, [detailTargetId]);
 
-  const removeTarget = (tp: TargetPoint) => {
-    setTargets(prev => prev.filter(x => x.id !== tp.id));
-    if (selectedId === tp.id) setSelectedId(null);
-    pushToast({ tone: 'warning', title: `${tp.name} dihapus dari Target Bank` });
-  };
+  /* Target Bank dimuat dari misi berstatus Done — setiap misi punya relasi
+     location dengan latitude/longitude. Dipanggil sekali saat mount; tidak
+     bergantung pada camLat/camLon (yang terus berubah lewat watchPosition)
+     supaya tidak memicu fetch berulang. */
+  const loadDoneTargets = async () => {
+    setTargetsLoading(true);
+    try {
+      const missions = await api.getFlightMissions().catch(() => []);
+      const mapped: TargetPoint[] = [];
+      missions
+        // .filter(m => missionStatusName(m) === 'Done')
+        .forEach((m, idx) => {
 
-  /* Menaikkan tingkat ancaman secara berputar: rendah → sedang → tinggi. */
-  const cycleThreat = (tp: TargetPoint) => {
-    const next = THREAT_ORDER[(THREAT_ORDER.indexOf(tp.threat) + 1) % THREAT_ORDER.length];
-    setTargets(prev => prev.map(x => (x.id === tp.id ? { ...x, threat: next } : x)));
-  };
-
-  const renameTarget = (tp: TargetPoint) => {
-    const name = window.prompt('Nama titik target', tp.name);
-    if (name && name.trim()) {
-      setTargets(prev => prev.map(x => (x.id === tp.id ? { ...x, name: name.trim() } : x)));
+          const lat = Number(m.location?.latitude);
+          const lon = Number(m.location?.longitude);
+          // console.log(!Number.isFinite(lat) || !Number.isFinite(lon))
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+          const range = Math.round(
+            Math.sqrt(distanceBetween(camLat, camLon, lat, lon) ** 2 + ALT_AGL ** 2),
+          );
+          /* Id misi dipakai apa adanya (angka ATAU string/UUID) supaya
+             tetap bisa dicocokkan lewat GET /flight-missions/{id} —
+             sentinel angka negatif hanya untuk kasus backend tidak
+             mengirim id sama sekali. */
+          mapped.push({
+            id: m.id != null && m.id !== '' ? m.id : -(idx + 1),
+            name: String(m.mission_name || m.mission_code || `Misi ${idx + 1}`),
+            lat, lon, threat: 'rendah', range,
+          });
+        });
+      setTargets(mapped);
+      setSelectedId(mapped[0]?.id ?? null);
+    } finally {
+      setTargetsLoading(false);
     }
   };
+
+  useEffect(() => { loadDoneTargets(); }, []);
 
   const copyCoords = async () => {
     if (!selected) return;
     const text = `${selected.lat.toFixed(6)}, ${selected.lon.toFixed(6)}`;
     if (await salinTeks(text)) {
       pushToast({ tone: 'success', title: t('Koordinat disalin'), detail: text });
+      notify({
+        title: t('Koordinat disalin'),
+        detail: text,
+        severity: 'informasi',
+        category: 'Geofence',
+        source: 'GeoInt Visualisation',
+        page: 'geo-viz',
+        silent: true,
+      });
     } else {
       pushToast({ tone: 'error', title: t('Gagal menyalin'), detail: t('Peramban menolak akses papan klip.') });
+      notify({
+        title: t('Gagal menyalin'),
+        detail: t('Peramban menolak akses papan klip.'),
+        severity: 'peringatan',
+        category: 'Geofence',
+        source: 'GeoInt Visualisation',
+        page: 'geo-viz',
+        silent: true,
+      });
     }
   };
 
   const exportTargets = (fmt: 'KML' | 'GPX') => {
     if (targets.length === 0) {
-      pushToast({ tone: 'warning', title: 'Target Bank kosong', detail: 'Tandai minimal satu titik sebelum mengekspor.' });
+      pushToast({ tone: 'warning', title: 'Target Bank kosong', detail: 'Belum ada misi berstatus Done untuk diekspor.' });
+      notify({
+        title: 'Target Bank kosong',
+        detail: 'Belum ada misi berstatus Done untuk diekspor.',
+        severity: 'peringatan',
+        category: 'Geofence',
+        source: 'GeoInt Visualisation',
+        page: 'geo-viz',
+        silent: true,
+      });
       return;
     }
     const stamp = new Date().toISOString().slice(0, 10);
@@ -482,8 +616,17 @@ export function GeoVisualizationPage() {
     }
     pushToast({
       tone: 'success',
-      title: `Target Bank diekspor — ${fmt}`,
+      title: `Target Lokasi diekspor — ${fmt}`,
       detail: `${targets.length} titik koordinat WGS-84 ditulis ke berkas.`,
+    });
+    notify({
+      title: `Target Lokasi diekspor — ${fmt}`,
+      detail: `${targets.length} titik koordinat WGS-84 ditulis ke berkas.`,
+      severity: 'informasi',
+      category: 'Geofence',
+      source: 'GeoInt Visualisation',
+      page: 'geo-viz',
+      silent: true,
     });
   };
 
@@ -507,31 +650,24 @@ export function GeoVisualizationPage() {
           }
         />
 
-        <div className="geo-layout">
+        <div className="geo-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0px, 1fr) 451px', gap: '16px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
             {/* ---- Bilah alat peta ---- */}
             <div className="map-toolbar">
               <button
-                className={`map-tool ${markMode ? 'on' : ''}`}
-                onClick={() => { setMarkMode(v => !v); setMeasureMode(false); }}
-                title={t('Tempatkan titik target dengan mengklik peta')}
-              >
-                <MapPin size={14} /> Tandai Titik
-              </button>
-              <button
                 className={`map-tool ${measureMode ? 'on' : ''}`}
-                onClick={() => { setMeasureMode(v => !v); setMarkMode(false); setMeasured(null); }}
+                onClick={() => { setMeasureMode(v => !v); setMeasured(null); }}
                 title={t('Ukur jarak dan baringan antara dua titik')}
               >
                 <Ruler size={14} /> Ukur Jarak
               </button>
-              <button
+              {/* <button
                 className="map-tool"
                 onClick={() => flyTo(camLat, camLon, 14)}
                 title={t('Kembali ke titik gelar stasiun')}
               >
                 <Crosshair size={14} /> Pusatkan Stasiun
-              </button>
+              </button> */}
               <button
                 className="map-tool"
                 onClick={copyCoords}
@@ -561,34 +697,36 @@ export function GeoVisualizationPage() {
               selected={selected}
               onSelect={pickTarget}
               basemap={basemap}
-              onBasemapFallback={(reason) =>
-                pushToast({ tone: 'warning', title: 'Basemap beralih ke mode luring', detail: reason })
-              }
+              onBasemapFallback={(reason) => {
+                pushToast({ tone: 'warning', title: 'Basemap beralih ke mode luring', detail: reason });
+                notify({
+                  title: 'Basemap beralih ke mode luring',
+                  detail: reason,
+                  severity: 'peringatan',
+                  category: 'Geofence',
+                  source: 'GeoInt Visualisation',
+                  page: 'geo-viz',
+                  silent: true,
+                });
+              }}
               showFov={showFov}
               showRings={showRings}
               showGeofence={showGeofence}
               showTrack={showTrack}
+              showStation={false}
+              initialZoom={5}
               fovDeg={fovDeg}
               height={468}
-              markMode={markMode}
-              onMapClick={addTarget}
               measureMode={measureMode}
               onMeasure={(r) => setMeasured({ dist: r.dist, bearing: r.bearing })}
               focus={focus}
             />
 
-            <GlassCard tilt={false}>
+            {/* <GlassCard tilt={false}>
               <SectionHead
                 icon={<Crosshair size={15} />}
                 title={t('Solusi Geolokasi')}
                 sub={selected ? `Target terkunci — ${selected.name}` : 'Belum ada target terpilih'}
-                right={
-                  selected && (
-                    <span className={`badge ${THREAT_BADGE[selected.threat]}`}>
-                      ancaman {selected.threat}
-                    </span>
-                  )
-                }
               />
               {solution && selected ? (
                 <MetricRow cols={4}>
@@ -608,88 +746,99 @@ export function GeoVisualizationPage() {
                   description={t('Klik penanda target atau salah satu entri Target Bank untuk menghitung solusi geolokasi.')}
                 />
               )}
-            </GlassCard>
+            </GlassCard> */}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-            <GlassCard>
-              <SectionHead icon={<Layers size={15} />} title={t('Basemap')} sub={t('Sumber ubin peta')} />
-              <div className="lyr-pick">
-                {BASEMAPS.map(b => (
-                  <button
-                    key={b.id}
-                    className={basemap === b.id ? 'on' : ''}
-                    onClick={() => setBasemap(b.id)}
-                    style={{ padding: '7px 9px', textAlign: 'left' }}
-                  >
-                    <span className="sw-chip" style={{ background: b.chip }} />
-                    <span style={{ minWidth: 0, display: 'block' }}>
-                      <span style={{ display: 'block', fontWeight: 600 }}>{b.label}</span>
-                      <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
-                        {b.note}
+            <div style={{ display: 'none' }}>
+              <GlassCard>
+                <SectionHead icon={<Layers size={15} />} title={t('Basemap')} sub={t('Sumber ubin peta')} />
+                <div className="lyr-pick">
+                  {BASEMAPS.map(b => (
+                    <button
+                      key={b.id}
+                      className={basemap === b.id ? 'on' : ''}
+                      onClick={() => setBasemap(b.id)}
+                      style={{ padding: '7px 9px', textAlign: 'left' }}
+                    >
+                      <span className="sw-chip" style={{ background: b.chip }} />
+                      <span style={{ minWidth: 0, display: 'block' }}>
+                        <span style={{ display: 'block', fontWeight: 600 }}>{b.label}</span>
+                        <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+                          {b.note}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <p className="note-inline">
-                {t('Bila jaringan keluar ditutup, peta berpindah sendiri ke Grid Referensi Lokal tanpa kehilangan lapisan taktis.')}
-              </p>
-            </GlassCard>
+                    </button>
+                  ))}
+                </div>
+                <p className="note-inline">
+                  {t('Bila jaringan keluar ditutup, peta berpindah sendiri ke Grid Referensi Lokal tanpa kehilangan lapisan taktis.')}
+                </p>
+              </GlassCard>
+              <GlassCard>
+                <SectionHead icon={<Eye size={15} />} title={t('Lapisan Taktis')} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <Switch checked={showFov} onChange={setShowFov}
+                    label={t('Kerucut pandang kamera')} hint={t('Proyeksi FOV menuju target terkunci')} />
+                  <Switch checked={showRings} onChange={setShowRings}
+                    label={t('Cincin jangkauan')} hint={t('Radius 1, 2, dan 3 km dari titik gelar')} />
+                  <Switch checked={showGeofence} onChange={setShowGeofence}
+                    label={t('Poligon geofence')} hint={t('Batas area tanggung jawab stasiun')} />
+                  <Switch checked={showTrack} onChange={setShowTrack}
+                    label={t('Jejak lintasan balon')} hint={t('Simpangan platform akibat angin')} />
+                </div>
 
-            <GlassCard>
-              <SectionHead icon={<Eye size={15} />} title={t('Lapisan Taktis')} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <Switch checked={showFov} onChange={setShowFov}
-                  label={t('Kerucut pandang kamera')} hint={t('Proyeksi FOV menuju target terkunci')} />
-                <Switch checked={showRings} onChange={setShowRings}
-                  label={t('Cincin jangkauan')} hint={t('Radius 1, 2, dan 3 km dari titik gelar')} />
-                <Switch checked={showGeofence} onChange={setShowGeofence}
-                  label={t('Poligon geofence')} hint={t('Batas area tanggung jawab stasiun')} />
-                <Switch checked={showTrack} onChange={setShowTrack}
-                  label={t('Jejak lintasan balon')} hint={t('Simpangan platform akibat angin')} />
-              </div>
+                <div className="slider-row" style={{ marginTop: 12 }}>
+                  <label htmlFor="fov-range">
+                    Bukaan FOV
+                    <b className="tabnum">{fovDeg}°</b>
+                  </label>
+                  <input
+                    id="fov-range"
+                    type="range"
+                    min={6}
+                    max={60}
+                    step={2}
+                    value={fovDeg}
+                    onChange={e => setFovDeg(Number(e.target.value))}
+                  />
+                  <span className="slider-foot">
+                    Setara zoom optik {(60 / fovDeg).toFixed(1)}× pada gimbal Epsilon
+                  </span>
+                </div>
+              </GlassCard>
+            </div>
 
-              <div className="slider-row" style={{ marginTop: 12 }}>
-                <label htmlFor="fov-range">
-                  Bukaan FOV
-                  <b className="tabnum">{fovDeg}°</b>
-                </label>
-                <input
-                  id="fov-range"
-                  type="range"
-                  min={6}
-                  max={60}
-                  step={2}
-                  value={fovDeg}
-                  onChange={e => setFovDeg(Number(e.target.value))}
-                />
-                <span className="slider-foot">
-                  Setara zoom optik {(60 / fovDeg).toFixed(1)}× pada gimbal Epsilon
-                </span>
-              </div>
-            </GlassCard>
+
 
             <GlassCard>
               <SectionHead
                 icon={<Target size={15} />}
-                title={t('Target Bank')}
+                title={t('Titik Ballon')}
                 sub={`${targets.length} titik tersimpan`}
                 right={
                   <button
-                    className={`btn btn-sm sheen ${markMode ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => { setMarkMode(v => !v); setMeasureMode(false); }}
+                    className="btn btn-sm btn-secondary sheen"
+                    onClick={() => loadDoneTargets()}
+                    disabled={targetsLoading}
+                    title={t('Muat ulang dari misi Done')}
                   >
-                    <Plus size={12} /> {markMode ? 'Batal' : 'Tandai'}
+                    <RefreshCw size={12} className={targetsLoading ? 'spin' : ''} /> {t('Muat Ulang')}
                   </button>
                 }
               />
 
-              {targets.length === 0 ? (
+              {targetsLoading ? (
+                <EmptyState
+                  icon={<RefreshCw size={22} className="spin" />}
+                  title={t('Memuat…')}
+                  description={t('Mengambil lokasi dari misi berstatus Done.')}
+                />
+              ) : targets.length === 0 ? (
                 <EmptyState
                   icon={<MapPin size={22} />}
                   title={t('Target Bank kosong')}
-                  description={t('Aktifkan Tandai Titik, lalu klik pada peta untuk menambahkan koordinat.')}
+                  description={t('Titik akan muncul setelah ada misi yang selesai (status Done).')}
                 />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -698,7 +847,7 @@ export function GeoVisualizationPage() {
                       key={tp.id}
                       className={`tgt-row ${selectedId === tp.id ? 'on' : ''}`}
                     >
-                      <button className="tgt-main" onClick={() => pickTarget(tp)}>
+                      <button className="tgt-main" onClick={() => pickTargetS(tp)}>
                         <span className="tgt-head">
                           <MapPin size={13} style={{ flexShrink: 0 }} />
                           <span className="tgt-name">{tp.name}</span>
@@ -709,29 +858,13 @@ export function GeoVisualizationPage() {
                           ).toLocaleString('id-ID')} m
                         </span>
                       </button>
-
-                      <span className="tgt-actions">
-                        <button
-                          className={`badge ${THREAT_BADGE[tp.threat]}`}
-                          onClick={() => cycleThreat(tp)}
-                          title={t('Ubah tingkat ancaman')}
-                        >
-                          {tp.threat}
-                        </button>
-                        <button onClick={() => renameTarget(tp)} title={t('Ubah nama')} aria-label={`Ubah nama ${tp.name}`}>
-                          <Pencil size={12} />
-                        </button>
-                        <button onClick={() => removeTarget(tp)} title={t('Hapus titik')} aria-label={`Hapus ${tp.name}`}>
-                          <Trash2 size={12} />
-                        </button>
-                      </span>
                     </div>
                   ))}
                 </div>
               )}
             </GlassCard>
 
-            <GlassCard>
+            {/* <GlassCard>
               <SectionHead icon={<Navigation size={15} />} title={t('Sikap Kamera')} />
               <KVList rows={[
                 ['Azimut Gimbal', solution ? `${solution.azimuth.toFixed(1)}°` : '—'],
@@ -740,10 +873,46 @@ export function GeoVisualizationPage() {
                 ['Ketinggian Platform', `${ALT_AGL} m AGL`],
                 ['Sistem Referensi', 'WGS-84 / EPSG:3857'],
               ]} />
-            </GlassCard>
+            </GlassCard> */}
           </div>
         </div>
       </div>
+
+      {detailTargetId != null && (
+        <div className="modal-backdrop" onClick={() => setDetailTargetId(null)}>
+          <div className="modal lq" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('Detail Misi')}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{t('Detail Misi')}</h3>
+              <button className="modal-x" onClick={() => setDetailTargetId(null)} aria-label={t('Tutup')}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="modal-body">
+              {missionDetailLoading ? (
+                <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>{t('Memuat…')}</div>
+              ) : missionDetail ? (
+                <KVList rows={[
+                  [t('Nama Misi'), missionDetail.mission_name ?? '—'],
+                  [t('Deskripsi'), missionDetail.description ?? '—'],
+                  [t('Balon'), missionDetail.balloon?.balloon_name ?? missionDetail.balloon?.name ?? '—'],
+                  [t('Status'), t(missionStatusName(missionDetail) || '—')],
+                  [t('Pimpinan'), missionDetailInfo?.mission_leader ?? '—'],
+                  [t('Take Off'), missionDetailInfo?.takeoff_time ?? '—'],
+                  [t('Landing'), missionDetailInfo?.landing_time ?? '—'],
+                  [t('Durasi'), missionDetailInfo?.duration != null ? `${missionDetailInfo.duration} menit` : '—'],
+                  [t('Ketinggian Maksimal'), missionDetailInfo?.max_altitude != null ? `${missionDetailInfo.max_altitude} m AGL` : '—'],
+                  [t('Panjang Kabel'), missionDetailInfo?.cable_length != null ? `${missionDetailInfo.cable_length} m` : '—'],
+                ]} />
+              ) : (
+                <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>{t('Data tidak ditemukan.')}</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDetailTargetId(null)}>{t('Tutup')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </LicenseGate>
   );
 }
@@ -775,10 +944,23 @@ export function AlertsPage() {
   const {
     pushToast, t, lang, account, offline,
     notifications, unreadCount, notify,
-    markAllRead, setAlertStatus, removeNotification, resetNotifications,
+    markRead, markAllRead, setAlertStatus, removeNotification, resetNotifications,
+    syncNotifications, notifSyncing,
   } = useApp();
 
   const [filter, setFilter] = useState<'all' | Severity>('all');
+  const [detailNotif, setDetailNotif] = useState<AppNotification | null>(null);
+  const [confirmMarkAll, setConfirmMarkAll] = useState(false);
+
+  const confirmMarkAllRead = () => {
+    markAllRead();
+    setConfirmMarkAll(false);
+  };
+
+  const openDetail = (a: AppNotification) => {
+    markRead(a.id);
+    setDetailNotif(a);
+  };
 
   /* ----- Aturan peringatan ----- */
   const [rules, setRules] = useState<AlertRule[]>([]);
@@ -811,6 +993,27 @@ export function AlertsPage() {
     [notifications, filter],
   );
 
+  /* Riwayat Peringatan dipaginasi 10 baris per halaman. */
+  const ALERTS_PAGE_SIZE = 10;
+  const [alertsPage, setAlertsPage] = useState(1);
+  const alertsPageCount = Math.max(1, Math.ceil(filtered.length / ALERTS_PAGE_SIZE));
+  /* Filter berubah atau riwayat menyusut (mis. dihapus) bisa membuat
+     halaman yang sedang dibuka lewat batas — turunkan sendiri ke halaman
+     valid terakhir alih-alih menampilkan tabel kosong yang membingungkan. */
+  useEffect(() => {
+    setAlertsPage(p => Math.min(p, alertsPageCount));
+  }, [alertsPageCount]);
+  const paged = filtered.slice((alertsPage - 1) * ALERTS_PAGE_SIZE, alertsPage * ALERTS_PAGE_SIZE);
+
+  /* Jendela nomor halaman di sekitar halaman aktif — maksimal 3 tombol
+     angka, digeser supaya tetap 3 nomor selama total halaman mencukupi. */
+  const alertsPageWindow = useMemo(() => {
+    const span = Math.min(3, alertsPageCount);
+    let start = Math.min(Math.max(1, alertsPage - 1), alertsPageCount - span + 1);
+    start = Math.max(1, start);
+    return Array.from({ length: span }, (_, i) => start + i);
+  }, [alertsPage, alertsPageCount]);
+
   const counts = useMemo(() => ({
     kritis: notifications.filter(a => a.severity === 'kritis').length,
     peringatan: notifications.filter(a => a.severity === 'peringatan').length,
@@ -819,7 +1022,7 @@ export function AlertsPage() {
   }), [notifications]);
 
   /* ----- Tindakan pada peringatan ----- */
-  const advance = (id: number, next: 'ditangani' | 'selesai', title: string, prev: 'terbuka' | 'ditangani' | 'selesai') => {
+  const advance = (id: string | number, next: 'ditangani' | 'selesai', title: string, prev: 'terbuka' | 'ditangani' | 'selesai') => {
     setAlertStatus(id, next);
     pushToast({
       tone: 'success',
@@ -829,7 +1032,7 @@ export function AlertsPage() {
     });
   };
 
-  const drop = (id: number, title: string) => {
+  const drop = (id: string | number, title: string) => {
     removeNotification(id);
     pushToast({ tone: 'info', title: t('Peringatan dihapus'), detail: title });
   };
@@ -900,12 +1103,15 @@ export function AlertsPage() {
           description={t('Aturan peringatan berbasis geofence, ambang sensor, dan deteksi intrusi.')}
           actions={
             <>
-              <button className="btn btn-secondary" onClick={markAllRead} disabled={unreadCount === 0}>
+              <button className="btn btn-secondary" onClick={syncNotifications} disabled={notifSyncing}>
+                <RefreshCw size={15} className={notifSyncing ? 'spin' : ''} /> {t('Sinkronkan')}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setConfirmMarkAll(true)} disabled={unreadCount === 0}>
                 <CheckCheck size={15} /> {t('Tandai Semua Dibaca')}
               </button>
-              <button className="btn btn-primary sheen" onClick={openCreate}>
+              {/* <button className="btn btn-primary sheen" onClick={openCreate}>
                 <Plus size={15} /> {t('Buat Aturan')}
-              </button>
+              </button> */}
             </>
           }
         />
@@ -921,55 +1127,66 @@ export function AlertsPage() {
           <Tile icon={<ShieldAlert size={19} />} accent="var(--danger-400)" label={t('Kritis')} value={String(counts.kritis)} />
           <Tile icon={<AlertTriangle size={19} />} accent="var(--warning-400)" label={t('Peringatan')} value={String(counts.peringatan)} />
           <Tile icon={<Info size={19} />} accent="var(--info-400)" label={t('Informasi')} value={String(counts.informasi)} />
-          <Tile icon={<CircleAlert size={19} />} accent="var(--accent-tertiary)" label={t('Belum Ditangani')} value={String(counts.terbuka)} />
+          <Tile icon={<CircleAlert size={19} />} accent="var(--accent-tertiary)" label={t('Belum Dibaca')} value={String(unreadCount)} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 330px', gap: 16 }}>
-          <GlassCard tilt={false}>
-            <SectionHead
-              icon={<BellRing size={15} />}
-              title={t('Riwayat Peringatan')}
-              sub={`${filtered.length} ${t('dari')} ${notifications.length} ${t('entri')}`}
-              right={
-                <Segmented
-                  value={filter}
-                  options={[
-                    { id: 'all', label: t('Semua') },
-                    { id: 'kritis', label: t('Kritis') },
-                    { id: 'peringatan', label: t('Peringatan') },
-                    { id: 'informasi', label: t('Info') },
-                  ]}
-                  onChange={setFilter}
-                />
-              }
-            />
-            <div className="table-container">
-              <table>
-                <thead><tr><th>{t('Waktu')}</th><th>{t('Peringatan')}</th><th>{t('Tingkat')}</th><th>{t('Jenis')}</th><th>{t('Status')}</th><th style={{ textAlign: 'right' }}>{t('Aksi')}</th></tr></thead>
-                <tbody>
-                  {filtered.map(a => (
-                    <tr key={a.id} style={{ opacity: a.status === 'selesai' ? 0.72 : 1 }}>
-                      <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>{fullTimestamp(a.ts, lang)}</td>
-                      <td>
-                        <div style={{ fontWeight: a.read ? 600 : 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {!a.read && <span className="nc-unread-dot" style={{ marginTop: 0 }} />}
-                          {t(a.title)}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                          {t('Sumber')}: {t(a.source)}
-                          {a.reading && ` · ${t(a.reading)}${a.threshold ? ` / ${t(a.threshold)}` : ''}`}
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`badge ${SEV_META[a.severity].badge}`} style={{ gap: 4 }}>
-                          {SEV_META[a.severity].icon} {t(a.severity)}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 12 }}>{t(a.category)}</td>
-                      <td><span className={`badge ${STATUS_BADGE[a.status]}`}>{t(a.status)}</span></td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'inline-flex', gap: 4 }}>
-                          {a.status === 'terbuka' && (
+        {/* <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 330px', gap: 16 }}> */}
+        <GlassCard tilt={false}>
+          <SectionHead
+            icon={<BellRing size={15} />}
+            title={t('Riwayat Peringatan')}
+            sub={`${filtered.length} ${t('dari')} ${notifications.length} ${t('entri')}`}
+            right={
+              <Segmented
+                value={filter}
+                options={[
+                  { id: 'all', label: t('Semua') },
+                  { id: 'kritis', label: t('Kritis') },
+                  { id: 'peringatan', label: t('Peringatan') },
+                  { id: 'informasi', label: t('Info') },
+                ]}
+                onChange={v => { setFilter(v); setAlertsPage(1); }}
+              />
+            }
+          />
+          <div className="table-container">
+            <table>
+              <thead><tr><th>{t('Waktu')}</th><th>{t('Peringatan')}</th>
+                <th>{t('Tingkat')}</th><th>{t('Jenis')}</th><th>{t('Dibaca')}</th>
+                {/* <th>{t('Status')}</th> */}
+                <th style={{ textAlign: 'right' }}>{t('Aksi')}</th></tr></thead>
+              <tbody>
+                {paged.map(a => (
+                  <tr key={a.id} style={{ opacity: a.status === 'selesai' ? 0.72 : 1 }}>
+                    <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>{fullTimestamp(a.ts, lang)}</td>
+                    <td>
+                      <div style={{ fontWeight: a.read ? 600 : 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {!a.read && <span className="nc-unread-dot" style={{ marginTop: 0 }} />}
+                        {t(a.title)}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        {t('Sumber')}: {t(a.source)}
+                        {a.reading && ` · ${t(a.reading)}${a.threshold ? ` / ${t(a.threshold)}` : ''}`}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`badge ${SEV_META[a.severity].badge}`} style={{ gap: 4 }}>
+                        {SEV_META[a.severity].icon} {t(a.severity)}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>{t(a.category)}</td>
+                    <td>
+                      <span className={`badge ${a.read ? 'badge-neutral' : 'badge-info'}`}>
+                        {a.read ? t('Sudah Dibaca') : t('Belum Dibaca')}
+                      </span>
+                    </td>
+                    {/* <td><span className={`badge ${STATUS_BADGE[a.status]}`}>{t(a.status)}</span></td> */}
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', gap: 4 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openDetail(a)}>
+                          <Eye size={12} /> {a.read ? t('Detail') : t('Baca')}
+                        </button>
+                        {/* {a.status === 'terbuka' && (
                             <button className="btn btn-secondary btn-sm" onClick={() => advance(a.id, 'ditangani', t(a.title), a.status)}>
                               <Check size={12} /> {t('Tangani')}
                             </button>
@@ -978,130 +1195,171 @@ export function AlertsPage() {
                             <button className="btn btn-secondary btn-sm" onClick={() => advance(a.id, 'selesai', t(a.title), a.status)}>
                               <CheckCheck size={12} /> {t('Tutup')}
                             </button>
-                          )}
-                          <button
+                          )} */}
+                        {/* <button
                             className="btn btn-ghost btn-sm"
                             onClick={() => drop(a.id, t(a.title))}
                             aria-label={`${t('Hapus')}: ${t(a.title)}`}
                           >
                             <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          </button> */}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {filtered.length > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginTop: 10, padding: '8px 12px',
+              background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)',
+            }}>
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                {t('Halaman')} {alertsPage} {t('dari')} {alertsPageCount}
+              </span>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setAlertsPage(p => Math.max(1, p - 1))}
+                  disabled={alertsPage <= 1}
+                  aria-label={t('Halaman sebelumnya')}
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                {alertsPageWindow.map(p => (
+                  <button
+                    key={p}
+                    className={`btn btn-sm ${p === alertsPage ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setAlertsPage(p)}
+                    aria-current={p === alertsPage ? 'page' : undefined}
+                    aria-label={`${t('Halaman')} ${p}`}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setAlertsPage(p => Math.min(alertsPageCount, p + 1))}
+                  disabled={alertsPage >= alertsPageCount}
+                  aria-label={t('Halaman berikutnya')}
+                >
+                  <ChevronRight size={12} />
+                </button>
+              </div>
             </div>
-            {filtered.length === 0 && (
-              <EmptyState
-                icon={<Inbox size={22} />}
-                title={t('Tidak ada peringatan')}
-                description={
-                  notifications.length === 0
-                    ? t('Riwayat kosong. Peringatan baru akan muncul begitu ambang aturan terlampaui.')
-                    : t('Tidak ditemukan peringatan pada tingkat yang dipilih.')
-                }
-                action={
-                  notifications.length === 0
-                    ? <button className="btn btn-secondary btn-sm" onClick={resetNotifications}>
-                      <RefreshCw size={12} /> {t('Muat Riwayat Contoh')}
-                    </button>
-                    : undefined
-                }
-              />
-            )}
+          )}
+          {filtered.length === 0 && (
+            <EmptyState
+              icon={<Inbox size={22} />}
+              title={t('Tidak ada peringatan')}
+              description={
+                notifications.length === 0
+                  ? t('Riwayat kosong. Peringatan baru akan muncul begitu ambang aturan terlampaui.')
+                  : t('Tidak ditemukan peringatan pada tingkat yang dipilih.')
+              }
+              action={
+                notifications.length === 0
+                  ? <button className="btn btn-secondary btn-sm" onClick={resetNotifications}>
+                    <RefreshCw size={12} /> {t('Muat Riwayat Contoh')}
+                  </button>
+                  : undefined
+              }
+            />
+          )}
+        </GlassCard>
+
+        <div style={{ display: 'NONE', flexDirection: 'column', gap: 12 }}>
+          <GlassCard>
+            <SectionHead
+              icon={<Filter size={15} />}
+              title={t('Aturan Peringatan')}
+              sub={`${rules.filter(r => r.enabled).length} ${t('dari')} ${rules.length} ${t('aktif')}`}
+              right={
+                <button className="btn btn-ghost btn-sm" onClick={openCreate} aria-label={t('Buat Aturan')}>
+                  <Plus size={13} />
+                </button>
+              }
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {rules.map(r => (
+                <div key={r.id} className={`rule-row ${r.enabled ? '' : 'off'}`}>
+                  <div className="rule-top">
+                    <span className={`rule-dot ${r.severity}`} aria-hidden="true" />
+                    <span className="rule-name">{t(r.name)}</span>
+                  </div>
+                  <div className="rule-bottom">
+                    <span className="rule-cond">
+                      {t(r.metric)} {r.operator} {t(r.threshold)}
+                    </span>
+                    <span className="rule-acts">
+                      <button
+                        className="rule-act"
+                        onClick={() => toggleRule(r)}
+                        title={r.enabled ? t('Nonaktifkan') : t('Aktifkan')}
+                        aria-label={`${r.enabled ? t('Nonaktifkan') : t('Aktifkan')}: ${t(r.name)}`}
+                      >
+                        {r.enabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                      </button>
+                      <button
+                        className="rule-act"
+                        onClick={() => testRule(r)}
+                        title={t('Uji aturan')}
+                        aria-label={`${t('Uji aturan')}: ${t(r.name)}`}
+                      >
+                        <Play size={12} />
+                      </button>
+                      <button
+                        className="rule-act"
+                        onClick={() => openEdit(r)}
+                        title={t('Ubah')}
+                        aria-label={`${t('Ubah')}: ${t(r.name)}`}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        className="rule-act danger"
+                        onClick={() => deleteRule(r)}
+                        title={t('Hapus')}
+                        aria-label={`${t('Hapus')}: ${t(r.name)}`}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {rules.length === 0 && (
+                <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '8px 0', lineHeight: 1.6 }}>
+                  {t('Belum ada aturan. Tanpa aturan, tidak ada ambang yang diawasi.')}
+                </p>
+              )}
+            </div>
           </GlassCard>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <GlassCard>
-              <SectionHead
-                icon={<Filter size={15} />}
-                title={t('Aturan Peringatan')}
-                sub={`${rules.filter(r => r.enabled).length} ${t('dari')} ${rules.length} ${t('aktif')}`}
-                right={
-                  <button className="btn btn-ghost btn-sm" onClick={openCreate} aria-label={t('Buat Aturan')}>
-                    <Plus size={13} />
-                  </button>
-                }
-              />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {rules.map(r => (
-                  <div key={r.id} className={`rule-row ${r.enabled ? '' : 'off'}`}>
-                    <div className="rule-top">
-                      <span className={`rule-dot ${r.severity}`} aria-hidden="true" />
-                      <span className="rule-name">{t(r.name)}</span>
-                    </div>
-                    <div className="rule-bottom">
-                      <span className="rule-cond">
-                        {t(r.metric)} {r.operator} {t(r.threshold)}
-                      </span>
-                      <span className="rule-acts">
-                        <button
-                          className="rule-act"
-                          onClick={() => toggleRule(r)}
-                          title={r.enabled ? t('Nonaktifkan') : t('Aktifkan')}
-                          aria-label={`${r.enabled ? t('Nonaktifkan') : t('Aktifkan')}: ${t(r.name)}`}
-                        >
-                          {r.enabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                        </button>
-                        <button
-                          className="rule-act"
-                          onClick={() => testRule(r)}
-                          title={t('Uji aturan')}
-                          aria-label={`${t('Uji aturan')}: ${t(r.name)}`}
-                        >
-                          <Play size={12} />
-                        </button>
-                        <button
-                          className="rule-act"
-                          onClick={() => openEdit(r)}
-                          title={t('Ubah')}
-                          aria-label={`${t('Ubah')}: ${t(r.name)}`}
-                        >
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          className="rule-act danger"
-                          onClick={() => deleteRule(r)}
-                          title={t('Hapus')}
-                          aria-label={`${t('Hapus')}: ${t(r.name)}`}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {rules.length === 0 && (
-                  <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '8px 0', lineHeight: 1.6 }}>
-                    {t('Belum ada aturan. Tanpa aturan, tidak ada ambang yang diawasi.')}
-                  </p>
-                )}
-              </div>
-            </GlassCard>
+          <GlassCard>
+            <SectionHead icon={<Radio size={15} />} title={t('Kanal Notifikasi')} />
+            <ConfigToggle label={t('Notifikasi dalam aplikasi')} initial={true} />
+            <ConfigToggle label={t('Alarm suara pada peringatan kritis')} initial={true} />
+            <ConfigToggle label={t('Catat ke Audit Trail')} initial={true} />
+            <ConfigToggle label={t('Teruskan ke stasiun GCS lain')} initial={false} />
+            <ConfigToggle label={t('Sertakan dalam laporan harian otomatis')} initial={false} />
+          </GlassCard>
 
-            <GlassCard>
-              <SectionHead icon={<Radio size={15} />} title={t('Kanal Notifikasi')} />
-              <ConfigToggle label={t('Notifikasi dalam aplikasi')} initial={true} />
-              <ConfigToggle label={t('Alarm suara pada peringatan kritis')} initial={true} />
-              <ConfigToggle label={t('Catat ke Audit Trail')} initial={true} />
-              <ConfigToggle label={t('Teruskan ke stasiun GCS lain')} initial={false} />
-              <ConfigToggle label={t('Sertakan dalam laporan harian otomatis')} initial={false} />
-            </GlassCard>
-
-            <GlassCard>
-              <SectionHead icon={<Activity size={15} />} title={t('Eskalasi Bertingkat')} />
-              <KVList rows={[
-                [t('Tingkat 1 — Informasi'), t('Operator stasiun')],
-                [t('Tingkat 2 — Peringatan'), t('Operator + Supervisor')],
-                [t('Tingkat 3 — Kritis'), t('Seluruh peran + Commander')],
-                [t('Batas Waktu Tanggapan'), t('5 menit (kritis)')],
-                [t('Tindakan Otomatis'), t('Rekam video 60 detik')],
-              ]} />
-            </GlassCard>
-          </div>
+          <GlassCard>
+            <SectionHead icon={<Activity size={15} />} title={t('Eskalasi Bertingkat')} />
+            <KVList rows={[
+              [t('Tingkat 1 — Informasi'), t('Operator stasiun')],
+              [t('Tingkat 2 — Peringatan'), t('Operator + Supervisor')],
+              [t('Tingkat 3 — Kritis'), t('Seluruh peran + Commander')],
+              [t('Batas Waktu Tanggapan'), t('5 menit (kritis)')],
+              [t('Tindakan Otomatis'), t('Rekam video 60 detik')],
+            ]} />
+          </GlassCard>
         </div>
+        {/* </div> */}
 
         {/* ----- Dialog aturan ----- */}
         {showRuleForm && (
@@ -1206,6 +1464,70 @@ export function AlertsPage() {
             </div>
           </div>
         )}
+
+        {detailNotif && (
+          <div className="modal-backdrop" onClick={() => setDetailNotif(null)}>
+            <div className="modal lq" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('Detail Notifikasi')}>
+              <div className="modal-header">
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{t(detailNotif.title)}</h3>
+                <button className="modal-x" onClick={() => setDetailNotif(null)} aria-label={t('Tutup')}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <KVList rows={[
+                  [t('Waktu'), fullTimestamp(detailNotif.ts, lang)],
+                  [t('Tingkat'), t(detailNotif.severity)],
+                  [t('Jenis'), t(detailNotif.category)],
+                  [t('Sumber'), t(detailNotif.source)],
+                  // [t('Status'), t(detailNotif.status)],
+                ]} />
+                <p style={{ fontSize: 12.5, lineHeight: 1.6, margin: 0, color: 'var(--text-secondary)' }}>
+                  {t(detailNotif.detail)}
+                </p>
+                {/* {detailNotif.metadata && (
+                  <pre style={{
+                    fontSize: 10.5, background: 'rgba(255,255,255,0.03)', padding: 10,
+                    borderRadius: 8, overflowX: 'auto', maxHeight: 220, margin: 0,
+                  }}>
+                    {JSON.stringify(detailNotif.metadata, null, 2)}
+                  </pre>
+                )} */}
+              </div>
+
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setDetailNotif(null)}>{t('Tutup')}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {confirmMarkAll && (
+          <div className="modal-backdrop" onClick={() => setConfirmMarkAll(false)}>
+            <div className="modal lq" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('Tandai Semua Dibaca')}>
+              <div className="modal-header">
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{t('Tandai Semua Dibaca')}</h3>
+                <button className="modal-x" onClick={() => setConfirmMarkAll(false)} aria-label={t('Tutup')}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="modal-body">
+                <p style={{ fontSize: 12.5, lineHeight: 1.6, margin: 0, color: 'var(--text-secondary)' }}>
+                  {t('Semua notifikasi yang belum dibaca akan ditandai sebagai sudah dibaca. Lanjutkan?')}
+                </p>
+              </div>
+
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setConfirmMarkAll(false)}>{t('Batal')}</button>
+                <button className="btn btn-primary" onClick={confirmMarkAllRead}>
+                  <CheckCheck size={15} /> {t('Ya, Tandai Semua')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </LicenseGate>
   );
@@ -1263,8 +1585,21 @@ interface MissionDraft {
 const EMPTY_MISSION_DRAFT: MissionDraft = {
   simulationId: '', missionCode: '#26', missionName: '', description: '',
   locationId: '', balloonId: '', operatorId: '', takeoffAt: '', landingAt: '',
-  maxAltitude: 450, cableLength: 450, weather: '', remark: '',
+  maxAltitude: 450, cableLength: 300, weather: '', remark: '',
 };
+
+/* MAX_CABLE_LENGTH: batas panjang kabel penambat operasional, tetap
+   untuk semua misi — tidak bergantung pada balon yang dipilih. */
+const MAX_CABLE_LENGTH = 300;
+
+/** "2 jam 5 menit" — dipakai bersisian dengan angka total menit pada
+    field Durasi (yang tetap dikirim ke backend dalam menit), supaya
+    operator tidak perlu menghitung sendiri dari angka mentah. */
+function formatDurationHM(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h} jam ${m} menit`;
+}
 
 /* mission_status.name pada flight-missions: "Planned" | "Flight" | "Done" —
    dipakai badge Status dan tombol Aksi pada Logbook Penerbangan. status_id
@@ -1283,7 +1618,7 @@ function missionStatusName(m: FlightMissionRecord): string {
 }
 
 export function FlightInfoPage() {
-  const { pushToast, t } = useApp();
+  const { pushToast, notify, t } = useApp();
   const [checked, setChecked] = useState<boolean[]>(() => CHECKLIST.map((_, i) => i < 9));
 
   const criticalPending = CHECKLIST.filter((c, i) => c.critical && !checked[i]).length;
@@ -1307,6 +1642,21 @@ export function FlightInfoPage() {
   const [detailMissionId, setDetailMissionId] = useState<string | number | null>(null);
   const [playMissionId, setPlayMissionId] = useState<string | number | null>(null);
   const [endMissionId, setEndMissionId] = useState<string | number | null>(null);
+  /* Misi yang tombol "Play to Flight"-nya diklik namun balonnya sedang
+     Unavailable — memicu modal peringatan alih-alih checklist pra-terbang. */
+  const [balloonUnavailableMissionId, setBalloonUnavailableMissionId] = useState<string | number | null>(null);
+
+  /* Pratinjau titik di peta untuk field "Pilih Lokasi" — hanya tampilan,
+     TIDAK dikirim ke backend. Lokasi misi tetap merujuk ke location_id
+     dari daftar /locations lewat dropdown yang sudah ada. */
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [pickedCoords, setPickedCoords] = useState<{ lat: number; lon: number } | null>(null);
+
+  /* Pencarian nama lokasi pada field "Pilih Lokasi" — filter client-side,
+     sama seperti pola pencarian di halaman admin lain (mis. Balloon
+     Management), karena endpoint /locations tidak punya parameter query. */
+  const [locationQuery, setLocationQuery] = useState('');
+  const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
 
   /* Logbook Penerbangan: /flight-missions untuk baris misi, /flight-information
      dipakai hanya untuk mengambil mission_leader lewat pencocokan mission_id
@@ -1357,15 +1707,79 @@ export function FlightInfoPage() {
     return map;
   }, [locationOptions]);
 
+  const filteredLocationOptions = useMemo(() => {
+    const q = locationQuery.trim().toLowerCase();
+    if (!q) return locationOptions;
+    return locationOptions.filter(l =>
+      String(l.name ?? l.location_name ?? l.id).toLowerCase().includes(q));
+  }, [locationOptions, locationQuery]);
+
   const balloonIdBySerial = useMemo(() => {
     const map = new globalThis.Map<string, string | number>();
     for (const b of balloonOptions) if (b.serial_number) map.set(b.serial_number, b.id);
     return map;
   }, [balloonOptions]);
 
+  /* GET /flight-missions menyertakan relasi balloon tanpa id (cuma
+     name/serial_number) — status paling akurat diambil dari daftar
+     lengkap /balloons yang sudah dimuat lewat balloonOptions, dicocokkan
+     lewat id (bila ada) atau serial_number sebagai jalan pintasnya. */
+  const resolveMissionBalloon = (mission: FlightMissionRecord): BalloonRecord | undefined => {
+    const balloonId = mission.balloon_id ?? balloonIdBySerial.get(mission.balloon?.serial_number ?? '');
+    if (balloonId != null) {
+      const byId = balloonOptions.find(b => String(b.id) === String(balloonId));
+      if (byId) return byId;
+    }
+    return mission.balloon ?? undefined;
+  };
+
+  /* Sama seperti tile ringkasan di Balloon Management: hanya status
+     "Available" (tanpa peduli besar/kecil huruf) yang dianggap siap
+     terbang — status kosong/lainnya dianggap tidak tersedia. */
+  const isBalloonAvailable = (balloon: BalloonRecord | undefined) => (balloon?.status ?? '').toLowerCase() === 'available';
+
+  /* Dipakai confirmTakeoff (→ Unavailable) & confirmEndFlight (→ Available)
+     supaya siklus status balon mengikuti siklus misi tanpa operator harus
+     mengubahnya manual di Balloon Management. PUT /balloons/{id} adalah
+     full-replace, jadi kelima field wajib dikirim ulang — bukan cuma
+     status — kalau tidak field lain berisiko ikut kosong di backend. */
+  const applyBalloonStatus = async (balloon: BalloonRecord, status: 'Available' | 'Unavailable') => {
+    try {
+      await api.updateBalloon(String(balloon.id), {
+        balloon_name: balloon.name ?? balloon.balloon_name ?? '',
+        serial_number: balloon.serial_number ?? '',
+        capacity: Number(balloon.capacity) || 0,
+        max_altitude: Number(balloon.max_altitude) || 0,
+        status,
+      });
+      setBalloonOptions(prev => prev.map(b => (String(b.id) === String(balloon.id) ? { ...b, status } : b)));
+    } catch (err) {
+      console.error(`Gagal mengubah status balon ke ${status}:`, err);
+      const balloonStatusDetail = status === 'Available'
+        ? t('Misi berhasil diakhiri, namun status balon tidak berhasil dikembalikan ke Available. Perbarui manual di Balloon Management.')
+        : t('Penerbangan dimulai, namun status balon tidak berhasil diubah ke Unavailable. Perbarui manual di Balloon Management.');
+      pushToast({
+        tone: 'warning',
+        title: t('Gagal memperbarui status balon'),
+        detail: balloonStatusDetail,
+      });
+      notify({
+        title: t('Gagal memperbarui status balon'),
+        detail: balloonStatusDetail,
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Information',
+        page: 'flight-info',
+        silent: true,
+      });
+    }
+  };
+
   /* Backend memvalidasi PUT /flight-missions/{id} sebagai full-replace, jadi
-     seluruh field asli misi dikirim ulang — cuma status_id yang berubah. */
-  const setMissionStatus = async (mission: FlightMissionRecord, statusId: number) => {
+     seluruh field asli misi dikirim ulang — cuma status_id yang berubah.
+     Mengembalikan status keberhasilan supaya pemanggil (mis. confirmEndFlight)
+     tahu apakah aman melanjutkan langkah berikutnya. */
+  const setMissionStatus = async (mission: FlightMissionRecord, statusId: number): Promise<boolean> => {
     setActionMissionId(mission.id);
     try {
       await api.updateFlightMission(mission.id, {
@@ -1378,17 +1792,29 @@ export function FlightInfoPage() {
         status_id: statusId,
       });
       await loadLogbook();
+      return true;
     } catch (err) {
       console.error('updateFlightMission gagal:', err);
       const apiErr = err as { status?: number; message?: string; error?: string; detail?: { loc?: string[]; msg?: string }[] };
       const detailText = Array.isArray(apiErr?.detail)
         ? apiErr.detail.map(d => `${d.loc?.[d.loc.length - 1] ?? '?'}: ${d.msg ?? ''}`).join(', ')
         : undefined;
+      const missionStatusDetail = detailText ?? apiErr?.message ?? apiErr?.error ?? (apiErr?.status ? `HTTP ${apiErr.status}` : t('Tidak bisa terhubung ke server. Coba lagi.'));
       pushToast({
         tone: 'error',
         title: t('Gagal memperbarui status misi'),
-        detail: detailText ?? apiErr?.message ?? apiErr?.error ?? (apiErr?.status ? `HTTP ${apiErr.status}` : t('Tidak bisa terhubung ke server. Coba lagi.')),
+        detail: missionStatusDetail,
       });
+      notify({
+        title: t('Gagal memperbarui status misi'),
+        detail: missionStatusDetail,
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Information',
+        page: 'flight-info',
+        silent: true,
+      });
+      return false;
     } finally {
       setActionMissionId(null);
     }
@@ -1397,14 +1823,31 @@ export function FlightInfoPage() {
   const confirmTakeoff = async () => {
     const mission = missions.find(m => m.id === playMissionId);
     if (!mission || criticalPending > 0) return;
-    await setMissionStatus(mission, 2);
+    const ok = await setMissionStatus(mission, 2);
+
+    /* Balon ditandai Unavailable begitu penerbangan dimulai, supaya guard
+       "Play to Flight" pada misi lain menolak balon yang sama sampai
+       misi ini benar-benar diakhiri lewat confirmEndFlight. */
+    if (ok) {
+      const balloon = resolveMissionBalloon(mission);
+      if (balloon) await applyBalloonStatus(balloon, 'Unavailable');
+    }
+
     setPlayMissionId(null);
   };
 
   const confirmEndFlight = async () => {
     const mission = missions.find(m => m.id === endMissionId);
     if (!mission) return;
-    await setMissionStatus(mission, 3);
+    const ok = await setMissionStatus(mission, 3);
+
+    /* Balon dikembalikan ke Available begitu misinya selesai, supaya
+       langsung bisa ditugaskan lagi lewat Play to Flight di misi lain. */
+    if (ok) {
+      const balloon = resolveMissionBalloon(mission);
+      if (balloon) await applyBalloonStatus(balloon, 'Available');
+    }
+
     setEndMissionId(null);
   };
 
@@ -1435,9 +1878,18 @@ export function FlightInfoPage() {
     return Math.round((end - start) / 60000);
   }, [draft.takeoffAt, draft.landingAt]);
 
+  /* Batas ketinggian mengikuti data balon yang dipilih — undefined bila
+     belum ada balon dipilih atau balonnya tidak melaporkan max_altitude. */
+  const selectedBalloonMaxAltitude = useMemo(() => {
+    const selected = balloonOptions.find(b => String(b.id) === draft.balloonId);
+    const raw = selected?.max_altitude;
+    const n = raw != null ? Number(raw) : NaN;
+    return Number.isFinite(n) ? n : undefined;
+  }, [balloonOptions, draft.balloonId]);
+
   const missionReady = draft.missionCode.trim() !== ''
     && draft.missionName.trim() !== ''
-    && draft.locationId !== ''
+    && pickedCoords !== null
     && draft.balloonId !== ''
     && draft.operatorId !== ''
     && draft.takeoffAt !== ''
@@ -1447,23 +1899,35 @@ export function FlightInfoPage() {
   const closeMissionForm = () => {
     setShowMissionForm(false);
     setDraft(EMPTY_MISSION_DRAFT);
+    setShowLocationPicker(false);
+    setPickedCoords(null);
+    setLocationQuery('');
+    setLocationDropdownOpen(false);
   };
 
-  /* Simpan dua langkah: flight-missions dulu (dapat id-nya), baru
-     flight-information yang merujuk ke id tersebut. Kalau langkah kedua
-     gagal, misi di langkah pertama sudah terlanjur tersimpan di backend —
+  /* Simpan tiga langkah: locations dulu (titik dari peta pratinjau, dapat
+     id-nya), lalu flight-missions memakai location_id tersebut, baru
+     flight-information yang merujuk ke id misi. Kalau langkah berikutnya
+     gagal, langkah sebelumnya sudah terlanjur tersimpan di backend —
      operator diberi tahu lewat toast agar bisa memeriksa/mengulang. */
   const submitMission = async () => {
-    if (!missionReady || submitting) return;
+    if (!missionReady || submitting || !pickedCoords) return;
     setSubmitting(true);
     try {
-      // console.log("draft", draft);
+      const location = await api.createLocation({
+        name: draft.missionName,
+        city: '-',
+        province: '-',
+        latitude: pickedCoords.lat,
+        longitude: pickedCoords.lon,
+      });
+
       const mission = await api.createFlightMission({
         simulation_id: draft.simulationId || null,
         mission_name: draft.missionName,
         mission_code: draft.missionCode,
         description: draft.description,
-        location_id: draft.locationId,
+        location_id: location.id,
         balloon_id: draft.balloonId,
         status_id: 1,
       });
@@ -1486,6 +1950,15 @@ export function FlightInfoPage() {
         title: t('Misi baru dibuat'),
         detail: `${draft.missionName} (${draft.missionCode}) — ${missionDuration} ${t('menit direncanakan')}.`,
       });
+      notify({
+        title: t('Misi baru dibuat'),
+        detail: `${draft.missionName} (${draft.missionCode}) — ${missionDuration} ${t('menit direncanakan')}.`,
+        severity: 'informasi',
+        category: 'Operasional',
+        source: 'Flight Information',
+        page: 'flight-info',
+        silent: true,
+      });
       closeMissionForm();
       loadLogbook();
     } catch {
@@ -1494,10 +1967,20 @@ export function FlightInfoPage() {
         title: t('Gagal menyimpan misi'),
         detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
       });
+      notify({
+        title: t('Gagal menyimpan misi'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Information',
+        page: 'flight-info',
+        silent: true,
+      });
     } finally {
       setSubmitting(false);
     }
   };
+
 
   const detailMission = detailMissionId != null ? (missions.find(m => m.id === detailMissionId) ?? null) : null;
   const detailInfo = detailMissionId != null ? (infoByMission.get(String(detailMissionId)) ?? null) : null;
@@ -1557,7 +2040,7 @@ export function FlightInfoPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>{t('Misi')}</th><th>{t('Tanggal')}</th><th>{t('Lepas Landas')}</th>
+                    <th>{t('Misi')}</th><th>{t('Lepas Landas')}</th>
                     <th>{t('Mendarat')}</th><th>{t('Durasi')}</th><th>{t('Ketinggian')}</th>
                     <th>{t('Pimpinan')}</th><th>{t('Status')}</th><th>{t('Aksi')}</th>
                   </tr>
@@ -1572,16 +2055,22 @@ export function FlightInfoPage() {
                     return (
                       <tr key={String(m.id)}>
                         <td className="font-mono" style={{ fontWeight: 700 }}>{m.mission_code ?? m.mission_name ?? String(m.id)}</td>
-                        <td className="font-mono text-xs">{info?.takeoff_time ? info.takeoff_time.slice(0, 10) : '—'}</td>
-                        <td className="font-mono text-xs">{info?.takeoff_time ? info.takeoff_time.slice(11, 16) : '—'}</td>
-                        <td className="font-mono text-xs">{info?.landing_time ? info.landing_time.slice(11, 16) : '—'}</td>
-                        <td className="font-mono text-xs">{info?.duration != null ? `${info.duration} mnt` : '—'}</td>
+                        <td className="font-mono text-xs">{info?.takeoff_time ? info.takeoff_time.slice(0, 16).replace('T', ' ') : '—'}</td>
+                        <td className="font-mono text-xs">{info?.landing_time ? info.landing_time.slice(0, 16).replace('T', ' ') : '—'}</td>
+                        <td className="font-mono text-xs">{info?.duration != null ? formatDurationHM(info.duration) : '—'}</td>
                         <td className="font-mono text-xs">{info?.max_altitude != null ? `${info.max_altitude} m` : '—'}</td>
                         <td style={{ fontSize: 12 }}>{leader}</td>
                         <td><span className={`badge badge-${meta.tone}`}>{t(meta.label)}</span></td>
                         <td>
                           {statusName === 'Planned' && (
-                            <button className="btn btn-secondary btn-sm" disabled={isActing} onClick={() => setPlayMissionId(m.id)}>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              disabled={isActing}
+                              onClick={() => {
+                                if (isBalloonAvailable(resolveMissionBalloon(m))) setPlayMissionId(m.id);
+                                else setBalloonUnavailableMissionId(m.id);
+                              }}
+                            >
                               <Play size={12} /> {t('Play to Flight')}
                             </button>
                           )}
@@ -1666,37 +2155,133 @@ export function FlightInfoPage() {
                   />
                 </RuleField>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div >
                   <RuleField label={t('Pilih Lokasi')}>
-                    <select
-                      className="form-input"
-                      value={draft.locationId}
-                      onChange={e => setDraft(d => ({ ...d, locationId: e.target.value }))}
-                    >
-                      <option value="">{t('Pilih…')}</option>
-                      {locationOptions.map(l => (
-                        <option key={String(l.id)} value={String(l.id)}>
-                          {String(l.name ?? l.location_name ?? l.id)}
-                        </option>
-                      ))}
-                    </select>
+                    <div style={{ display: 'none', gap: 6 }}>
+                      <div style={{ position: 'relative', flex: 1 }}>
+                        <input
+                          className="form-input"
+                          placeholder={t('Cari nama lokasi…')}
+                          value={locationQuery}
+                          onFocus={() => setLocationDropdownOpen(true)}
+                          onChange={e => {
+                            setLocationQuery(e.target.value);
+                            setLocationDropdownOpen(true);
+                            if (draft.locationId) setDraft(d => ({ ...d, locationId: '' }));
+                          }}
+                          onBlur={() => setLocationDropdownOpen(false)}
+                        />
+                        {locationDropdownOpen && (
+                          <div style={{
+                            position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 20,
+                            background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+                            borderRadius: 'var(--radius-sm)', maxHeight: 180, overflowY: 'auto',
+                            boxShadow: '0 12px 28px -12px rgba(0,0,0,0.5)',
+                          }}>
+                            {filteredLocationOptions.length === 0 && (
+                              <div style={{ padding: '8px 10px', fontSize: 12, color: 'var(--text-muted)' }}>
+                                {t('Lokasi tidak ditemukan')}
+                              </div>
+                            )}
+                            {filteredLocationOptions.map(l => (
+                              <div
+                                key={String(l.id)}
+                                className="geo-combo-option"
+                                onMouseDown={() => {
+                                  setDraft(d => ({ ...d, locationId: String(l.id) }));
+                                  setLocationQuery(String(l.name ?? l.location_name ?? l.id));
+                                  setLocationDropdownOpen(false);
+                                }}
+                                style={{ padding: '8px 10px', fontSize: 12.5, cursor: 'pointer' }}
+                              >
+                                {String(l.name ?? l.location_name ?? l.id)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        title={t('Pilih di peta (pratinjau)')}
+                        onClick={() => setShowLocationPicker(v => !v)}
+                      >
+                        <MapPin size={14} />
+                      </button>
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <EsriMap
+                        camLat={pickedCoords?.lat ?? -6.2088}
+                        camLon={pickedCoords?.lon ?? 106.8456}
+                        altitude={0}
+                        targets={[]}
+                        selected={null}
+                        onSelect={() => { }}
+                        basemap="imagery"
+                        markMode
+                        onMapClick={(lat, lon) => setPickedCoords({ lat, lon })}
+                        height={220}
+                      />
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                        {pickedCoords
+                          ? `${t('Pratinjau titik')}: ${pickedCoords.lat.toFixed(5)}°, ${pickedCoords.lon.toFixed(5)}°`
+                          : t('Klik pada peta untuk pratinjau koordinat.')}
+                        {' — '}
+                        {t('Lokasi misi tetap ditentukan dari daftar di atas.')}
+                      </div>
+                    </div>
+                    {/* {showLocationPicker && (
+                      <div style={{ marginTop: 8 }}>
+                        <EsriMap
+                          camLat={pickedCoords?.lat ?? -6.2088}
+                          camLon={pickedCoords?.lon ?? 106.8456}
+                          altitude={0}
+                          targets={[]}
+                          selected={null}
+                          onSelect={() => { }}
+                          basemap="imagery"
+                          markMode
+                          onMapClick={(lat, lon) => setPickedCoords({ lat, lon })}
+                          height={220}
+                        />
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                          {pickedCoords
+                            ? `${t('Pratinjau titik')}: ${pickedCoords.lat.toFixed(5)}°, ${pickedCoords.lon.toFixed(5)}°`
+                            : t('Klik pada peta untuk pratinjau koordinat.')}
+                          {' — '}
+                          {t('Lokasi misi tetap ditentukan dari daftar di atas.')}
+                        </div>
+                      </div>
+                    )} */}
                   </RuleField>
-                  <RuleField label={t('Pilih Balon')}>
-                    <select
-                      className="form-input"
-                      value={draft.balloonId}
-                      onChange={e => setDraft(d => ({ ...d, balloonId: e.target.value }))}
-                    >
-                      <option value="">{t('Pilih…')}</option>
-                      {balloonOptions.map(b => (
-                        <option key={String(b.id)} value={String(b.id)}>
-                          {String(b.name ?? b.balloon_name ?? b.id)}
-                        </option>
-                      ))}
-                    </select>
-                  </RuleField>
-                </div>
 
+                </div>
+                <RuleField label={t('Pilih Balon')}>
+                  <select
+                    className="form-input"
+                    value={draft.balloonId}
+                    onChange={e => {
+                      const balloonId = e.target.value;
+                      /* Ketinggian maksimal mengikuti data balon yang dipilih —
+                         diisi otomatis begitu balon dipilih, operator masih
+                         bisa menurunkannya tapi dibatasi max di field-nya. */
+                      const selected = balloonOptions.find(b => String(b.id) === balloonId);
+                      const cap = selected?.max_altitude != null ? Number(selected.max_altitude) : undefined;
+                      setDraft(d => ({
+                        ...d,
+                        balloonId,
+                        maxAltitude: cap != null && Number.isFinite(cap) ? cap : d.maxAltitude,
+                      }));
+                    }}
+                  >
+                    <option value="">{t('Pilih…')}</option>
+                    {balloonOptions.map(b => (
+                      <option key={String(b.id)} value={String(b.id)}>
+                        {String(b.name ?? b.balloon_name ?? b.id)}
+                      </option>
+                    ))}
+                  </select>
+                </RuleField>
                 <RuleField label={t('Pilih Operator Misi')}>
                   <select
                     className="form-input"
@@ -1751,25 +2336,40 @@ export function FlightInfoPage() {
                   </p>
                 )}
 
-                <RuleField label={t('Durasi (menit)')}>
-                  <input className="form-input" value={missionDuration > 0 ? missionDuration : '—'} readOnly disabled />
+                <RuleField label={t('Durasi')}>
+                  <input
+                    className="form-input"
+                    value={missionDuration > 0 ? `${formatDurationHM(missionDuration)} (${missionDuration} menit)` : '—'}
+                    readOnly
+                    disabled
+                  />
                 </RuleField>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <RuleField label={t('Ketinggian Maksimal (m AGL)')}>
+                  <RuleField label={
+                    selectedBalloonMaxAltitude != null
+                      ? `${t('Ketinggian Maksimal (m AGL)')} — max ${selectedBalloonMaxAltitude} m`
+                      : t('Ketinggian Maksimal (m AGL)')
+                  }>
                     <input
                       type="number"
                       className="form-input"
                       value={draft.maxAltitude}
-                      onChange={e => setDraft(d => ({ ...d, maxAltitude: Number(e.target.value) }))}
+                      max={selectedBalloonMaxAltitude}
+                      onChange={e => {
+                        const raw = Number(e.target.value);
+                        const capped = selectedBalloonMaxAltitude != null ? Math.min(raw, selectedBalloonMaxAltitude) : raw;
+                        setDraft(d => ({ ...d, maxAltitude: capped }));
+                      }}
                     />
                   </RuleField>
-                  <RuleField label={t('Panjang Kabel (m)')}>
+                  <RuleField label={`${t('Panjang Kabel (m)')} — max ${MAX_CABLE_LENGTH} m`}>
                     <input
                       type="number"
                       className="form-input"
                       value={draft.cableLength}
-                      onChange={e => setDraft(d => ({ ...d, cableLength: Number(e.target.value) }))}
+                      max={MAX_CABLE_LENGTH}
+                      onChange={e => setDraft(d => ({ ...d, cableLength: Math.min(Number(e.target.value), MAX_CABLE_LENGTH) }))}
                     />
                   </RuleField>
                 </div>
@@ -1901,6 +2501,46 @@ export function FlightInfoPage() {
             </div>
           </div>
         )}
+
+        {/* ----- Modal peringatan — balon sedang Unavailable ----- */}
+        {balloonUnavailableMissionId != null && (() => {
+          const mission = missions.find(m => m.id === balloonUnavailableMissionId);
+          const balloon = mission ? resolveMissionBalloon(mission) : undefined;
+          const balloonLabel = balloon?.name ?? balloon?.balloon_name ?? t('Balon pada misi ini');
+          return (
+            <div className="modal-backdrop" onClick={() => setBalloonUnavailableMissionId(null)}>
+              <div className="modal lq" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('Balon Tidak Tersedia')}>
+                <div className="modal-header">
+                  <h3 className="danger-head" style={{ margin: 0, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertTriangle size={17} /> {t('Balon Tidak Tersedia')}
+                  </h3>
+                  <button className="modal-x" onClick={() => setBalloonUnavailableMissionId(null)} aria-label={t('Tutup')}>
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="modal-body">
+                  <div className="danger-callout">
+                    <AlertTriangle size={16} />
+                    <span>{balloonLabel} — {t('status saat ini Unavailable')}</span>
+                  </div>
+                  <p className="modal-lead" style={{ marginTop: 10 }}>
+                    {t('Balon yang ditugaskan pada misi ini sedang dalam kondisi terbang (atau belum dikembalikan ke Available setelah misi sebelumnya). Penerbangan tidak dapat dimulai selagi statusnya Unavailable.')}
+                  </p>
+                  <p className="modal-note">
+                    {t('Periksa dan perbarui status balon di Balloon Management sebelum mencoba lagi.')}
+                  </p>
+                </div>
+
+                <div className="modal-footer">
+                  <button className="btn btn-secondary" onClick={() => setBalloonUnavailableMissionId(null)}>
+                    {t('Tutup')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ----- Modal konfirmasi End Flight ----- */}
         {endMissionId != null && (
@@ -2137,7 +2777,7 @@ const VERDICT_META: Record<Verdict, { color: string; icon: React.ReactNode; note
 };
 
 export function SimulationPage() {
-  const { pushToast, t, lang, account } = useApp();
+  const { pushToast, notify, t, lang, account } = useApp();
   const [input, setInput] = useState<SimInput>({
     nama: '', wind: 0, gust: 0, visibility: 0, temperature: 0,
     rain: 0, altitude: 0, helium: 0, payload: 0, duration: 0,
@@ -2187,12 +2827,21 @@ export function SimulationPage() {
       .catch(() => {
         if (!cancelled) {
           pushToast({ tone: 'error', title: t('Gagal memuat detail'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
+          notify({
+            title: t('Gagal memuat detail'),
+            detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+            severity: 'peringatan',
+            category: 'Operasional',
+            source: 'Flight Simulation',
+            page: 'simulation',
+            silent: true,
+          });
           setDetailId(null);
         }
       })
       .finally(() => { if (!cancelled) setDetailLoading(false); });
     return () => { cancelled = true; };
-  }, [detailId, pushToast, t]);
+  }, [detailId, pushToast, notify, t]);
 
   const set = (k: keyof Omit<SimInput, 'nama'>) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setInput(p => ({ ...p, [k]: Number(e.target.value) }));
@@ -2210,6 +2859,15 @@ export function SimulationPage() {
         tone: r.verdict === 'GO' ? 'success' : r.verdict === 'MARGINAL' ? 'warning' : 'error',
         title: `Hasil simulasi: ${r.verdict}`,
         detail: VERDICT_META[r.verdict].note,
+      });
+      notify({
+        title: `Hasil simulasi: ${r.verdict}`,
+        detail: VERDICT_META[r.verdict].note,
+        severity: r.verdict === 'GO' ? 'informasi' : 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Simulation',
+        page: 'simulation',
+        silent: true,
       });
     }, 1000);
   };
@@ -2241,6 +2899,15 @@ export function SimulationPage() {
         tone: 'error',
         title: t('Form belum lengkap'),
         detail: `${t('Isi dulu')}: ${missing.join(', ')}.`,
+      });
+      notify({
+        title: t('Form belum lengkap'),
+        detail: `${t('Isi dulu')}: ${missing.join(', ')}.`,
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Simulation',
+        page: 'simulation',
+        silent: true,
       });
       return;
     }
@@ -2274,6 +2941,15 @@ export function SimulationPage() {
         title: t('Simulasi disimpan'),
         detail: `${input.nama} — hasil ${result.verdict} tersimpan ke riwayat.`,
       });
+      notify({
+        title: t('Simulasi disimpan'),
+        detail: `${input.nama} — hasil ${result.verdict} tersimpan ke riwayat.`,
+        severity: 'informasi',
+        category: 'Operasional',
+        source: 'Flight Simulation',
+        page: 'simulation',
+        silent: true,
+      });
       setInput({ nama: '', wind: 0, gust: 0, visibility: 0, temperature: 0, rain: 0, altitude: 0, helium: 0, payload: 0, duration: 0 });
       setResult(null);
       loadHistory();
@@ -2282,6 +2958,15 @@ export function SimulationPage() {
         tone: 'error',
         title: t('Gagal menyimpan simulasi'),
         detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+      });
+      notify({
+        title: t('Gagal menyimpan simulasi'),
+        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        severity: 'peringatan',
+        category: 'Operasional',
+        source: 'Flight Simulation',
+        page: 'simulation',
+        silent: true,
       });
     } finally {
       setSaving(false);

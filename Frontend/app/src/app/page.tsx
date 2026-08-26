@@ -16,6 +16,7 @@ import MediaSourcePage from './pages/GCSPage';
 import LicensePage from './pages/LicensePage';
 import SettingsPage from './pages/SettingsPage';
 import UserManagementPage from './pages/UserManagementPage';
+import BalloonManagementPage from './pages/BalloonManagementPage';
 import AuditLogPage from './pages/AuditLogPage';
 import {
   CrowdCountingPage,
@@ -46,6 +47,7 @@ const PAGES: Record<string, React.ComponentType> = {
   'licenses': LicensePage,
   'settings': SettingsPage,
   'users': UserManagementPage,
+  'balloons': BalloonManagementPage,
   'audit-log': AuditLogPage,
 };
 

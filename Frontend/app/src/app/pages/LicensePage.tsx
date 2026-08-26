@@ -33,7 +33,7 @@ const LICENSOR = 'TAB Integrated Systems Pte Ltd';
 // sortLicenses()
 
 export default function LicensePage() {
-  const { licenses, activeLicenseIds, activateLicense, deactivateLicense, account, pushToast, t } = useApp();
+  const { licenses, activeLicenseIds, activateLicense, deactivateLicense, account, pushToast, notify, t } = useApp();
 
   const [target, setTarget] = useState<LicenseDef | null>(null);
   const [keyInput, setKeyInput] = useState('');
@@ -47,12 +47,19 @@ export default function LicensePage() {
   const totalCount = LICENSE_CATALOG.length;
   // console.log(LICENSE_CATALOG)
 
-  /* Lisensi terdekat kedaluwarsa — dipakai pada kartu ringkasan. Dihitung
-     ulang setiap render (bukan useMemo ber-deps kosong) karena
-     refreshLicenseCatalog memutasi objek LICENSE_CATALOG di tempat —
-     array-nya sendiri tidak pernah berganti referensi, jadi useMemo([])
-     akan membeku di nilai pertama dan tidak pernah terbarui. */
-  const nearestExpiry = Math.min(...LICENSE_CATALOG.map(d => daysUntilExpiry(d)));
+  /* Lisensi terdekat kedaluwarsa — dipakai pada kartu ringkasan. Hanya
+     dihitung dari lisensi yang benar-benar aktif; def yang belum pernah
+     diaktivasi masih membawa expiryDate bawaan pabrik (lihat komentar
+     hasCertificate di lib/licensing.ts), jadi ikut sertakan itu akan
+     menampilkan tanggal palsu. Dihitung ulang setiap render (bukan
+     useMemo ber-deps kosong) karena refreshLicenseCatalog memutasi objek
+     LICENSE_CATALOG di tempat — array-nya sendiri tidak pernah berganti
+     referensi, jadi useMemo([]) akan membeku di nilai pertama dan tidak
+     pernah terbarui. */
+  const activeExpiries = LICENSE_CATALOG
+    .filter(d => activeLicenseIds.includes(d.id))
+    .map(d => daysUntilExpiry(d));
+  const nearestExpiry = activeExpiries.length > 0 ? Math.min(...activeExpiries) : null;
 
   const openActivation = (def: LicenseDef) => {
     setTarget(def);
@@ -87,6 +94,15 @@ export default function LicensePage() {
         title: `${target.shortTitle} — ACTIVE`,
         detail: `Diaktivasi dengan S/N ${result.serialNumber}. Seluruh fitur dalam lisensi ini telah terbuka.`,
       });
+      notify({
+        title: `${target.shortTitle} — ACTIVE`,
+        detail: `Diaktivasi dengan S/N ${result.serialNumber}. Seluruh fitur dalam lisensi ini telah terbuka.`,
+        severity: 'informasi',
+        category: 'Lisensi',
+        source: 'License Manager',
+        page: 'licenses',
+        silent: true,
+      });
       setTarget(null);
       setKeyInput('');
     }, 900);
@@ -98,6 +114,15 @@ export default function LicensePage() {
       tone: 'warning',
       title: `${def.shortTitle} — LOCKED`,
       detail: 'Fitur dalam lisensi ini dikunci. Masukkan kembali license key untuk mengaktifkan.',
+    });
+    notify({
+      title: `${def.shortTitle} — LOCKED`,
+      detail: 'Fitur dalam lisensi ini dikunci. Masukkan kembali license key untuk mengaktifkan.',
+      severity: 'peringatan',
+      category: 'Lisensi',
+      source: 'License Manager',
+      page: 'licenses',
+      silent: true,
     });
   };
 
@@ -141,9 +166,9 @@ export default function LicensePage() {
         />
         <SummaryTile
           icon={<CalendarClock size={19} />}
-          accent={nearestExpiry < 90 ? 'var(--warning-400)' : 'var(--accent-tertiary)'}
+          accent={nearestExpiry !== null && nearestExpiry < 90 ? 'var(--warning-400)' : 'var(--accent-tertiary)'}
           label={t('Berakhir Dalam')}
-          value={`${nearestExpiry} hari`}
+          value={nearestExpiry !== null ? `${nearestExpiry} hari` : '—'}
         />
       </div>
 
