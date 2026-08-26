@@ -6,6 +6,7 @@ import time
 import traceback
 
 import cv2
+import numpy as np
 
 from utils.file_manager import FileManager
 from utils.websocket_manager import manager
@@ -62,6 +63,24 @@ class VideoCrowdCounterLive:
 
         return frame_out
 
+    def _blend_heatmap(self, density_map, frame):
+        """Blend a (mungkin basi) density map ke frame TERKINI — operasi
+        OpenCV murah (resize/normalize/colormap/blend), bukan inferensi
+        model, jadi aman dipanggil di setiap frame supaya video tetap
+        mengikuti gerakan asli, bukan membekukan satu snapshot lama."""
+
+        h, w = frame.shape[:2]
+
+        resized = cv2.resize(density_map, (w, h))
+
+        normalized = cv2.normalize(
+            resized, None, 0, 255, cv2.NORM_MINMAX
+        ).astype(np.uint8)
+
+        heatmap = cv2.applyColorMap(normalized, cv2.COLORMAP_JET)
+
+        return cv2.addWeighted(frame, 0.6, heatmap, 0.4, 0)
+
     async def predict_video_stream(
         self,
         job_id: str,
@@ -99,17 +118,12 @@ class VideoCrowdCounterLive:
         if not writer.isOpened():
             raise Exception("Failed to create VideoWriter")
 
-        last_result = None
+        last_density_map = None
+        last_count = 0
         counter_task = None
 
         frame_index = 0
         counts = []
-
-        # Kirim ke WebSocket kira-kira selaras dengan kecepatan hasil AI-nya
-        # sendiri (tiap FRAME_INTERVAL frame), bukan tiap frame video — ini
-        # yang menghemat CPU (encode) dan bandwidth/browser (repaint).
-        stream_interval = self.FRAME_INTERVAL / fps
-        next_send_time = time.perf_counter()
 
         try:
 
@@ -123,7 +137,7 @@ class VideoCrowdCounterLive:
                 if counter_task is not None and counter_task.done():
 
                     try:
-                        last_result = counter_task.result()
+                        last_density_map, last_count, _ = counter_task.result()
                     except Exception:
                         print(
                             f"[crowd] DM-Count error at frame {frame_index}:\n"
@@ -138,21 +152,18 @@ class VideoCrowdCounterLive:
                 ):
                     counter_task = asyncio.create_task(
                         asyncio.to_thread(
-                            self.counter.predict_video_frame,
+                            self.counter.predict_frame,
                             frame.copy()
                         )
                     )
 
-                if last_result is not None:
-                    annotated = last_result["frame"]
-                    count = last_result["count"]
-
-                    if annotated.shape[:2] != (height, width):
-                        annotated = cv2.resize(
-                            annotated,
-                            (width, height),
-                            interpolation=cv2.INTER_LINEAR
-                        )
+                # Heatmap di-blend ulang ke frame TERKINI setiap iterasi
+                # (bukan menampilkan ulang gambar beku dari inferensi lama)
+                # supaya video tetap mengikuti gerakan asli dan tidak
+                # terlihat patah-patah/macet.
+                if last_density_map is not None:
+                    annotated = self._blend_heatmap(last_density_map, frame)
+                    count = last_count
                 else:
                     annotated = frame.copy()
                     count = 0
@@ -163,47 +174,40 @@ class VideoCrowdCounterLive:
 
                 counts.append(count)
 
-                now = time.perf_counter()
-                is_last_frame = frame_index == total_frames - 1
+                stream_frame = annotated
 
-                if now >= next_send_time or is_last_frame:
-
-                    stream_frame = annotated
-
-                    if width > self.STREAM_MAX_WIDTH:
-                        ratio = self.STREAM_MAX_WIDTH / width
-                        stream_frame = cv2.resize(
-                            annotated,
-                            (self.STREAM_MAX_WIDTH, int(height * ratio)),
-                            interpolation=cv2.INTER_LINEAR
-                        )
-
-                    success, buffer = cv2.imencode(
-                        ".jpg",
-                        stream_frame,
-                        [cv2.IMWRITE_JPEG_QUALITY, self.STREAM_JPEG_QUALITY]
+                if width > self.STREAM_MAX_WIDTH:
+                    ratio = self.STREAM_MAX_WIDTH / width
+                    stream_frame = cv2.resize(
+                        annotated,
+                        (self.STREAM_MAX_WIDTH, int(height * ratio)),
+                        interpolation=cv2.INTER_LINEAR
                     )
 
-                    if success:
+                success, buffer = cv2.imencode(
+                    ".jpg",
+                    stream_frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, self.STREAM_JPEG_QUALITY]
+                )
 
-                        frame_base64 = base64.b64encode(buffer).decode()
+                if success:
 
-                        progress = round(
-                            (frame_index + 1) * 100 / total_frames, 2
-                        )
+                    frame_base64 = base64.b64encode(buffer).decode()
 
-                        await manager.send(
-                            job_id,
-                            {
-                                "frame": frame_base64,
-                                "count": count,
-                                "progress": progress,
-                                "frame_number": frame_index,
-                                "total_frame": total_frames
-                            }
-                        )
+                    progress = round(
+                        (frame_index + 1) * 100 / total_frames, 2
+                    )
 
-                    next_send_time = now + stream_interval
+                    await manager.send(
+                        job_id,
+                        {
+                            "frame": frame_base64,
+                            "count": count,
+                            "progress": progress,
+                            "frame_number": frame_index,
+                            "total_frame": total_frames
+                        }
+                    )
 
                 frame_index += 1
 
@@ -215,7 +219,7 @@ class VideoCrowdCounterLive:
 
             if counter_task is not None:
                 try:
-                    last_result = await counter_task
+                    await counter_task
                 except Exception:
                     print(
                         "[crowd] Final DM-Count error:\n"
