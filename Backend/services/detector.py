@@ -2,6 +2,7 @@ from ultralytics import YOLO
 import cv2
 import base64
 import asyncio
+import traceback
 from datetime import datetime
 
 import os
@@ -23,6 +24,21 @@ class ObjectDetector:
 
     FRAME_INTERVAL = 25
     CONFIDENCE_THRESHOLD = 0.70
+
+    # ------------------------------------------------------------------
+    # Umpan langsung ke browser (WebSocket)
+    #
+    # Semua ini HANYA memengaruhi gambar yang dikirim ke browser — video
+    # keluaran yang ditulis ke disk tetap resolusi & fps aslinya.
+    #
+    # STREAM_FPS berperan sebagai BATAS ATAS, bukan target kaku: jumlah
+    # frame yang dilewati dihitung dari fps video sumber (lihat send_every
+    # di detect_video_stream), jadi sumber 25fps tetap dikirim utuh
+    # sementara sumber 60fps dikirim separuhnya.
+    # ------------------------------------------------------------------
+    STREAM_MAX_WIDTH = 960
+    STREAM_JPEG_QUALITY = 70
+    STREAM_FPS = 30
 
     CLASS_MAPPING = {
         "person": "person",
@@ -587,6 +603,12 @@ class ObjectDetector:
             raise Exception("Cannot open video")
 
         fps = cap.get(cv2.CAP_PROP_FPS)
+
+        # Sebagian berkas melaporkan fps 0/NaN — tanpa penjaga ini
+        # frame_duration di bawah akan meledak (division by zero).
+        if not fps or fps <= 0:
+            fps = 25.0
+
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
         frame_index = 0
@@ -632,8 +654,32 @@ class ObjectDetector:
             )
 
         
+        # Kirim tiap send_every frame supaya laju tampilan mendekati
+        # STREAM_FPS tanpa melebihi fps sumber. Sengaja berbasis nomor
+        # frame, bukan jam dinding: pacing di bawah menahan loop ke 1/fps
+        # per frame, jadi pengiriman berbasis jam dinding pun tetap hanya
+        # bisa jatuh di kelipatan frame.
+        send_every = max(1, round(fps / self.STREAM_FPS))
+
+        # Pacing: tanpa ini loop berjalan secepat hardware mampu sehingga
+        # video terlihat dipercepat. Frame dijadwalkan mengikuti durasi
+        # asli video.
+        frame_duration = 1.0 / fps
+        next_frame_time = time.perf_counter()
+
+        print(
+            f"[detect] mulai | {width}x{height} @ {fps:.2f}fps | "
+            f"{total_frames} frame | kirim tiap {send_every} frame | "
+            f"anggaran {1000 / fps:.1f}ms/frame"
+        )
+
         try:
             last_results = None
+
+            # Task YOLO yang sedang berjalan di background thread — supaya
+            # inferensi tidak lagi menahan event loop seperti versi sinkron.
+            yolo_task = None
+
             last_frame_time = time.time()
 
             while True:
@@ -650,17 +696,32 @@ class ObjectDetector:
                 # =========================
                 ai_start = time.time()
 
+                # Ambil hasil inferensi sebelumnya begitu threadnya selesai.
+                if yolo_task is not None and yolo_task.done():
+
+                    try:
+                        last_results = yolo_task.result()
+                    except Exception:
+                        print(
+                            f"[detect] YOLO error at frame {frame_index}:\n"
+                            f"{traceback.format_exc()}"
+                        )
+                    finally:
+                        yolo_task = None
+
+                # Mulai inferensi baru hanya kalau tidak ada yang berjalan.
                 if (
                     frame_index % self.FRAME_INTERVAL == 0
-                    or last_results is None
+                    and yolo_task is None
                 ):
-                    last_results = self.detect_frame(frame)
-
-                # last_results = self.detect_frame(frame)
+                    yolo_task = asyncio.create_task(
+                        asyncio.to_thread(
+                            self.detect_frame,
+                            frame.copy()
+                        )
+                    )
 
                 ai_time = time.time() - ai_start
-
-                results = last_results
 
                 # =========================
                 # Annotation
@@ -671,48 +732,53 @@ class ObjectDetector:
 
                 objects = []
 
-                for box in results[0].boxes:
+                # Beberapa frame pertama belum punya hasil karena inferensi
+                # kini berjalan asinkron — frame tetap ditampilkan, hanya
+                # belum berkotak.
+                if last_results is not None:
 
-                    cls = int(box.cls[0])
-                    conf = float(box.conf[0])
+                    for box in last_results[0].boxes:
 
-                    label = self.model.names[cls]
+                        cls = int(box.cls[0])
+                        conf = float(box.conf[0])
 
-                    if label not in self.CLASS_MAPPING:
-                        continue
+                        label = self.model.names[cls]
 
-                    mapped = self.CLASS_MAPPING[label]
+                        if label not in self.CLASS_MAPPING:
+                            continue
 
-                    color = self.get_class_color(mapped)
+                        mapped = self.CLASS_MAPPING[label]
 
-                    objects.append({
-                        "class": mapped,
-                        "confidence": round(conf, 2),
-                        "color": color["hex"]
-                    })
+                        color = self.get_class_color(mapped)
 
-                    x1, y1, x2, y2 = map(
-                        int,
-                        box.xyxy[0]
-                    )
+                        objects.append({
+                            "class": mapped,
+                            "confidence": round(conf, 2),
+                            "color": color["hex"]
+                        })
 
-                    cv2.rectangle(
-                        annotated,
-                        (x1, y1),
-                        (x2, y2),
-                        color["bgr"],
-                        2
-                    )
+                        x1, y1, x2, y2 = map(
+                            int,
+                            box.xyxy[0]
+                        )
 
-                    cv2.putText(
-                        annotated,
-                        f"{mapped} {conf:.2f}",
-                        (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6,
-                        color["bgr"],
-                        2
-                    )
+                        cv2.rectangle(
+                            annotated,
+                            (x1, y1),
+                            (x2, y2),
+                            color["bgr"],
+                            2
+                        )
+
+                        cv2.putText(
+                            annotated,
+                            f"{mapped} {conf:.2f}",
+                            (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6,
+                            color["bgr"],
+                            2
+                        )
 
                 annotation_time = time.time() - annotation_start
 
@@ -724,49 +790,68 @@ class ObjectDetector:
 
 
                 # =========================
-                # JPEG Encode
+                # JPEG Encode + WebSocket (throttled)
+                #
+                # Hanya dikerjakan tiap send_every frame, dan gambarnya
+                # diperkecil + dikompres. Mengirim frame resolusi penuh
+                # kualitas default di SETIAP frame adalah biaya terbesar
+                # pada versi sebelumnya.
                 # =========================
-                encode_start = time.time()
+                encode_time = 0.0
+                ws_time = 0.0
 
-                _, buffer = cv2.imencode(
-                    ".jpg",
-                    annotated
-                )
+                is_last_frame = frame_index == total_frames - 1
 
-                frame_base64 = base64.b64encode(
-                    buffer
-                ).decode()
+                if frame_index % send_every == 0 or is_last_frame:
 
-                encode_time = time.time() - encode_start
+                    encode_start = time.time()
 
-                # =========================
-                # Progress
-                # =========================
-                progress = round(
-                    (frame_index + 1) * 100 / total_frames,
-                    2
-                )
+                    stream_frame = annotated
 
-                # =========================
-                # WebSocket
-                # =========================
-                ws_start = time.time()
+                    if width > self.STREAM_MAX_WIDTH:
+                        ratio = self.STREAM_MAX_WIDTH / width
+                        stream_frame = cv2.resize(
+                            annotated,
+                            (self.STREAM_MAX_WIDTH, int(height * ratio)),
+                            interpolation=cv2.INTER_LINEAR
+                        )
 
-                await manager.send(
-                    job_id,
-                    {
-                        "frame": frame_base64,
-                        "progress": progress,
-                        "frame_number": frame_index,
-                        "total_frame": total_frames,
-                        "objects": objects,
-                        "timestamp": datetime.now().strftime(
-                            "%H:%M:%S.%f"
-                        )[:-3]
-                    }
-                )
+                    success, buffer = cv2.imencode(
+                        ".jpg",
+                        stream_frame,
+                        [cv2.IMWRITE_JPEG_QUALITY, self.STREAM_JPEG_QUALITY]
+                    )
 
-                ws_time = time.time() - ws_start
+                    frame_base64 = base64.b64encode(
+                        buffer
+                    ).decode() if success else None
+
+                    encode_time = time.time() - encode_start
+
+                    if frame_base64 is not None:
+
+                        progress = round(
+                            (frame_index + 1) * 100 / total_frames,
+                            2
+                        )
+
+                        ws_start = time.time()
+
+                        await manager.send(
+                            job_id,
+                            {
+                                "frame": frame_base64,
+                                "progress": progress,
+                                "frame_number": frame_index,
+                                "total_frame": total_frames,
+                                "objects": objects,
+                                "timestamp": datetime.now().strftime(
+                                    "%H:%M:%S.%f"
+                                )[:-3]
+                            }
+                        )
+
+                        ws_time = time.time() - ws_start
 
                 # =========================
                 # Timing
@@ -794,12 +879,38 @@ class ObjectDetector:
 
                 frame_index += 1
 
-                await asyncio.sleep(0)
+                # =========================
+                # PACING
+                #
+                # Menjaga pemutaran mengikuti durasi asli video. Kalau
+                # pemrosesan tertinggal, jadwal di-reset supaya tidak
+                # "mengejar" dengan lompatan cepat.
+                # =========================
+                next_frame_time += frame_duration
+
+                delay = next_frame_time - time.perf_counter()
+
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                else:
+                    next_frame_time = time.perf_counter() + frame_duration
+                    await asyncio.sleep(0)
 
         finally:
-        
+
+            # Tunggu inferensi terakhir supaya threadnya tidak tertinggal
+            # setelah video selesai.
+            if yolo_task is not None:
+                try:
+                    last_results = await yolo_task
+                except Exception:
+                    print(
+                        "[detect] Final YOLO error:\n"
+                        f"{traceback.format_exc()}"
+                    )
+
             cap.release()
-            writer.release() 
+            writer.release()
 
             command = [
 
