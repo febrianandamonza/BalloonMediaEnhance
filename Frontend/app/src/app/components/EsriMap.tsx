@@ -449,7 +449,19 @@ export default function EsriMap({
         `ancaman <b style="color:${color}">${t.threat}</b></span>`,
         { closeButton: true, offset: [0, -6] },
       );
-      m.on('click', () => onSelect(t));
+      /* Selama mode ukur aktif, klik marker harus berperilaku seperti
+         klik peta kosong (menambah titik ukur) — bukan memilih target,
+         sebab klik pada elemen marker tidak diteruskan ke map.on('click',
+         ...) di atas (perilaku bawaan Leaflet). */
+      m.on('click', () => {
+        if (modeRef.current.measure) {
+          setMeasurePts(prev => (
+            prev.length >= 2 ? [[t.lat, t.lon]] : [...prev, [t.lat, t.lon]]
+          ));
+          return;
+        }
+        onSelect(t);
+      });
       m.addTo(layer);
     });
   }, [camLat, camLon, altitude, targets, selected, onSelect, showStation]);

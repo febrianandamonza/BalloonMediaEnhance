@@ -10,24 +10,25 @@ import {
 import { LANGUAGES } from '../lib/i18n';
 import {
   SlidersHorizontal, Cctv, Network, Cpu, Palette, HardDriveDownload,
-  Save, RotateCcw, Moon, Sun, Gauge, ShieldCheck, Info, AlertTriangle, Languages,
+  Save, RotateCcw, Moon, Sun, Gauge, ShieldCheck, Info, AlertTriangle, Languages, Bell, CloudSun,
 } from 'lucide-react';
 
-type Tab = 'gimbal' | 'network' | 'ai' | 'appearance' | 'data';
+type Tab = 'gimbal' | 'network' | 'ai' | 'appearance' | 'data' | 'notifikasi';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'gimbal', label: 'Gimbal & Sensor', icon: <Cctv size={14} /> },
-  { id: 'network', label: 'Jaringan', icon: <Network size={14} /> },
-  { id: 'ai', label: 'AI Inference', icon: <Cpu size={14} /> },
+  // { id: 'gimbal', label: 'Gimbal & Sensor', icon: <Cctv size={14} /> },
+  // { id: 'network', label: 'Jaringan', icon: <Network size={14} /> },
+  // { id: 'ai', label: 'AI Inference', icon: <Cpu size={14} /> },
   { id: 'appearance', label: 'Tampilan', icon: <Palette size={14} /> },
-  { id: 'data', label: 'Data & Retensi', icon: <HardDriveDownload size={14} /> },
+  { id: 'notifikasi', label: 'Notifikasi', icon: <Bell size={14} /> },
+  // { id: 'data', label: 'Data & Retensi', icon: <HardDriveDownload size={14} /> },
 ];
 
 export default function SettingsPage() {
   const { theme, toggleTheme, account, pushToast, notify, t } = useApp();
   const station = account?.stationCode ?? 'GCS';
 
-  const [tab, setTab] = useState<Tab>('gimbal');
+  const [tab, setTab] = useState<Tab>('appearance');
   /* Nilai tersimpan dibaca sekali saat halaman dibuka. */
   const [saved, setSaved] = useState<StationSettings>(() => loadSettings(station));
   const [draft, setDraft] = useState<StationSettings>(saved);
@@ -173,6 +174,7 @@ export default function SettingsPage() {
       {tab === 'appearance' && (
         <AppearanceTab s={draft} set={set} theme={theme} toggleTheme={toggleTheme} />
       )}
+      {tab === 'notifikasi' && <NotificationsTab s={draft} set={set} />}
       {tab === 'data' && <DataTab s={draft} set={set} />}
     </div>
   );
@@ -240,6 +242,30 @@ function SelectField({
     <Field label={label} htmlFor={id}>
       <select id={id} className="form-select" value={value} onChange={e => onChange(e.target.value)}>
         {options.map(o => <option key={o}>{o}</option>)}
+      </select>
+    </Field>
+  );
+}
+
+/* Nilai (severity) dan label tampilan sengaja berbeda — 'informasi'
+   dsb. dipakai luas sebagai nilai domain di seluruh aplikasi, sedangkan
+   labelnya mengikuti istilah yang sudah dipakai di AlertsPage. */
+function SeveritySelect({
+  label, value, onChange,
+}: { label: string; value: StationSettings['weatherMinSeverity']; onChange: (v: StationSettings['weatherMinSeverity']) => void }) {
+  const { t } = useApp();
+  const id = useId();
+  return (
+    <Field label={label} htmlFor={id}>
+      <select
+        id={id}
+        className="form-select"
+        value={value}
+        onChange={e => onChange(e.target.value as StationSettings['weatherMinSeverity'])}
+      >
+        <option value="informasi">{t('Info')}</option>
+        <option value="peringatan">{t('Peringatan')}</option>
+        <option value="kritis">{t('Kritis')}</option>
       </select>
     </Field>
   );
@@ -449,7 +475,7 @@ function AppearanceTab({
   const { account, lang, setLang, t } = useApp();
 
   return (
-    <div className="grid-2">
+    <div className="grid-3">
       <GlassCard tilt={false}>
         <div className="section-head"><Languages size={15} /> {t('Bahasa Antarmuka')}</div>
         <div className="seg" style={{ width: '100%', marginBottom: 12 }}>
@@ -500,14 +526,14 @@ function AppearanceTab({
             'UTC±00:00 — Zulu',
           ]}
         />
-        <SelectField
+        {/* <SelectField
           label={t('Format Koordinat')} value={s.coordFormat} onChange={set('coordFormat')}
           options={['Desimal (−6.208800°)', 'DMS (6°12′31.7″S)', 'MGRS']}
-        />
-        <SelectField
+        /> */}
+        {/* <SelectField
           label={t('Satuan Jarak')} value={s.distanceUnit} onChange={set('distanceUnit')}
           options={['Metrik (m / km)', 'Nautical (NM)']}
-        />
+        /> */}
       </GlassCard>
 
       <GlassCard tilt={false}>
@@ -521,6 +547,53 @@ function AppearanceTab({
         <p className="note-inline">
           {t('Perubahan data operator dilakukan pada halaman User Management oleh pemegang peran Administrator.')}
         </p>
+      </GlassCard>
+    </div>
+  );
+}
+
+/* =================================================================== */
+function NotificationsTab({ s, set }: { s: StationSettings; set: Setter }) {
+  const { t } = useApp();
+  return (
+    <div className="grid-2">
+      <GlassCard tilt={false}>
+        <div className="section-head"><CloudSun size={15} /> {t('Pemantauan Cuaca Misi')}</div>
+        <p className="note-inline" style={{ marginTop: 0 }}>
+          {t('Setiap misi berstatus Flight dicek cuacanya secara berkala; hasilnya masuk ke Pusat Notifikasi dan, bila cukup penting, muncul sebagai toast.')}
+        </p>
+
+        <Switch
+          checked={s.weatherAlertsEnabled} onChange={set('weatherAlertsEnabled')}
+          label={t('Aktifkan pemantauan cuaca misi')}
+        />
+
+        <div className="grid-2" style={{ marginTop: 10 }}>
+          <NumField
+            label={t('Frekuensi Cek Cuaca (menit)')}
+            value={s.weatherCheckIntervalMin}
+            onChange={set('weatherCheckIntervalMin')}
+            min={1} max={180}
+          />
+          <SeveritySelect
+            label={t('Tingkat Minimum Notifikasi Cuaca')}
+            value={s.weatherMinSeverity}
+            onChange={set('weatherMinSeverity')}
+          />
+        </div>
+      </GlassCard>
+
+      <GlassCard tilt={false}>
+        <div className="section-head"><Bell size={15} /> {t('Pusat Notifikasi')}</div>
+        <p className="note-inline" style={{ marginTop: 0 }}>
+          {t('Selang waktu aplikasi menyinkronkan lonceng notifikasi dengan server.')}
+        </p>
+        <NumField
+          label={t('Frekuensi Sinkronisasi (detik)')}
+          value={s.notifSyncIntervalSec}
+          onChange={set('notifSyncIntervalSec')}
+          min={10} max={600}
+        />
       </GlassCard>
     </div>
   );

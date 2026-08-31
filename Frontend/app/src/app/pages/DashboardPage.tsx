@@ -15,7 +15,7 @@ import {
   Radar, Radio, Timer, HeartPulse, BellRing, KeyRound, ShieldCheck, ShieldAlert,
   UsersRound, ScanSearch, Map, PlaneTakeoff, Anchor, FlaskConical, FileBarChart2,
   MonitorPlay, Wand2, Cable, ArrowUpRight, Activity, Gauge, Wind, Waves,
-  Thermometer, AlertTriangle, Info, CircleDot, ClipboardCheck, CheckCheck,
+  Thermometer, AlertTriangle, Info, CircleDot, ClipboardCheck, CheckCheck, FileDown,
 } from 'lucide-react';
 
 /* Three.js menyentuh objek window saat dimuat, sehingga bola dunia hanya
@@ -59,15 +59,15 @@ const LIC_ICON: Record<LicenseId, React.ReactNode> = {
 const QUICK_ACTIONS: {
   page: string; label: string; icon: React.ReactNode; lic: LicenseId | null;
 }[] = [
-  { page: 'crowd', label: 'Crowd Counting', icon: <UsersRound size={17} />, lic: 'CC' },
-  { page: 'detection-video', label: 'Video Analytic', icon: <ScanSearch size={17} />, lic: 'AODGIS' },
-  { page: 'enhance-video', label: 'Video Enhancement', icon: <Wand2 size={17} />, lic: 'DAEP' },
-  { page: 'geo-viz', label: 'GeoInt Visualisation', icon: <Map size={17} />, lic: 'IRGIS' },
-  { page: 'flight-info', label: 'Flight Information', icon: <PlaneTakeoff size={17} />, lic: 'IRGIS' },
-  { page: 'mooring', label: 'Mooring Availability', icon: <Anchor size={17} />, lic: 'IRGIS' },
-  { page: 'simulation', label: 'Flight Simulation', icon: <FlaskConical size={17} />, lic: 'IRGIS' },
-  { page: 'media-source', label: 'Surveillance Media', icon: <MonitorPlay size={17} />, lic: null },
-];
+    { page: 'crowd', label: 'Crowd Counting', icon: <UsersRound size={17} />, lic: 'CC' },
+    { page: 'detection-video', label: 'Video Analytic', icon: <ScanSearch size={17} />, lic: 'AODGIS' },
+    { page: 'enhance-video', label: 'Video Enhancement', icon: <Wand2 size={17} />, lic: 'DAEP' },
+    { page: 'geo-viz', label: 'GeoInt Visualisation', icon: <Map size={17} />, lic: 'IRGIS' },
+    { page: 'flight-info', label: 'Flight Information', icon: <PlaneTakeoff size={17} />, lic: 'IRGIS' },
+    { page: 'mooring', label: 'Mooring Availability', icon: <Anchor size={17} />, lic: 'IRGIS' },
+    { page: 'simulation', label: 'Flight Simulation', icon: <FlaskConical size={17} />, lic: 'IRGIS' },
+    { page: 'media-source', label: 'Surveillance Media', icon: <MonitorPlay size={17} />, lic: null },
+  ];
 
 /* mission_status kadang string mentah, kadang objek relasi {id, name} —
    duplikasi lokal dari pola yang sama di InfoPages.tsx (helper kecil
@@ -86,6 +86,10 @@ function elapsedHHMM(ms: number): string {
   const m = totalMin % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
+
+/** Ambang "mendekati jadwal take off" untuk misi Planned — dikonfirmasi
+    user: 15 menit. Sesudah ambang ini misi belum relevan ditampilkan. */
+const TAKEOFF_DUE_SOON_MS = 15 * 60_000;
 
 export default function DashboardPage() {
   const {
@@ -150,19 +154,46 @@ export default function DashboardPage() {
     return counts;
   }, [missions]);
 
-  const flyingMissions = useMemo(() => missions
-    .filter(m => missionStatusName(m) === 'Flight')
-    .map(m => {
+  const flyingMissions = useMemo(() => {
+    const rows: {
+      code: string; name: string; leader: string; altitude: number;
+      badge: 'flight' | 'due-soon' | 'overdue' | 'landing-overdue';
+      elapsed?: string;   // badge 'flight' / 'landing-overdue'
+      minutes?: number;   // 'due-soon': sisa menit · 'overdue': menit keterlambatan
+    }[] = [];
+
+    for (const m of missions) {
+      const status = missionStatusName(m);
       const info = infoByMission.get(String(m.id));
       const takeoff = info?.takeoff_time ? new Date(info.takeoff_time).getTime() : null;
-      return {
-        code: m.mission_code ?? String(m.id),
-        name: m.mission_name ?? m.mission_code ?? String(m.id),
-        leader: info?.mission_leader ?? '—',
-        elapsed: takeoff ? elapsedHHMM(now - takeoff) : '00:00',
-        altitude: info?.max_altitude ?? 0,
-      };
-    }), [missions, infoByMission, now]);
+      const landing = info?.landing_time ? new Date(info.landing_time).getTime() : null;
+      const altitude = info?.max_altitude ?? 0;
+      const code = m.mission_code ?? String(m.id);
+      const name = m.mission_name ?? m.mission_code ?? String(m.id);
+      const leader = info?.mission_leader ?? '—';
+
+      if (status === 'Flight') {
+        /* Durasi terbang sudah melewati landing_time yang direncanakan
+           tapi status belum diubah jadi Done — balon seharusnya sudah
+           mendarat sekarang. */
+        const overdueLanding = landing != null && now > landing;
+        rows.push({
+          code, name, leader, altitude,
+          badge: overdueLanding ? 'landing-overdue' : 'flight',
+          elapsed: takeoff ? elapsedHHMM(now - takeoff) : '00:00',
+        });
+      } else if (status === 'Planned' && takeoff != null) {
+        const diff = takeoff - now;
+        if (diff > TAKEOFF_DUE_SOON_MS) continue; // masih jauh — belum relevan
+        if (diff >= 0) {
+          rows.push({ code, name, leader, altitude, badge: 'due-soon', minutes: Math.max(1, Math.ceil(diff / 60_000)) });
+        } else {
+          rows.push({ code, name, leader, altitude, badge: 'overdue', minutes: Math.max(1, Math.ceil(-diff / 60_000)) });
+        }
+      }
+    }
+    return rows;
+  }, [missions, infoByMission, now]);
 
   const simulationTotal = simulations.length;
   const mediaCount = media.length;
@@ -180,6 +211,26 @@ export default function DashboardPage() {
     .filter(n => !n.read && !n.pendingSync)
     .sort((a, b) => Number(b.id) - Number(a.id))
     .slice(0, 5), [notifications]);
+
+  /* PDF digambar dari data (jsPDF vektor), bukan jepretan layar — lihat
+     lib/dashboardReport.ts. Dimuat lewat import() dinamis, sama seperti
+     Globe3D di atas, supaya jsPDF/autotable tidak ikut membengkakkan
+     bundle awal Dashboard dan baru diunduh saat tombol benar-benar
+     diklik. */
+  const exportToPdf = async () => {
+    const { generateDashboardPdf } = await import('../lib/dashboardReport');
+    generateDashboardPdf({
+      station: account?.station ?? '—',
+      stationCode: account?.stationCode ?? 'GCS',
+      lang,
+      simulationTotal,
+      mediaCount,
+      mediaSizeMb,
+      missions: flyingMissions,
+      missionStatusCounts,
+      alerts: topAlerts,
+    }, t);
+  };
 
   const activeCount = activeLicenseIds.length;
   const openModules = LICENSE_CATALOG
@@ -210,6 +261,12 @@ export default function DashboardPage() {
           <p className="dash-hero-sub">
             {t('Pengawasan udara tertambat dengan pemrosesan analitik sepenuhnya lokal — seluruh umpan, model, dan arsip tetap berada di dalam stasiun.')}
           </p>
+
+          <div className="dash-hero-actions" style={{ display: 'flex', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
+            <button className="btn btn-glass" onClick={exportToPdf}>
+              <FileDown size={15} /> {t('Export to PDF')}
+            </button>
+          </div>
 
           {/* <div className="dash-hero-stats">
             <span>
@@ -492,7 +549,12 @@ function MissionStatusCard({
 function FlightMissionsCard({
   missions, t, setCurrentPage, loading,
 }: {
-  missions: { code: string; name: string; leader: string; elapsed: string; altitude: number }[];
+  missions: {
+    code: string; name: string; leader: string; altitude: number;
+    badge: 'flight' | 'due-soon' | 'overdue' | 'landing-overdue';
+    elapsed?: string;
+    minutes?: number;
+  }[];
   t: (s: string) => string;
   setCurrentPage: (page: string) => void;
   loading?: boolean;
@@ -502,7 +564,7 @@ function FlightMissionsCard({
       <SectionHead
         icon={<PlaneTakeoff size={15} />}
         title={t('Misi Sedang Terbang')}
-        sub={`${loading ? '—' : missions.length} ${t('misi berstatus Flight')}`}
+        sub={`${loading ? '—' : missions.length} ${t('misi terbang / mendekati jadwal')}`}
         right={
           <button className="btn btn-ghost btn-sm" onClick={() => setCurrentPage('flight-info')}>
             Kelola <ArrowUpRight size={12} />
@@ -526,14 +588,42 @@ function FlightMissionsCard({
                   <PlaneTakeoff size={13} />
                   <span className="sc-title" style={{ margin: 0 }}>{m.name}</span>
                 </span>
-                <span className="lic-status on" style={{ fontSize: 9, padding: '3px 8px' }}>
-                  <PlaneTakeoff size={10} /> FLIGHT
-                </span>
+                {m.badge === 'flight' && (
+                  <span className="lic-status on" style={{ fontSize: 9, padding: '3px 8px' }}>
+                    <PlaneTakeoff size={10} /> FLIGHT
+                  </span>
+                )}
+                {m.badge === 'due-soon' && (
+                  <span
+                    className="lic-status"
+                    style={{
+                      fontSize: 9, padding: '3px 8px',
+                      background: 'var(--warning-bg)', color: 'var(--warning-400)',
+                      borderColor: 'rgba(251,191,36,0.22)',
+                    }}
+                  >
+                    <Timer size={10} /> {t('SEGERA')}
+                  </span>
+                )}
+                {m.badge === 'overdue' && (
+                  <span className="lic-status off" style={{ fontSize: 9, padding: '3px 8px' }}>
+                    <AlertTriangle size={10} /> {t('TERLAMBAT')}
+                  </span>
+                )}
+                {m.badge === 'landing-overdue' && (
+                  <span className="lic-status off" style={{ fontSize: 9, padding: '3px 8px' }}>
+                    <AlertTriangle size={10} /> {t('TERLAMBAT MENDARAT')}
+                  </span>
+                )}
               </span>
               <span className="sc-foot" style={{ fontFamily: 'var(--font-code)' }}>
                 {m.code} · {m.leader}
               </span>
-              <span className="sc-foot">{t('Terbang')} {m.elapsed} · {m.altitude} m</span>
+              <span className="sc-foot">
+                {(m.badge === 'flight' || m.badge === 'landing-overdue') && `${t('Terbang')} ${m.elapsed} · ${m.altitude} m`}
+                {m.badge === 'due-soon' && `${t('Take off dalam')} ${m.minutes} ${t('menit')} · ${m.altitude} m`}
+                {m.badge === 'overdue' && `${t('Terlambat take off')} ${m.minutes} ${t('menit')} · ${m.altitude} m`}
+              </span>
             </button>
           ))}
         </div>

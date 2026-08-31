@@ -829,6 +829,45 @@ a:hover {
   box-shadow: var(--shadow-glow-blue);
 }
 
+.avatar-wrap {
+  position: relative;
+}
+
+.avatar-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 120;
+  min-width: 220px;
+
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--glass-border-light);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 80px),
+    rgba(9, 13, 22, 0.975);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: 0 28px 70px -18px rgba(0, 0, 0, 0.62);
+  animation: avatar-menu-in var(--t-fast, 0.15s) var(--ease-out, ease-out);
+}
+
+.avatar-menu .nc-head {
+  border-bottom: none;
+}
+
+@keyframes avatar-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ========== EMERGENCY BUTTON (BIZ-S02: Always visible, never gated) ========== */
 .emergency-btn {
   position: fixed;

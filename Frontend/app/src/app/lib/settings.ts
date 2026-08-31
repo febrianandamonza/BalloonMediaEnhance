@@ -50,6 +50,12 @@ export interface StationSettings {
   storageDir: string;
   encryptMedia: boolean;
   autoPurge: boolean;
+
+  /* Notifikasi */
+  weatherAlertsEnabled: boolean;
+  weatherCheckIntervalMin: number;
+  weatherMinSeverity: 'informasi' | 'peringatan' | 'kritis';
+  notifSyncIntervalSec: number;
 }
 
 export const DEFAULT_SETTINGS: StationSettings = {
@@ -90,6 +96,11 @@ export const DEFAULT_SETTINGS: StationSettings = {
   storageDir: 'D:\\SkyStar\\storage',
   encryptMedia: true,
   autoPurge: true,
+
+  weatherAlertsEnabled: true,
+  weatherCheckIntervalMin: 5,
+  weatherMinSeverity: 'informasi',
+  notifSyncIntervalSec: 30,
 };
 
 const key = (station: string) => `skystar.settings.${station}`;
@@ -107,9 +118,15 @@ export function loadSettings(station: string): StationSettings {
   }
 }
 
+/** Peristiwa yang disiarkan setiap kali pengaturan stasiun tersimpan,
+    supaya bagian aplikasi lain (mis. pemantauan cuaca di context.tsx)
+    langsung memuat nilai terbaru tanpa harus memuat ulang halaman. */
+export const SETTINGS_CHANGED_EVENT = 'skystar:settings-changed';
+
 export function saveSettings(station: string, s: StationSettings): boolean {
   try {
     window.localStorage.setItem(key(station), JSON.stringify(s));
+    window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: { station } }));
     return true;
   } catch {
     return false;
@@ -146,6 +163,13 @@ export function validateSettings(s: StationSettings): string[] {
     [s.retainAudit, 'Retensi audit trail'],
   ] as [number, string][]) {
     if (v < 1 || v > 3650) errs.push(`${label} harus 1–3650 hari.`);
+  }
+
+  if (s.weatherCheckIntervalMin < 1 || s.weatherCheckIntervalMin > 180) {
+    errs.push('Frekuensi cek cuaca harus 1–180 menit.');
+  }
+  if (s.notifSyncIntervalSec < 10 || s.notifSyncIntervalSec > 600) {
+    errs.push('Frekuensi sinkronisasi notifikasi harus 10–600 detik.');
   }
 
   return errs;

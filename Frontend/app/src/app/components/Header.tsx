@@ -3,14 +3,36 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context';
 import { NAV_INDEX } from './Sidebar';
 import NotificationCenter from './NotificationCenter';
-import { Bell, Sun, Moon, MapPin, Wifi, WifiOff, Clock } from 'lucide-react';
+import { Bell, Sun, Moon, MapPin, Wifi, WifiOff, Clock, Settings } from 'lucide-react';
 
 export default function Header() {
   const {
     currentPage, sidebarCollapsed, theme, toggleTheme, account, offline, isOnline, t,
-    notifications, unreadCount, notifOpen, setNotifOpen,
+    notifications, unreadCount, notifOpen, setNotifOpen, setCurrentPage,
   } = useApp();
   const [clock, setClock] = useState('');
+
+  /* Menu operator — dibuka dari avatar, ditutup dengan klik di luar
+     atau Esc, seperti pola panel notifikasi. */
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const avatarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!avatarOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (avatarRef.current?.contains(e.target as Node)) return;
+      setAvatarOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAvatarOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [avatarOpen]);
 
   /* Lonceng bergoyang sekali setiap notifikasi baru masuk. Isyarat ini
      sengaja singkat: gerakan yang berputar terus akan diabaikan mata
@@ -135,9 +157,44 @@ export default function Header() {
         </button>
 
         {/* Operator */}
-        <span className="user-avatar" title={`${account?.station ?? ''} — ${account?.role ?? ''}`}>
-          {account?.initials ?? '--'}
-        </span>
+        <div className="avatar-wrap" ref={avatarRef}>
+          <button
+            type="button"
+            className="user-avatar"
+            title={`${account?.station ?? ''} — ${account?.role ?? ''}`}
+            aria-haspopup="menu"
+            aria-expanded={avatarOpen}
+            onClick={() => setAvatarOpen(v => !v)}
+          >
+            {account?.initials ?? '--'}
+          </button>
+
+          {avatarOpen && (
+            <div className="avatar-menu" role="menu" aria-label={t('Menu Operator')}>
+              <header className="nc-head">
+                <div className="nc-head-text">
+                  <h3>{account?.station ?? '--'}</h3>
+                  <p>{account?.role ?? ''}</p>
+                </div>
+                <div className="nc-head-tools">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="nc-tool"
+                    onClick={() => {
+                      setCurrentPage('settings');
+                      setAvatarOpen(false);
+                    }}
+                    title={t('System Settings')}
+                    aria-label={t('System Settings')}
+                  >
+                    <Settings size={15} />
+                  </button>
+                </div>
+              </header>
+            </div>
+          )}
+        </div>
       </div>
 
       <NotificationCenter />

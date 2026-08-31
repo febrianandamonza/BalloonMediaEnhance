@@ -10,14 +10,14 @@ import { type OperatorAccount } from './lib/auth';
 import { loadLang, saveLang, translate, type Lang } from './lib/i18n';
 import {
   seedNotifications, notificationFromRecord,
-  CATEGORY_PAGE, SEVERITY_RANK, MAX_STORED, NOTIFICATIONS_POLL_INTERVAL_MS,
+  CATEGORY_PAGE, SEVERITY_RANK, MAX_STORED,
   type AppNotification, type AlertStatus, type LiveEvent,
 } from './lib/notifications';
 import api, { type FlightMissionRecord } from './services/api';
 import {
   fetchCurrentWeather, deriveWeatherLevel, buildWeatherSentence, buildWeatherTitle,
-  WEATHER_POLL_INTERVAL_MS,
 } from './lib/weather';
+import { loadSettings, SETTINGS_CHANGED_EVENT, type StationSettings } from './lib/settings';
 
 import { getJakartaNow } from './lib/date';
 
@@ -272,6 +272,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [navGuardMessage]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [account, setAccount] = useState<OperatorAccount | null>(null);
+  /* Pengaturan stasiun (tab Notifikasi di System Settings dkk.) — dimuat
+     ulang setiap kali SettingsPage menyimpan, lewat SETTINGS_CHANGED_EVENT,
+     supaya effect di bawah (cek cuaca, sinkronisasi notifikasi) langsung
+     memakai frekuensi terbaru tanpa perlu memuat ulang aplikasi. */
+  const [settings, setSettings] = useState<StationSettings>(() => loadSettings('GCS'));
   /* epoch ms — kapan access token dari backend kedaluwarsa (hasil
      expires_in pada GET /auth/me). null berarti /auth/me belum sempat
      mengembalikan expires_in — sesi tidak kedaluwarsa otomatis. */
@@ -572,19 +577,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [account]);
 
+  /* Dimuat ulang setiap kali stasiun operator berganti, dan setiap kali
+     SettingsPage menyimpan (lewat SETTINGS_CHANGED_EVENT) — sehingga tab
+     Notifikasi di System Settings langsung berlaku tanpa reload. */
+  useEffect(() => {
+    const station = account?.stationCode ?? 'GCS';
+    setSettings(loadSettings(station));
+    const onChange = () => setSettings(loadSettings(station));
+    window.addEventListener(SETTINGS_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, onChange);
+  }, [account?.stationCode]);
+
   useEffect(() => {
     if (!account || platformState === 'shutdown') return;
-    const id = window.setInterval(syncNotifications, NOTIFICATIONS_POLL_INTERVAL_MS);
+    const intervalMs = Math.max(10, settings.notifSyncIntervalSec) * 1000;
+    const id = window.setInterval(syncNotifications, intervalMs);
     return () => window.clearInterval(id);
-  }, [account, platformState, syncNotifications]);
+  }, [account, platformState, syncNotifications, settings.notifSyncIntervalSec]);
 
   /* Pemantauan cuaca berkala pada lokasi tiap misi yang sedang Flight —
      notify() di bawah yang menulis ke backend sekaligus mendorongnya ke
-     lonceng/AlertsPage. */
+     lonceng/AlertsPage. Frekuensi, saklar aktif/nonaktif, dan ambang
+     tingkat keparahan minimum berasal dari tab Notifikasi di Settings. */
   const weatherCheckRunning = useRef(false);
 
   useEffect(() => {
-    if (!account || platformState === 'shutdown') return;
+    if (!account || platformState === 'shutdown' || !settings.weatherAlertsEnabled) return;
 
     const checkFlightWeather = async () => {
       if (weatherCheckRunning.current) return;
@@ -601,6 +619,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const missionName = 'Misi ' + String(m.mission_name ?? m.mission_code ?? '');
           const weather = await fetchCurrentWeather(lat, lon);
           const level = deriveWeatherLevel(weather.current);
+          if (SEVERITY_RANK[level] < SEVERITY_RANK[settings.weatherMinSeverity]) return;
           const detail = buildWeatherSentence(weather.current, missionName);
           const title = buildWeatherTitle(new Date());
 
@@ -612,9 +631,86 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     checkFlightWeather();
-    const id = window.setInterval(checkFlightWeather, WEATHER_POLL_INTERVAL_MS);
+    const intervalMs = Math.max(1, settings.weatherCheckIntervalMin) * 60_000;
+    const id = window.setInterval(checkFlightWeather, intervalMs);
     return () => window.clearInterval(id);
-  }, [account, platformState, notify]);
+  }, [account, platformState, notify, settings.weatherAlertsEnabled, settings.weatherCheckIntervalMin, settings.weatherMinSeverity]);
+
+  /* Pengingat jadwal misi — dua kasus:
+     1. Misi Planned yang jadwal take off-nya mendekat (≤15 menit) atau
+        sudah lewat tanpa status berubah jadi Flight.
+     2. Misi Flight yang landing_time terencananya sudah lewat tanpa
+        status berubah jadi Done — balon seharusnya sudah mendarat.
+     Transisi status itu manual (lihat setMissionStatus di InfoPages.tsx).
+     Frekuensi cek disamakan dengan pemantauan cuaca di atas; tidak
+     digerbang oleh weatherAlertsEnabled karena saklar itu eksplisit soal
+     cuaca, bukan jadwal misi. */
+  const takeoffCheckRunning = useRef(false);
+
+  useEffect(() => {
+    if (!account || platformState === 'shutdown') return;
+
+    const checkTakeoffSchedule = async () => {
+      if (takeoffCheckRunning.current) return;
+      takeoffCheckRunning.current = true;
+      try {
+        const [missionRows, infoRows] = await Promise.all([
+          api.getFlightMissions().catch(() => []),
+          api.getFlightInformation().catch(() => []),
+        ]);
+        const infoByMission = new globalThis.Map<string, typeof infoRows[number]>();
+        for (const info of infoRows) infoByMission.set(String(info.mission_id), info);
+
+        const now = Date.now();
+        for (const m of missionRows) {
+          const status = missionStatusName(m);
+          const info = infoByMission.get(String(m.id));
+          const missionName = 'Misi ' + String(m.mission_name ?? m.mission_code ?? '');
+
+          if (status === 'Planned') {
+            const takeoff = info?.takeoff_time ? new Date(info.takeoff_time).getTime() : null;
+            if (takeoff == null) continue;
+
+            const diff = takeoff - now;
+            if (diff > 15 * 60_000) continue;
+
+            if (diff >= 0) {
+              const menit = Math.max(1, Math.ceil(diff / 60_000));
+              notify({
+                title: 'Jadwal take off mendekat',
+                detail: `${missionName} dijadwalkan take off dalam ${menit} menit.`,
+                severity: 'peringatan', category: 'Operasional', source: missionName,
+              });
+            } else {
+              const menit = Math.max(1, Math.ceil(-diff / 60_000));
+              notify({
+                title: 'Jadwal take off terlewat',
+                detail: `${missionName} sudah melewati jadwal take off ${menit} menit lalu — status masih Planned.`,
+                severity: 'peringatan', category: 'Operasional', source: missionName,
+              });
+            }
+          } else if (status === 'Flight') {
+            const landing = info?.landing_time ? new Date(info.landing_time).getTime() : null;
+            if (landing == null || now < landing) continue;
+
+            const menit = Math.max(1, Math.ceil((now - landing) / 60_000));
+            notify({
+              title: 'Jadwal mendarat terlewat',
+              detail: `${missionName} sudah melewati jadwal mendarat ${menit} menit lalu — status masih Flight.`,
+              severity: 'peringatan', category: 'Operasional', source: missionName,
+            });
+          }
+        }
+      } finally {
+        takeoffCheckRunning.current = false;
+      }
+    };
+
+    checkTakeoffSchedule();
+    const intervalMs = Math.max(1, settings.weatherCheckIntervalMin) * 60_000;
+    const id = window.setInterval(checkTakeoffSchedule, intervalMs);
+    return () => window.clearInterval(id);
+  }, [account, platformState, notify, settings.weatherCheckIntervalMin]);
 
   /* ----- Daya platform -----
      Diletakkan setelah notify agar setiap perubahan daya langsung
