@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import math
 import os
 import subprocess
 import time
@@ -137,7 +138,14 @@ class VideoCrowdCounterLive:
                 if counter_task is not None and counter_task.done():
 
                     try:
-                        last_density_map, last_count, _ = counter_task.result()
+                        last_density_map, raw_count, _ = counter_task.result()
+
+                        # DM-Count mengembalikan jumlah densitas berupa
+                        # pecahan (mis. 42.37). Operator hanya ingin melihat
+                        # jiwa sebagai bilangan bulat, dan sisa densitas
+                        # sekecil apa pun tetap mewakili bagian dari satu
+                        # orang — jadi dibulatkan KE ATAS, bukan ke terdekat.
+                        last_count = math.ceil(raw_count)
                     except Exception:
                         print(
                             f"[crowd] DM-Count error at frame {frame_index}:\n"
@@ -273,7 +281,7 @@ class VideoCrowdCounterLive:
                 "summary": {
                     "max_count": max(counts),
                     "min_count": min(counts),
-                    "average_count": round(sum(counts) / len(counts), 2),
+                    "average_count": math.ceil(sum(counts) / len(counts)),
                     "last_count": counts[-1],
                     "total_frames": total_frames,
                     "fps": fps
