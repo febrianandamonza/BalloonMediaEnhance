@@ -29,19 +29,59 @@ import {
 
 type Phase = 'setup' | 'live' | 'paused';
 
-async function waitForPlaylist(url: string, maxAttempts = 20, intervalMs = 1000): Promise<boolean> {
+// async function waitForPlaylist(url: string, maxAttempts = 20, intervalMs = 1000): Promise<boolean> {
+
+
+//   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+//     try {
+//       const res = await fetch(url, { cache: 'no-store' });
+//       if (res.ok) {
+//         const body = await res.text();
+//         if (body.includes('.ts')) return true;
+//       }
+//     } catch {
+//       // backend/jaringan belum siap, coba lagi
+//     }
+//     await new Promise(resolve => setTimeout(resolve, intervalMs));
+//   }
+//   return false;
+// }
+
+async function waitForPlaylist(
+  url: string,
+  maxAttempts = 20,
+  intervalMs = 1000
+): Promise<boolean> {
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const res = await fetch(url, { cache: 'no-store' });
+      const res = await fetch(url, { cache: "no-store" });
+
+      console.log(
+        "WAIT",
+        attempt,
+        res.status,
+        url
+      );
+
       if (res.ok) {
         const body = await res.text();
-        if (body.includes('.ts')) return true;
+
+        console.log(body);
+
+        if (body.includes(".ts")) {
+          console.log("PLAYLIST READY");
+          return true;
+        }
       }
-    } catch {
-      // backend/jaringan belum siap, coba lagi
+    } catch (err) {
+      console.log("WAIT ERROR", err);
     }
+
     await new Promise(resolve => setTimeout(resolve, intervalMs));
   }
+
+  console.log("PLAYLIST TIMEOUT");
   return false;
 }
 
@@ -92,6 +132,7 @@ export default function LiveStreamPage() {
     setConnectError(false);
     try {
       const data = await api.startNetworkStream(networkUrl.trim());
+      console.log("START RESPONSE", data);
       setStreamId(data.stream_id);
       const url = `${API_BASE_MEDIA}${data.playlist_url}`;
       const ready = await waitForPlaylist(url);
@@ -151,51 +192,114 @@ export default function LiveStreamPage() {
 
   useEffect(() => {
     if (!hlsUrl) return;
+
     const video = videoRef.current;
     if (!video) return;
 
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = hlsUrl;
-    } else if (Hls.isSupported()) {
-      const hls = new Hls({
-        liveSyncDuration: 2,
-        liveMaxLatencyDuration: 5,
-        // FFmpeg butuh beberapa detik generate playlist/segmen pertama,
-        // jadi retry manifest yang lebih gigih daripada default.
-        manifestLoadingMaxRetry: 10,
-        manifestLoadingRetryDelay: 1000,
-        levelLoadingMaxRetry: 10,
-        levelLoadingRetryDelay: 1000,
-        backBufferLength: 90,
-      });
+    console.log("=================================");
+    console.log("HLS URL:", hlsUrl);
+    console.log("Hls supported:", Hls.isSupported());
+    console.log("Native HLS:", video.canPlayType("application/vnd.apple.mpegurl"));
+    console.log("=================================");
+
+    let hls: Hls | null = null;
+
+    // Chrome / Firefox / Edge → gunakan Hls.js
+    if (Hls.isSupported()) {
+      console.log("USING HLS.JS");
+
+      hls = new Hls();
+
       hlsRef.current = hls;
-      hls.on(Hls.Events.ERROR, (_evt, data) => {
-        if (!data.fatal) return;
+
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+        console.log("MEDIA ATTACHED");
+
+        hls?.loadSource(hlsUrl);
+      });
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log("MANIFEST PARSED");
+
+        video.play().catch(err => {
+          console.error("PLAY ERROR:", err);
+        });
+      });
+
+      hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
+        console.log("LEVEL LOADED:", data.details);
+      });
+
+      hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
+        console.log("FRAG LOADED:", data.frag.sn);
+      });
+
+      hls.on(Hls.Events.FRAG_BUFFERED, (_, data) => {
+        console.log("FRAG BUFFERED:", data.frag.sn);
+      });
+
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        console.error("HLS ERROR:", data);
+
+        if (!data.fatal) {
+          return;
+        }
+
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
-            // mis. segmen/playlist belum ada / sempat 404, coba lagi
-            hls.startLoad();
+            console.log("Recovering NETWORK ERROR...");
+            hls?.startLoad();
             break;
+
           case Hls.ErrorTypes.MEDIA_ERROR:
-            hls.recoverMediaError();
+            console.log("Recovering MEDIA ERROR...");
+            hls?.recoverMediaError();
             break;
+
           default:
-            setConnectError(true);
-            hls.destroy();
+            console.error("Fatal HLS error, destroying...");
+            hls?.destroy();
+            hls = null;
             hlsRef.current = null;
+            setConnectError(true);
             break;
         }
       });
-      hls.loadSource(hlsUrl);
+
       hls.attachMedia(video);
+
+    // Safari → native HLS
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      console.log("USING NATIVE HLS");
+
+      video.src = hlsUrl;
+
+      video.addEventListener("loadedmetadata", () => {
+        video.play().catch(err => {
+          console.error("PLAY ERROR:", err);
+        });
+      });
+
     } else {
+      console.error("HLS NOT SUPPORTED");
       setConnectError(true);
     }
 
     return () => {
-      hlsRef.current?.destroy();
-      hlsRef.current = null;
-      video.removeAttribute('src');
+      console.log("CLEANUP HLS");
+
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+
+      if (hlsRef.current) {
+        hlsRef.current = null;
+      }
+
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
     };
   }, [hlsUrl]);
 
@@ -268,6 +372,7 @@ export default function LiveStreamPage() {
             scene={
               <video
                 ref={videoRef}
+                controls
                 muted
                 autoPlay
                 playsInline
@@ -279,6 +384,21 @@ export default function LiveStreamPage() {
                   objectFit: 'contain',
                 }}
               />
+              // <video
+              //   ref={videoRef}
+              //   controls
+              //   muted
+              //   autoPlay
+              //   playsInline
+              //   onLoadedMetadata={() => console.log("VIDEO METADATA")}
+              //   onCanPlay={() => console.log("VIDEO CANPLAY")}
+              //   onPlaying={() => console.log("VIDEO PLAYING")}
+              //   onWaiting={() => console.log("VIDEO WAITING")}
+              //   onError={(e) => {
+              //       console.log("VIDEO ERROR", videoRef.current?.error);
+              //       setConnectError(true);
+              //   }}
+              // />
             }
           />
 

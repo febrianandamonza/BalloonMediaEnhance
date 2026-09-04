@@ -19,7 +19,7 @@ DATABASE_URL = URL.create(
 
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
+    echo=False,
 )
 
 SessionLocal = sessionmaker(
