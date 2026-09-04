@@ -8,7 +8,7 @@ import {
   BellRing, PlaneTakeoff, Anchor, FlaskConical, KeyRound, UserCog,
   ScrollText, SlidersHorizontal, PanelLeftClose, PanelLeftOpen,
   ShieldCheck, Lock, Search, LogOut, CircleDot, ChevronDown,
-  Radar, Boxes, Sparkles, LibraryBig, ShieldHalf,
+  Radar, Boxes, Sparkles, LibraryBig, ShieldHalf, Radio,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------------
@@ -44,6 +44,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'dashboard', label: 'Mission Dashboard', icon: <LayoutDashboard size={SZ} /> },
       { id: 'media-source', label: 'Surveillance Media', icon: <MonitorPlay size={SZ} /> },
+      { id: 'live-stream', label: 'Live Stream', icon: <Radio size={SZ} /> },
     ],
   },
   {

@@ -33,14 +33,49 @@
    dimatikan khusus untuk berkas ini. */
 /* eslint-disable react-hooks/immutability */
 
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+
+/* react-three-fiber membuat WebGLRenderer di dalam callback ResizeObserver,
+   di luar tumpukan panggilan render/commit React — errornya karena itu TIDAK
+   tertangkap oleh error boundary manapun (componentDidCatch tidak pernah
+   terpanggil). Satu-satunya cara aman adalah mendeteksi dukungan WebGL
+   SEBELUM <Canvas> pernah dipasang sama sekali. */
+function supportsWebGL(): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    return !!(
+      canvas.getContext('webgl2') ||
+      canvas.getContext('webgl') ||
+      canvas.getContext('experimental-webgl')
+    );
+  } catch {
+    return false;
+  }
+}
 
 /* Jari-jari bumi pada adegan. Pusatnya diletakkan di bawah agar
    permukaan atasnya tepat berada di ketinggian nol. */
 const R = 62;
 const EARTH_CENTER = new THREE.Vector3(0, -R, 0);
+
+/* THREE.WebGLRenderer melempar ulang errornya setelah mencatatnya ke
+   console (bukan sekadar log) bila peramban/driver gagal membuat konteks
+   WebGL — tanpa batas kesalahan ini, error itu akan lolos ke atas dan
+   merusak seluruh layar Login, bukan cuma adegan 3D ini. Karena elemen
+   ini murni hiasan di belakang formulir login, gagal diam (null) sudah
+   aman: formulir tetap bisa dipakai. */
+class SceneErrorBoundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error: unknown) {
+    console.error('LoginScene3D: WebGL tidak tersedia, adegan 3D dilewati.', error);
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 /* Ketinggian balon di atas permukaan (satuan adegan). */
 const ALT = 3.1;
@@ -370,6 +405,9 @@ export default function LoginScene3D({ phase = 'login' }: { phase?: string }) {
   const p = (['login', 'authenticating', 'success', 'transitioning', 'app'].includes(phase)
     ? phase
     : 'login') as Phase;
+  const [webglOk] = useState(supportsWebGL);
+
+  if (!webglOk) return null;
 
   return (
     <div
@@ -382,25 +420,27 @@ export default function LoginScene3D({ phase = 'login' }: { phase?: string }) {
       }}
       aria-hidden
     >
-      <Canvas
-        camera={{ position: SHOTS.login.pos, fov: SHOTS.login.fov, near: 0.1, far: 600 }}
-        dpr={[1, 1.75]}
-        gl={{ antialias: true, alpha: true }}
-      >
-        <ambientLight intensity={0.32} />
-        <directionalLight position={[6, 9, 5]} intensity={1.15} color="#dbeafe" />
-        <pointLight position={[-5, 3, -4]} intensity={0.5} color="#60a5fa" />
+      <SceneErrorBoundary>
+        <Canvas
+          camera={{ position: SHOTS.login.pos, fov: SHOTS.login.fov, near: 0.1, far: 600 }}
+          dpr={[1, 1.75]}
+          gl={{ antialias: true, alpha: true }}
+        >
+          <ambientLight intensity={0.32} />
+          <directionalLight position={[6, 9, 5]} intensity={1.15} color="#dbeafe" />
+          <pointLight position={[-5, 3, -4]} intensity={0.5} color="#60a5fa" />
 
-        <Rig phase={p} />
-        <Starfield />
-        <Earth phase={p} />
-        <Aerostat phase={p} />
-        <SensorCone phase={p} />
-        <CoverageRings phase={p} />
-        <Downlink phase={p} />
+          <Rig phase={p} />
+          <Starfield />
+          <Earth phase={p} />
+          <Aerostat phase={p} />
+          <SensorCone phase={p} />
+          <CoverageRings phase={p} />
+          <Downlink phase={p} />
 
-        <fog attach="fog" args={["#060d1a", 34, 150]} />
-      </Canvas>
+          <fog attach="fog" args={["#060d1a", 34, 150]} />
+        </Canvas>
+      </SceneErrorBoundary>
     </div>
   );
 }

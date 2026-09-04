@@ -13,6 +13,7 @@ import LoginPage from './components/LoginPage';
 import { LiquidGlassFilter, useReducedMotion } from './components/fx';
 import DashboardPage from './pages/DashboardPage';
 import MediaSourcePage from './pages/GCSPage';
+import LiveStreamPage from './pages/LiveStreamPage';
 import LicensePage from './pages/LicensePage';
 import SettingsPage from './pages/SettingsPage';
 import UserManagementPage from './pages/UserManagementPage';
@@ -31,6 +32,7 @@ import {
 const PAGES: Record<string, React.ComponentType> = {
   'dashboard': DashboardPage,
   'media-source': MediaSourcePage,
+  'live-stream': LiveStreamPage,
   'crowd': CrowdCountingPage,
   'detection-image': ImageDetectionPage,
   'detection-video': VideoDetectionPage,

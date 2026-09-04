@@ -475,8 +475,8 @@ function AppearanceTab({
   const { account, lang, setLang, t } = useApp();
 
   return (
-    <div className="grid-3">
-      <GlassCard tilt={false}>
+    <div className="grid-2">
+      {/* <GlassCard tilt={false}>
         <div className="section-head"><Languages size={15} /> {t('Bahasa Antarmuka')}</div>
         <div className="seg" style={{ width: '100%', marginBottom: 12 }}>
           {LANGUAGES.map(l => (
@@ -493,7 +493,7 @@ function AppearanceTab({
         <p className="note-inline" style={{ marginTop: 0 }}>
           {t('Seluruh teks antarmuka mengikuti pilihan ini. Terjemahan tersimpan di dalam aplikasi, jadi tetap tersedia tanpa jaringan.')}
         </p>
-      </GlassCard>
+      </GlassCard> */}
 
       <GlassCard tilt={false}>
         <div className="section-head"><Palette size={15} /> {t('Tema Antarmuka')}</div>

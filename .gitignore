@@ -235,3 +235,7 @@ Backend/weights/*.pt
 
 __pycache__/
 *.py[cod]
+
+/Backend/deploy/
+
+/Backend/streams

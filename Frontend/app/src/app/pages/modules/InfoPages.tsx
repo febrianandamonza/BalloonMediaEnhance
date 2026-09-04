@@ -1170,7 +1170,7 @@ export function AlertsPage() {
                       </div>
                     </td>
                     <td>
-                      <span className={`badge ${SEV_META[a.severity].badge}`} style={{ gap: 4 }}>
+                      <span className={`badge ${SEV_META[a.severity].badge}`} style={{ gap: 4, textTransform: 'capitalize' }}>
                         {SEV_META[a.severity].icon} {t(a.severity)}
                       </span>
                     </td>
