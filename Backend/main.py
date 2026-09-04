@@ -1,5 +1,7 @@
 # import cv2
 
+import mimetypes
+
 from services.enhancer import ImageEnhancer
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +16,13 @@ from api.enhance import router as enhance_router
 from api.detection import router as detection_router
 from api.crowd_counting import router as crowd_counting_router
 from api.crowd_counting_live import router as crowd_counting_live_router
+from api.network_stream import router as network_stream_router
+
+# Di beberapa mesin Windows, registry mengasosiasikan .ts dengan
+# "text/plain" (bentrok dengan file TypeScript) alih-alih MPEG-TS.
+# Paksa mapping yang benar supaya browser mau memutar segmen HLS.
+mimetypes.add_type("video/mp2t", ".ts")
+mimetypes.add_type("application/vnd.apple.mpegurl", ".m3u8")
 
 from api.role import router as role_router
 from api.user import router as user_router
@@ -77,12 +86,19 @@ app.include_router(enhance_router)
 app.include_router(detection_router)
 app.include_router(crowd_counting_router)
 app.include_router(crowd_counting_live_router)
+app.include_router(network_stream_router)
 
 
 app.mount(
     "/storage",
     StaticFiles(directory=BASE_DIR / "storage"),
     name="storage"
+)
+
+app.mount(
+    "/stream",
+    StaticFiles(directory=BASE_DIR / "streams"),
+    name="stream"
 )
 
 

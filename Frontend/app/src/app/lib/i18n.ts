@@ -197,6 +197,26 @@ export const EN: Record<string, string> = {
   'Jadwal take off terlewat': 'Take off schedule missed',
   'TERLAMBAT MENDARAT': 'LANDING OVERDUE',
   'Jadwal mendarat terlewat': 'Landing schedule missed',
+  'Live Stream': 'Live Stream',
+  'Sumber Jaringan': 'Network Source',
+  'URL Sumber Jaringan': 'Network Source URL',
+  'Wajib diisi sebelum umpan dapat dimulai': 'Required before the feed can start',
+  'Masukkan URL sumber jaringan (UDP/RTSP/RTMP) untuk memulai umpan live.':
+    'Enter the network source URL (UDP/RTSP/RTMP) to start the live feed.',
+  'Memulai...': 'Starting...',
+  'Gagal memulai live stream': 'Failed to start live stream',
+  'Timeout menunggu FFmpeg menyiapkan stream. Periksa URL dan pastikan sumbernya aktif.':
+    'Timed out waiting for FFmpeg to prepare the stream. Check the URL and make sure the source is active.',
+  'Kembali ke Live': 'Back to Live',
+  'Live stream dimulai': 'Live stream started',
+  'Live stream dihentikan': 'Live stream stopped',
+  'Menerima umpan dari': 'Receiving feed from',
+  'Umpan Live': 'Live Feed',
+  'DIJEDA': 'PAUSED',
+  'Tidak bisa menyambung ke stream. Periksa URL sumber dan pastikan backend/FFmpeg berjalan.':
+    'Cannot connect to the stream. Check the source URL and make sure the backend/FFmpeg is running.',
+  'Live stream sedang berjalan. Tekan Stop dulu sebelum meninggalkan halaman ini, supaya proses FFmpeg di backend ikut dihentikan.':
+    'A live stream is running. Press Stop first before leaving this page, so the FFmpeg process on the backend is stopped too.',
   'Tidak ada peringatan belum dibaca.': 'No unread alerts.',
   'total': 'total',
   'Total Simulasi Dibuat': 'Total Simulations Created',

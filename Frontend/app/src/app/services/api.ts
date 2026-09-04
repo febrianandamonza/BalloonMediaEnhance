@@ -717,6 +717,24 @@ class ApiService {
   }
 
   // ==========================================
+  // NETWORK STREAM (Live Stream — UDP/RTSP/RTMP via FFmpeg → HLS)
+  // ==========================================
+  async startNetworkStream(networkUrl: string) {
+    return this.request<{ stream_id: string; playlist_url: string }>('/network-stream/start', {
+      method: 'POST',
+      body: JSON.stringify({ network_url: networkUrl }),
+    });
+  }
+
+  async stopNetworkStream(streamId: string) {
+    return this.request<unknown>(`/network-stream/stop/${streamId}`, { method: 'POST' });
+  }
+
+  async getNetworkStreamHealth() {
+    return this.request<{ status: string; active_streams: string[] }>('/network-stream/health');
+  }
+
+  // ==========================================
   // IMAGE ENHANCEMENT
   // ==========================================
   async enhanceImage(file: File) {

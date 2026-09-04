@@ -524,7 +524,7 @@ export function CrowdCountingPage() {
                         {replaying ? <Pause size={13} /> : <Play size={13} />}
                       </button>
                     )}
-                    <span className="font-mono text-xs" style={{ color: 'var(--text-muted)', minWidth: 46 }}>
+                    <span className="font-mono text-xs" style={{ color: 'var(--text-muted)', minWidth: 64 }}>
                       {formatElapsed(currentFrame?.t ?? 0)}
                     </span>
                     <input
@@ -535,9 +535,6 @@ export function CrowdCountingPage() {
                       onChange={e => { setLiveEdge(false); setReplaying(false); setPlayIndex(Number(e.target.value)); }}
                       style={{ flex: 1, accentColor: 'var(--accent-primary)' }}
                     />
-                    <span className="font-mono text-xs" style={{ color: 'var(--text-muted)', minWidth: 70, textAlign: 'right' }}>
-                      {t('frame')} {currentIndex + 1}/{frames.length}
-                    </span>
                     {running && !liveEdge && (
                       <button className="btn btn-secondary btn-sm" onClick={() => { setLiveEdge(true); setReplaying(false); }}>
                         {t('Ke Live')}
@@ -1098,7 +1095,11 @@ interface CapturedFrame {
 }
 
 function formatElapsed(ms: number) {
-  return `${(ms / 1000).toFixed(1)}s`;
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 /* Sumber RTSP disembunyikan sementara — backend baru mendukung deteksi
@@ -1508,7 +1509,7 @@ export function VideoDetectionPage() {
                         {replaying ? <Pause size={13} /> : <Play size={13} />}
                       </button>
                     )}
-                    <span className="font-mono text-xs" style={{ color: 'var(--text-muted)', minWidth: 46 }}>
+                    <span className="font-mono text-xs" style={{ color: 'var(--text-muted)', minWidth: 64 }}>
                       {formatElapsed(currentFrame?.t ?? 0)}
                     </span>
                     <input
@@ -1519,9 +1520,6 @@ export function VideoDetectionPage() {
                       onChange={e => { setLiveEdge(false); setReplaying(false); setPlayIndex(Number(e.target.value)); }}
                       style={{ flex: 1, accentColor: 'var(--accent-primary)' }}
                     />
-                    <span className="font-mono text-xs" style={{ color: 'var(--text-muted)', minWidth: 70, textAlign: 'right' }}>
-                      {t('frame')} {currentIndex + 1}/{frames.length}
-                    </span>
                     {running && !liveEdge && (
                       <button className="btn btn-secondary btn-sm" onClick={() => { setLiveEdge(true); setReplaying(false); }}>
                         {t('Ke Live')}

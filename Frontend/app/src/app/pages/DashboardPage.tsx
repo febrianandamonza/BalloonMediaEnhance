@@ -77,14 +77,15 @@ function missionStatusName(m: FlightMissionRecord): string {
   return (typeof status === 'string' ? status : status?.name) ?? '';
 }
 
-/** "01:42" dari selisih waktu — dipakai untuk durasi terbang yang masih
+/** "01:42:07" dari selisih waktu — dipakai untuk durasi terbang yang masih
     berjalan (bukan formatDurationHM di InfoPages.tsx, yang memformat
     nilai `duration` statis yang baru terisi backend setelah mendarat). */
-function elapsedHHMM(ms: number): string {
-  const totalMin = Math.max(0, Math.floor(ms / 60_000));
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+function elapsedHMS(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 /** Ambang "mendekati jadwal take off" untuk misi Planned — dikonfirmasi
@@ -131,11 +132,10 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, []);
 
-  /* Menit berjalan untuk misi yang masih Flight — cukup berdetak tiap 30
-     detik, bukan tiap detik seperti LiveClock, karena granularitas yang
-     ditampilkan hanya HH:MM. */
+  /* Durasi terbang berjalan sampai ke detik (HH:MM:SS) — berdetak tiap
+     detik seperti LiveClock. */
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 30_000);
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -180,7 +180,7 @@ export default function DashboardPage() {
         rows.push({
           code, name, leader, altitude,
           badge: overdueLanding ? 'landing-overdue' : 'flight',
-          elapsed: takeoff ? elapsedHHMM(now - takeoff) : '00:00',
+          elapsed: takeoff ? elapsedHMS(now - takeoff) : '00:00:00',
         });
       } else if (status === 'Planned' && takeoff != null) {
         const diff = takeoff - now;
