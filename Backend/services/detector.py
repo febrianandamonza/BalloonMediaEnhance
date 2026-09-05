@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 
 from utils.file_manager import FileManager
+from utils.pacing import FramePacer
 from utils.websocket_manager import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -663,9 +664,11 @@ class ObjectDetector:
 
         # Pacing: tanpa ini loop berjalan secepat hardware mampu sehingga
         # video terlihat dipercepat. Frame dijadwalkan mengikuti durasi
-        # asli video.
-        frame_duration = 1.0 / fps
-        next_frame_time = time.perf_counter()
+        # asli video. FramePacer juga menaikkan resolusi timer Windows
+        # selama sesi — tanpa itu tiap sleep kebablasan sampai +15 ms dan
+        # video justru jadi slow motion. Lihat utils/pacing.py.
+        pacer = FramePacer(fps)
+        pacer.start()
 
         print(
             f"[detect] mulai | {width}x{height} @ {fps:.2f}fps | "
@@ -882,21 +885,17 @@ class ObjectDetector:
                 # =========================
                 # PACING
                 #
-                # Menjaga pemutaran mengikuti durasi asli video. Kalau
-                # pemrosesan tertinggal, jadwal di-reset supaya tidak
-                # "mengejar" dengan lompatan cepat.
+                # Menjaga pemutaran mengikuti durasi asli video. Frame yang
+                # sempat telat dikejar oleh frame berikutnya (dibatasi
+                # MAX_LAG_FRAMES), bukan dijadikan drift permanen.
                 # =========================
-                next_frame_time += frame_duration
-
-                delay = next_frame_time - time.perf_counter()
-
-                if delay > 0:
-                    await asyncio.sleep(delay)
-                else:
-                    next_frame_time = time.perf_counter() + frame_duration
-                    await asyncio.sleep(0)
+                await pacer.wait()
 
         finally:
+
+            pacer.stop()
+
+            print(f"[detect] {pacer.report()}")
 
             # Tunggu inferensi terakhir supaya threadnya tidak tertinggal
             # setelah video selesai.

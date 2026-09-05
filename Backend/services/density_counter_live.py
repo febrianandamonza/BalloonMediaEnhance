@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from utils.file_manager import FileManager
+from utils.pacing import FramePacer
 from utils.websocket_manager import manager
 
 
@@ -37,20 +38,24 @@ class VideoCrowdCounterLive:
 
         font = cv2.FONT_HERSHEY_SIMPLEX
 
-        overlay = frame_out.copy()
-
         box_w = 260
         box_h = 90
         margin = 20
 
-        x1 = width - box_w - margin
+        x1 = max(0, width - box_w - margin)
         y1 = margin
-        x2 = width - margin
+        x2 = max(0, width - margin)
         y2 = margin + box_h
 
-        cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 0), -1)
+        # Menggelapkan kotak = mencampur piksel di dalamnya dengan hitam,
+        # jadi cukup menskalakan ROI-nya. Versi sebelumnya menyalin SELURUH
+        # frame lalu meng-addWeighted seluruh frame hanya untuk menggelapkan
+        # kotak 260x90 — pada 1080p itu 7 ms terbuang tiap frame. Hasil
+        # pikselnya identik: di luar kotak, addWeighted lama menghasilkan
+        # 0.45*frame + 0.55*frame = frame.
+        roi = frame_out[y1:y2, x1:x2]
 
-        frame_out = cv2.addWeighted(overlay, 0.45, frame_out, 0.55, 0)
+        frame_out[y1:y2, x1:x2] = cv2.convertScaleAbs(roi, alpha=0.55)
 
         cv2.putText(
             frame_out, label, (x1 + 20, y1 + 30),
@@ -72,13 +77,22 @@ class VideoCrowdCounterLive:
 
         h, w = frame.shape[:2]
 
-        resized = cv2.resize(density_map, (w, h))
-
+        # Normalisasi + colormap dikerjakan pada resolusi density map
+        # (mis. 68x120), baru hasil BERWARNA-nya yang diperbesar. Versi
+        # sebelumnya memperbesar dulu ke ukuran frame lalu menormalkan dan
+        # memetakan warna, jadi dua operasi termahal itu berjalan pada 2
+        # juta piksel alih-alih 8 ribu. NORM_MINMAX menghasilkan rentang
+        # yang sama pada kedua urutan karena interpolasi bilinear tidak
+        # pernah melampaui nilai ekstrem aslinya.
         normalized = cv2.normalize(
-            resized, None, 0, 255, cv2.NORM_MINMAX
+            density_map, None, 0, 255, cv2.NORM_MINMAX
         ).astype(np.uint8)
 
         heatmap = cv2.applyColorMap(normalized, cv2.COLORMAP_JET)
+
+        heatmap = cv2.resize(
+            heatmap, (w, h), interpolation=cv2.INTER_LINEAR
+        )
 
         return cv2.addWeighted(frame, 0.6, heatmap, 0.4, 0)
 
@@ -125,6 +139,15 @@ class VideoCrowdCounterLive:
 
         frame_index = 0
         counts = []
+
+        # Loop ini didominasi operasi OpenCV yang murah (inferensi DM-Count
+        # jalan di thread terpisah tiap FRAME_INTERVAL frame), jadi tanpa
+        # pacing ia selesai jauh lebih cepat dari durasi asli video dan
+        # umpan langsungnya terlihat dipercepat — makin kencang mesinnya,
+        # makin ngebut. Dijadwalkan ke fps sumber supaya lajunya sama di
+        # MacBook maupun Windows. Lihat utils/pacing.py.
+        pacer = FramePacer(fps)
+        pacer.start()
 
         try:
 
@@ -219,11 +242,16 @@ class VideoCrowdCounterLive:
 
                 frame_index += 1
 
-                # Kembalikan kendali ke event loop supaya task inferensi di
-                # background sempat dicek/diselesaikan tanpa menunggu I/O.
-                await asyncio.sleep(0)
+                # Menahan loop ke fps sumber. Sekaligus mengembalikan
+                # kendali ke event loop supaya task inferensi di background
+                # sempat dicek/diselesaikan tanpa menunggu I/O.
+                await pacer.wait()
 
         finally:
+
+            pacer.stop()
+
+            print(f"[crowd] {pacer.report()}")
 
             if counter_task is not None:
                 try:
