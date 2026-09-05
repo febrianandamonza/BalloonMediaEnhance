@@ -6,16 +6,14 @@ import GlassCard from '../components/GlassCard';
 import { SectionHead, KVList, Sparkline, Metric, MetricRow } from '../components/ui';
 import { LICENSE_CATALOG, LICENSE_BY_ID, daysUntilExpiry, type LicenseId } from '../lib/licensing';
 import { CountUp, Reveal, SpotlightCard, AreaSpark, Magnetic } from '../components/fx';
-import api, {
-  type FlightMissionRecord, type FlightInformationRecord,
-  type FlightSimulationRecord, type MediaRecord,
-} from '../services/api';
-import { clockTime } from '../lib/notifications';
+import api, { type DashboardSimulationRecord } from '../services/api';
+import { fullTimestamp } from '../lib/notifications';
 import {
-  Radar, Radio, Timer, HeartPulse, BellRing, KeyRound, ShieldCheck, ShieldAlert,
+  Radar, Radio, Timer, HeartPulse, KeyRound, ShieldCheck, ShieldAlert,
   UsersRound, ScanSearch, Map, PlaneTakeoff, Anchor, FlaskConical, FileBarChart2,
   MonitorPlay, Wand2, Cable, ArrowUpRight, Activity, Gauge, Wind, Waves,
-  Thermometer, AlertTriangle, Info, CircleDot, ClipboardCheck, CheckCheck, FileDown,
+  Thermometer, AlertTriangle, CircleDot, ClipboardCheck, CheckCheck, FileDown,
+  ChevronLeft, ChevronRight, Filter, X,
 } from 'lucide-react';
 
 /* Three.js menyentuh objek window saat dimuat, sehingga bola dunia hanya
@@ -69,14 +67,6 @@ const QUICK_ACTIONS: {
     { page: 'media-source', label: 'Surveillance Media', icon: <MonitorPlay size={17} />, lic: null },
   ];
 
-/* mission_status kadang string mentah, kadang objek relasi {id, name} —
-   duplikasi lokal dari pola yang sama di InfoPages.tsx (helper kecil
-   tidak dibagi lintas modul halaman). */
-function missionStatusName(m: FlightMissionRecord): string {
-  const status = m.mission_status;
-  return (typeof status === 'string' ? status : status?.name) ?? '';
-}
-
 /** "01:42:07" dari selisih waktu — dipakai untuk durasi terbang yang masih
     berjalan (bukan formatDurationHM di InfoPages.tsx, yang memformat
     nilai `duration` statis yang baru terisi backend setelah mendarat). */
@@ -94,8 +84,7 @@ const TAKEOFF_DUE_SOON_MS = 15 * 60_000;
 
 export default function DashboardPage() {
   const {
-    setCurrentPage, account, licenses, activeLicenseIds, isLicenseActive, offline, t,
-    notifications, lang,
+    setCurrentPage, account, licenses, activeLicenseIds, isLicenseActive, offline, t, lang,
   } = useApp();
 
   /* Saat daya platform diputus, seluruh pembacaan langsung berhenti
@@ -108,26 +97,15 @@ export default function DashboardPage() {
   const simulationTrend = useMemo(() => series(29, 30, 20, 10, 0), []);
   const mediaTrend = useMemo(() => series(53, 30, 180, 60, 0), []);
 
-  const [missions, setMissions] = useState<FlightMissionRecord[]>([]);
-  const [flightInfo, setFlightInfo] = useState<FlightInformationRecord[]>([]);
-  const [simulations, setSimulations] = useState<FlightSimulationRecord[]>([]);
-  const [media, setMedia] = useState<MediaRecord[]>([]);
+  const [dashboardSimulations, setDashboardSimulations] = useState<DashboardSimulationRecord[]>([]);
   const [dashLoading, setDashLoading] = useState(true);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      api.getFlightMissions().catch(() => []),
-      api.getFlightInformation().catch(() => []),
-      api.getFlightSimulations().catch(() => []),
-      api.getMedia().catch(() => []),
-    ]).then(([missionRows, infoRows, simRows, mediaRows]) => {
+    api.getDashboardSimulations().catch(() => []).then(dashSimRows => {
       if (cancelled) return;
-      setMissions(missionRows);
-      setFlightInfo(infoRows);
-      setSimulations(simRows);
-      setMedia(mediaRows);
+      setDashboardSimulations(dashSimRows);
     }).finally(() => { if (!cancelled) setDashLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -139,20 +117,69 @@ export default function DashboardPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  const infoByMission = useMemo(() => {
-    const map = new globalThis.Map<string, FlightInformationRecord>();
-    for (const info of flightInfo) map.set(String(info.mission_id), info);
-    return map;
-  }, [flightInfo]);
+  /* Filter Dashboard — Nama Simulasi + Range Tanggal (takeoff_time misi).
+     Satu sumber (dashboardSimulations, dari /dashboard/simulations, sudah
+     membawa missions[]→mission_status/flight_information(+media) dalam
+     satu pohon) diturunkan jadi filteredSimulations/allFilteredMissions,
+     dipakai ulang oleh KELIMA metrik di bawah supaya filter konsisten di
+     semua kartu sekaligus — bukan memfilter 4 sumber terpisah yang tidak
+     saling terhubung. */
+  interface DashboardFilterState {
+    simulationName: string; // '' = semua
+    dateFrom: string;       // yyyy-mm-dd, '' = tak dibatasi
+    dateTo: string;
+  }
+  const [filter, setFilter] = useState<DashboardFilterState>({ simulationName: '', dateFrom: '', dateTo: '' });
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFilterOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [filterOpen]);
+
+  const simulationNameOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const sim of dashboardSimulations) if (sim.simulation_name) names.add(sim.simulation_name);
+    return Array.from(names).sort();
+  }, [dashboardSimulations]);
+
+  const filteredSimulations = useMemo(() => {
+    const from = filter.dateFrom ? new Date(`${filter.dateFrom}T00:00:00`).getTime() : null;
+    const to = filter.dateTo ? new Date(`${filter.dateTo}T23:59:59`).getTime() : null;
+    const dateActive = from != null || to != null;
+
+    return dashboardSimulations
+      .filter(sim => !filter.simulationName || sim.simulation_name === filter.simulationName)
+      .map(sim => {
+        if (!dateActive) return sim;
+        const missions = (sim.missions ?? []).filter(m => {
+          const takeoff = m.flight_information?.takeoff_time;
+          if (!takeoff) return false;
+          const ts = new Date(takeoff).getTime();
+          if (from != null && ts < from) return false;
+          if (to != null && ts > to) return false;
+          return true;
+        });
+        return { ...sim, missions };
+      })
+      .filter(sim => !dateActive || (sim.missions?.length ?? 0) > 0);
+  }, [dashboardSimulations, filter]);
+
+  const allFilteredMissions = useMemo(
+    () => filteredSimulations.flatMap(sim => sim.missions ?? []),
+    [filteredSimulations],
+  );
 
   const missionStatusCounts = useMemo(() => {
     const counts = { Planned: 0, Flight: 0, Done: 0 };
-    for (const m of missions) {
-      const name = missionStatusName(m);
+    for (const m of allFilteredMissions) {
+      const name = m.mission_status?.name;
       if (name === 'Planned' || name === 'Flight' || name === 'Done') counts[name] += 1;
     }
     return counts;
-  }, [missions]);
+  }, [allFilteredMissions]);
 
   const flyingMissions = useMemo(() => {
     const rows: {
@@ -162,12 +189,12 @@ export default function DashboardPage() {
       minutes?: number;   // 'due-soon': sisa menit · 'overdue': menit keterlambatan
     }[] = [];
 
-    for (const m of missions) {
-      const status = missionStatusName(m);
-      const info = infoByMission.get(String(m.id));
+    for (const m of allFilteredMissions) {
+      const status = m.mission_status?.name;
+      const info = m.flight_information;
       const takeoff = info?.takeoff_time ? new Date(info.takeoff_time).getTime() : null;
       const landing = info?.landing_time ? new Date(info.landing_time).getTime() : null;
-      const altitude = info?.max_altitude ?? 0;
+      const altitude = info?.max_altitude != null ? Number(info.max_altitude) : 0;
       const code = m.mission_code ?? String(m.id);
       const name = m.mission_name ?? m.mission_code ?? String(m.id);
       const leader = info?.mission_leader ?? '—';
@@ -193,24 +220,61 @@ export default function DashboardPage() {
       }
     }
     return rows;
-  }, [missions, infoByMission, now]);
+  }, [allFilteredMissions, now]);
 
-  const simulationTotal = simulations.length;
-  const mediaCount = media.length;
-  const mediaSizeMb = useMemo(
-    () => Math.round(media.reduce((n, m) => n + (m.file_size ?? 0), 0) / (1024 ** 2)),
-    [media],
+  const simulationTotal = filteredSimulations.length;
+  const mediaCount = useMemo(
+    () => allFilteredMissions.reduce((n, m) => n + (m.flight_information?.media?.length ?? 0), 0),
+    [allFilteredMissions],
   );
+  const mediaSizeMb = useMemo(() => {
+    let total = 0;
+    for (const m of allFilteredMissions) {
+      for (const md of m.flight_information?.media ?? []) total += md.file_size ?? 0;
+    }
+    return Math.round(total / (1024 ** 2));
+  }, [allFilteredMissions]);
 
-  /* Unread top-5 by id desc — /notifications tidak punya query param, dan
-     data ini sudah dimuat+dipoll secara global oleh context.tsx (dipakai
-     lonceng), jadi diturunkan dari situ, bukan fetch baru. Entri
-     pendingSync (id sementara lokal) disingkirkan karena id-nya bukan id
-     backend asli. */
-  const topAlerts = useMemo(() => notifications
-    .filter(n => !n.read && !n.pendingSync)
-    .sort((a, b) => Number(b.id) - Number(a.id))
-    .slice(0, 5), [notifications]);
+  /* Misi Selesai — diratakan dari missions[] tiap simulasi yang
+     dikembalikan /dashboard/simulations, disaring ke mission_status.name
+     === 'Done', diurut terbaru dulu. Endpoint ini tidak punya parameter
+     pagination sendiri, jadi 5-per-halaman dikerjakan di klien (lihat
+     completedPage di bawah). */
+  const completedMissions = useMemo(() => {
+    const rows: { id: string; code: string; name: string; leader: string; completedAt: number }[] = [];
+    for (const m of allFilteredMissions) {
+      if (m.mission_status?.name !== 'Done') continue;
+      const ts = m.updated_at ? new Date(m.updated_at).getTime()
+        : m.created_at ? new Date(m.created_at).getTime() : 0;
+      rows.push({
+        id: m.id,
+        code: m.mission_code ?? String(m.id),
+        name: m.mission_name ?? m.mission_code ?? String(m.id),
+        leader: m.flight_information?.mission_leader ?? '—',
+        completedAt: ts,
+      });
+    }
+    return rows.sort((a, b) => b.completedAt - a.completedAt);
+  }, [allFilteredMissions]);
+
+  const COMPLETED_PAGE_SIZE = 5;
+  const [completedPage, setCompletedPage] = useState(1);
+  const completedPageCount = Math.max(1, Math.ceil(completedMissions.length / COMPLETED_PAGE_SIZE));
+  useEffect(() => {
+    setCompletedPage(p => Math.min(p, completedPageCount));
+  }, [completedPageCount]);
+  const pagedCompleted = completedMissions.slice(
+    (completedPage - 1) * COMPLETED_PAGE_SIZE,
+    completedPage * COMPLETED_PAGE_SIZE,
+  );
+  /* Jendela nomor halaman di sekitar halaman aktif — maksimal 3 tombol
+     angka, sama pola dengan Riwayat Peringatan di InfoPages.tsx. */
+  const completedPageWindow = useMemo(() => {
+    const span = Math.min(3, completedPageCount);
+    let start = Math.min(Math.max(1, completedPage - 1), completedPageCount - span + 1);
+    start = Math.max(1, start);
+    return Array.from({ length: span }, (_, i) => start + i);
+  }, [completedPage, completedPageCount]);
 
   /* PDF digambar dari data (jsPDF vektor), bukan jepretan layar — lihat
      lib/dashboardReport.ts. Dimuat lewat import() dinamis, sama seperti
@@ -228,7 +292,7 @@ export default function DashboardPage() {
       mediaSizeMb,
       missions: flyingMissions,
       missionStatusCounts,
-      alerts: topAlerts,
+      completedMissions,
     }, t);
   };
 
@@ -266,6 +330,13 @@ export default function DashboardPage() {
             <button className="btn btn-glass" onClick={exportToPdf}>
               <FileDown size={15} /> {t('Export to PDF')}
             </button>
+
+            <button
+              className={`btn ${(filter.simulationName || filter.dateFrom || filter.dateTo) ? 'btn-primary' : 'btn-glass'}`}
+              onClick={() => setFilterOpen(true)}
+            >
+              <Filter size={15} /> {t('Filter')}
+            </button>
           </div>
 
           {/* <div className="dash-hero-stats">
@@ -301,6 +372,71 @@ export default function DashboardPage() {
           </div> */}
         </div>
       </div>
+
+      {filterOpen && (
+        <div className="modal-backdrop" onClick={() => setFilterOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Filter size={16} /> {t('Filter')}
+              </h3>
+              <button className="btn btn-ghost" onClick={() => setFilterOpen(false)} style={{ padding: 4 }} aria-label={t('Tutup')}>
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">{t('Nama Simulasi')}</label>
+                <select
+                  className="form-input"
+                  value={filter.simulationName}
+                  onChange={e => setFilter(f => ({ ...f, simulationName: e.target.value }))}
+                >
+                  <option value="">{t('Semua simulasi')}</option>
+                  {simulationNameOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </div>
+              <div className="row">
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Dari Tanggal')}</label>
+                    <input
+                      type="date"
+                      className="form-input font-mono"
+                      value={filter.dateFrom}
+                      onChange={e => setFilter(f => ({ ...f, dateFrom: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Sampai Tanggal')}</label>
+                    <input
+                      type="date"
+                      className="form-input font-mono"
+                      value={filter.dateTo}
+                      onChange={e => setFilter(f => ({ ...f, dateTo: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setFilter({ simulationName: '', dateFrom: '', dateTo: '' })}
+              >
+                {t('Reset Filter')}
+              </button>
+              <button className="btn btn-primary" onClick={() => setFilterOpen(false)}>
+                {t('Terapkan')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ===== Kartu statistik ===== */}
       <div className="dash-stats">
@@ -407,32 +543,69 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <GlassCard tilt={false}>
             <SectionHead
-              icon={<BellRing size={15} />}
-              title={t('Peringatan Terkini')}
+              icon={<CheckCheck size={15} />}
+              title={t('Misi Selesai')}
               right={
-                <button className="btn btn-ghost btn-sm" onClick={() => setCurrentPage('alerts')}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setCurrentPage('flight-info')}>
                   Semua <ArrowUpRight size={12} />
                 </button>
               }
             />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {topAlerts.length === 0 ? (
-                <p className="sc-foot" style={{ padding: '4px 2px' }}>{t('Tidak ada peringatan belum dibaca.')}</p>
-              ) : topAlerts.map(n => {
-                const color = n.severity === 'kritis' ? 'var(--danger-400)'
-                  : n.severity === 'peringatan' ? 'var(--warning-400)' : 'var(--info-400)';
-                const Icon = n.severity === 'kritis' ? ShieldAlert : n.severity === 'peringatan' ? AlertTriangle : Info;
-                return (
-                  <div key={n.id} className="alert-row" style={{ ['--al' as string]: color }}>
-                    <Icon size={14} style={{ color, flexShrink: 0, marginTop: 1 }} />
-                    <span style={{ minWidth: 0 }}>
-                      <span className="ar-msg">{t(n.detail || n.title)}</span>
-                      <span className="ar-meta">{clockTime(n.ts, lang)} WIB · {t(n.source)}</span>
-                    </span>
-                  </div>
-                );
-              })}
+              {pagedCompleted.length === 0 ? (
+                <p className="sc-foot" style={{ padding: '4px 2px' }}>{t('Belum ada misi yang selesai.')}</p>
+              ) : pagedCompleted.map(m => (
+                <div key={m.id} className="alert-row" style={{ ['--al' as string]: 'var(--accent-emerald)' }}>
+                  <CheckCheck size={14} style={{ color: 'var(--accent-emerald)', flexShrink: 0, marginTop: 1 }} />
+                  <span style={{ minWidth: 0 }}>
+                    <span className="ar-msg">{m.name}</span>
+                    <span className="ar-meta">{m.leader} · {m.completedAt ? fullTimestamp(m.completedAt, lang) : '—'}</span>
+                  </span>
+                </div>
+              ))}
             </div>
+
+            {completedMissions.length > 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                marginTop: 10, padding: '8px 12px',
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+                borderRadius: 'var(--radius-md)',
+              }}>
+                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                  {t('Halaman')} {completedPage} {t('dari')} {completedPageCount}
+                </span>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setCompletedPage(p => Math.max(1, p - 1))}
+                    disabled={completedPage <= 1}
+                    aria-label={t('Halaman sebelumnya')}
+                  >
+                    <ChevronLeft size={12} />
+                  </button>
+                  {completedPageWindow.map(p => (
+                    <button
+                      key={p}
+                      className={`btn btn-sm ${p === completedPage ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setCompletedPage(p)}
+                      aria-current={p === completedPage ? 'page' : undefined}
+                      aria-label={`${t('Halaman')} ${p}`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setCompletedPage(p => Math.min(completedPageCount, p + 1))}
+                    disabled={completedPage >= completedPageCount}
+                    aria-label={t('Halaman berikutnya')}
+                  >
+                    <ChevronRight size={12} />
+                  </button>
+                </div>
+              </div>
+            )}
           </GlassCard>
 
           {/* <GlassCard tilt={false}>

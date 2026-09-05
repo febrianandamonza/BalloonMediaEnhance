@@ -67,6 +67,52 @@ export interface FlightSimulationRecord {
   [key: string]: unknown;
 }
 
+/** Bentuk respons GET /api/v1/dashboard/simulations — dipakai kartu
+    "Misi Selesai" pada DashboardPage untuk menyaring misi ber-
+    mission_status.name === 'Done' lintas semua simulasi. */
+export interface DashboardMissionStatusRecord {
+  id: number;
+  name: string | null;
+  description?: string | null;
+}
+
+export interface DashboardMediaRecord {
+  id: string;
+  media_type?: string;
+  processing_type?: string;
+  file_size?: number;
+  [key: string]: unknown;
+}
+
+export interface DashboardFlightInformationRecord {
+  id: string;
+  mission_leader?: string | null;
+  takeoff_time?: string | null;
+  landing_time?: string | null;
+  max_altitude?: number | string | null;
+  media?: DashboardMediaRecord[];
+  [key: string]: unknown;
+}
+
+export interface DashboardMissionRecord {
+  id: string;
+  mission_code: string;
+  mission_name?: string | null;
+  mission_status?: DashboardMissionStatusRecord | null;
+  flight_information?: DashboardFlightInformationRecord | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+}
+
+export interface DashboardSimulationRecord {
+  id: string;
+  simulation_name?: string | null;
+  missions: DashboardMissionRecord[];
+  created_at?: string | null;
+  [key: string]: unknown;
+}
+
 /** Satu baris dari respons GET /api/v1/locations — opsi lokasi misi pada
     formulir Misi Baru (FlightInfoPage). */
 export interface LocationRecord {
@@ -665,6 +711,13 @@ class ApiService {
 
   async getFlightSimulationById(id: string | number) {
     return this.request<FlightSimulationRecord>(`/flight-simulations/${id}`);
+  }
+
+  // ==========================================
+  // DASHBOARD
+  // ==========================================
+  async getDashboardSimulations() {
+    return this.request<DashboardSimulationRecord[]>('/dashboard/simulations');
   }
 
   // ==========================================

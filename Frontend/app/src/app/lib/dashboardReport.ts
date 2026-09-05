@@ -26,12 +26,11 @@ export interface ReportMissionRow {
   minutes?: number;
 }
 
-export interface ReportAlertRow {
-  title: string;
-  detail: string;
-  source: string;
-  ts: number;
-  severity: 'informasi' | 'peringatan' | 'kritis';
+export interface ReportCompletedMissionRow {
+  code: string;
+  name: string;
+  leader: string;
+  completedAt: number;
 }
 
 export interface DashboardReportData {
@@ -43,7 +42,7 @@ export interface DashboardReportData {
   mediaSizeMb: number;
   missions: ReportMissionRow[];
   missionStatusCounts: { Planned: number; Flight: number; Done: number };
-  alerts: ReportAlertRow[];
+  completedMissions: ReportCompletedMissionRow[];
 }
 
 /* jspdf-autotable menambahkan properti ini ke instance doc di runtime
@@ -89,9 +88,6 @@ function missionDetail(m: ReportMissionRow, t: (s: string) => string): string {
   if (m.badge === 'overdue') return `${t('Terlambat take off')} ${m.minutes} ${t('menit')} · ${m.altitude} m`;
   return `${t('Terbang')} ${m.elapsed ?? '00:00'} · ${m.altitude} m`;
 }
-
-const severityColor = (s: ReportAlertRow['severity']) =>
-  s === 'kritis' ? DANGER : s === 'peringatan' ? WARNING : ACCENT;
 
 /** Tile statistik ringkas — dipakai untuk baris "Total Simulasi/Media"
     dan tiga tile "Misi per Status". Mengembalikan tinggi yang dipakai. */
@@ -213,55 +209,38 @@ export function generateDashboardPdf(data: DashboardReportData, t: (s: string) =
   drawTile(doc, MARGIN + (statusW + statusGap) * 2, y, statusW, statusH, String(data.missionStatusCounts.Done), t('Done'), SUCCESS);
   y += statusH + 26;
 
-  /* ---- Peringatan Terkini ---- */
+  /* ---- Misi Selesai ---- */
   y = ensureSpace(doc, y, 40, pageHeight);
   setText(doc, INK);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12.5);
-  doc.text(t('Peringatan Terkini'), MARGIN, y);
-  y += 16;
+  doc.text(t('Misi Selesai'), MARGIN, y);
+  y += 14;
 
-  if (data.alerts.length === 0) {
+  if (data.completedMissions.length === 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
     setText(doc, MUTED);
-    doc.text(t('Tidak ada peringatan belum dibaca.'), MARGIN, y + 6);
+    doc.text(t('Belum ada misi yang selesai.'), MARGIN, y + 6);
     y += 26;
   } else {
-    const titleFontSize = 9.5;
-    const metaFontSize = 8;
-    const lineHeight = titleFontSize * 1.15; // dekati faktor tinggi baris bawaan jsPDF
-    const alertMaxWidth = pageWidth - MARGIN * 2 - 10;
-
-    for (const alert of data.alerts) {
-      /* Judul bisa membungkus lebih dari satu baris (kalimat cuaca cukup
-         panjang) — jumlah barisnya diukur dulu lewat splitTextToSize,
-         supaya baris meta di bawahnya tidak menumpuk baris kedua judul
-         seperti sebelumnya (tinggi baris dulu selalu dianggap tetap). */
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(titleFontSize);
-      const titleLines = doc.splitTextToSize(t(alert.detail || alert.title), alertMaxWidth) as string[];
-      const titleHeight = titleLines.length * lineHeight;
-      const rowHeight = titleHeight + metaFontSize + 16;
-
-      y = ensureSpace(doc, y, rowHeight, pageHeight);
-      const color = severityColor(alert.severity);
-
-      setFill(doc, color);
-      doc.rect(MARGIN, y, 3, rowHeight - 6, 'F');
-
-      setText(doc, INK);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(titleFontSize);
-      doc.text(titleLines, MARGIN + 10, y + 11);
-
-      setText(doc, MUTED);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(metaFontSize);
-      doc.text(`${fullTimestamp(alert.ts, data.lang)} · ${t(alert.source)}`, MARGIN + 10, y + titleHeight + 12);
-
-      y += rowHeight;
-    }
+    autoTable(doc, {
+      startY: y,
+      margin: { left: MARGIN, right: MARGIN },
+      head: [[t('Misi'), t('Kode'), t('Pemimpin'), t('Selesai Pada')]],
+      body: data.completedMissions.map(m => [
+        m.name, m.code, m.leader, fullTimestamp(m.completedAt, data.lang),
+      ]),
+      theme: 'grid',
+      styles: { fontSize: 9, textColor: [...INK], cellPadding: 6 },
+      headStyles: { fillColor: [...HEADER_BG], textColor: 255, fontStyle: 'bold' },
+      didParseCell: (hook) => {
+        if (hook.section !== 'body' || hook.column.index !== 3) return;
+        hook.cell.styles.textColor = [...SUCCESS];
+        hook.cell.styles.fontStyle = 'bold';
+      },
+    });
+    y = ((doc as DocWithAutoTable).lastAutoTable?.finalY ?? y + 20) + 26;
   }
 
   /* ---- Footer tiap halaman ---- */

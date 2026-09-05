@@ -126,6 +126,33 @@ export default function LiveStreamPage() {
     t('Live stream sedang berjalan. Tekan Stop dulu sebelum meninggalkan halaman ini, supaya proses FFmpeg di backend ikut dihentikan.'),
   );
 
+  /* Reload browser (F5) atau navigasi keluar-masuk menu ini tidak lewat
+     stop() — streamId lokal hilang tapi proses FFmpeg di backend tetap
+     jalan. Setiap kali halaman ini mount (termasuk lewat reload, karena
+     PAGES[currentPage] di page.tsx benar-benar unmount/mount ulang
+     komponen), cek health lalu bersihkan stream sisa dari sesi
+     sebelumnya supaya tidak menumpuk. */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const health = await api.getNetworkStreamHealth();
+        const leftover = health.active_streams ?? [];
+        if (leftover.length === 0 || cancelled) return;
+        await Promise.allSettled(leftover.map(id => api.stopNetworkStream(id)));
+        if (cancelled) return;
+        pushToast({
+          tone: 'info',
+          title: t('Live stream sebelumnya dihentikan otomatis'),
+          detail: t('Proses FFmpeg yang masih berjalan dari sesi sebelumnya sudah dibersihkan.'),
+        });
+      } catch {
+        // Backend/health endpoint belum siap — halaman tetap bisa dipakai normal.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const goLive = async () => {
     if (!networkUrl.trim()) return;
     setLoading(true);
