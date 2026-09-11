@@ -40,10 +40,12 @@ class MooringAvailabilityMonitorService(
     def create(
         self,
         db,
-        data
+        data,
+        image_path
     ):
 
         return self.repository.create_monitor(
             db,
-            data
+            data,
+            image_path
         )
