@@ -23,8 +23,6 @@ class TetherCableMonitorCreate(BaseModel):
 
     kevlar_tension: float | None = None
 
-    folder_path: str | None = None
-
     description: str | None = None
 
 
