@@ -113,6 +113,28 @@ export interface DashboardSimulationRecord {
   [key: string]: unknown;
 }
 
+// ==========================================
+// TETHER CABLE MONITOR
+// ==========================================
+export interface TetherCableMonitorPayload {
+  operating_voltage?: number | null;
+  load_current?: number | null;
+  insulation_resistance?: number | null;
+  conductor_continuity?: string | null;
+  optical_snr?: number | null;
+  optical_attenuation?: number | null;
+  sheath_temperature?: number | null;
+  kevlar_tension?: number | null;
+  folder_path?: string | null;
+  description?: string | null;
+}
+
+export interface TetherCableMonitorRecord extends TetherCableMonitorPayload {
+  id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Satu baris dari respons GET /api/v1/locations — opsi lokasi misi pada
     formulir Misi Baru (FlightInfoPage). */
 export interface LocationRecord {
@@ -914,6 +936,16 @@ class ApiService {
   /** Daftar modul yang bisa dipakai memfilter audit trail. */
   async getAuditModules() {
     return this.request<AuditModuleRecord[]>('/audit-modules');
+  }
+
+  // ==========================================
+  // TETHER CABLE MONITOR
+  // ==========================================
+  async createTetherCableMonitor(payload: TetherCableMonitorPayload) {
+    return this.request<TetherCableMonitorRecord>('/tether-cable-monitor', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 
   // ==========================================

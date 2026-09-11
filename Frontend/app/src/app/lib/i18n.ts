@@ -466,6 +466,11 @@ export const EN: Record<string, string> = {
   'Kesehatan kabel penambat: daya, isolasi, kontinuitas, dan SNR optik.':
     'Tether cable health: power, insulation, continuity, and optical SNR.',
   'Jalankan Diagnostik': 'Run Diagnostics',
+  'Tambah Data': 'Add Data',
+  'Menyimpan...': 'Saving...',
+  'Data tether cable tersimpan': 'Tether cable data saved',
+  'Data pemeriksaan kabel penambat baru telah ditambahkan.': 'New tether cable inspection data has been added.',
+  'Gagal menyimpan data': 'Failed to save data',
 
   /* ---- Information & Reporting ---- */
   'Digital Reporting': 'Digital Reporting',

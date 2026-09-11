@@ -13,12 +13,13 @@ import { CompareSlider, VideoCompare } from '../../components/media';
 import api, {
   API_BASE_MEDIA, type FlightMissionRecord, type FlightInformationRecord,
   type EnhanceImageResult, type EnhanceVideoResult,
+  type TetherCableMonitorPayload,
 } from '../../services/api';
 import {
   Wand2, Image as ImageIcon, SlidersHorizontal, Save,
   RefreshCw, Clapperboard, Palette, Camera, Thermometer,
   PlugZap, Cable, Activity, Zap, Gauge, ShieldCheck, Radio, Copy,
-  KeyRound, Plus, TerminalSquare, Waves, CircuitBoard, AlertTriangle,
+  KeyRound, Plus, TerminalSquare, Waves, CircuitBoard, AlertTriangle, X,
 } from 'lucide-react';
 
 /* Deret deterministik untuk grafik tren. */
@@ -1009,34 +1010,71 @@ function SummaryStat({ icon, accent, label, value }: { icon: React.ReactNode; ac
 /* =====================================================================
    1.2d — MONITORING CHECKING CAPABILITY TETHER CABLE
    ===================================================================== */
+const EMPTY_TETHER_FORM: Record<keyof TetherCableMonitorPayload, string> = {
+  operating_voltage: '',
+  load_current: '',
+  insulation_resistance: '',
+  conductor_continuity: '',
+  optical_snr: '',
+  optical_attenuation: '',
+  sheath_temperature: '',
+  kevlar_tension: '',
+  folder_path: '',
+  description: '',
+};
+
 export function TetherMonitorPage() {
   const { pushToast, notify, t } = useApp();
-  const [testing, setTesting] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState(EMPTY_TETHER_FORM);
 
   const voltage = useMemo(() => series(11, 40, 230, 6, 1), []);
   const current = useMemo(() => series(23, 40, 1.82, 0.26, 2), []);
   const insulation = useMemo(() => series(37, 40, 128, 14, 0), []);
   const snr = useMemo(() => series(53, 40, 42, 4, 1), []);
 
-  const runDiagnostic = () => {
-    setTesting(true);
-    window.setTimeout(() => {
-      setTesting(false);
-      pushToast({
-        tone: 'success',
-        title: 'Diagnostik kabel selesai',
-        detail: 'Seluruh parameter berada dalam batas operasi. Tidak ditemukan anomali.',
+  const setField = (key: keyof TetherCableMonitorPayload, value: string) =>
+    setForm(f => ({ ...f, [key]: value }));
+
+  const submitTetherData = async () => {
+    setSubmitting(true);
+    try {
+      const toNum = (v: string) => (v.trim() === '' ? null : Number(v));
+      const toStr = (v: string) => (v.trim() === '' ? null : v.trim());
+      await api.createTetherCableMonitor({
+        operating_voltage: toNum(form.operating_voltage),
+        load_current: toNum(form.load_current),
+        insulation_resistance: toNum(form.insulation_resistance),
+        conductor_continuity: toStr(form.conductor_continuity),
+        optical_snr: toNum(form.optical_snr),
+        optical_attenuation: toNum(form.optical_attenuation),
+        sheath_temperature: toNum(form.sheath_temperature),
+        kevlar_tension: toNum(form.kevlar_tension),
+        folder_path: toStr(form.folder_path),
+        description: toStr(form.description),
       });
+      pushToast({ tone: 'success', title: t('Data tether cable tersimpan') });
       notify({
-        title: 'Diagnostik kabel selesai',
-        detail: 'Seluruh parameter berada dalam batas operasi. Tidak ditemukan anomali.',
+        title: t('Data tether cable tersimpan'),
+        detail: t('Data pemeriksaan kabel penambat baru telah ditambahkan.'),
         severity: 'informasi',
         category: 'Tether',
         source: 'Tether Cable Monitor',
         page: 'tether-monitor',
         silent: true,
       });
-    }, 1600);
+      setForm(EMPTY_TETHER_FORM);
+      setModalOpen(false);
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: t('Gagal menyimpan data'),
+        detail: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   /* Ambang batas operasi mengacu pada spesifikasi kabel penambat. */
@@ -1060,8 +1098,8 @@ export function TetherMonitorPage() {
           code="1.2d"
           description={t('Kesehatan kabel penambat: daya, isolasi, kontinuitas, dan SNR optik.')}
           actions={
-            <button className="btn btn-primary" onClick={runDiagnostic} disabled={testing}>
-              {testing ? <><RefreshCw size={15} className="spin" /> {t('Menguji…')}</> : <><ShieldCheck size={15} /> {t('Jalankan Diagnostik')}</>}
+            <button className="btn btn-primary" onClick={() => setModalOpen(true)}>
+              <Plus size={15} /> {t('Tambah Data')}
             </button>
           }
         />
@@ -1133,6 +1171,157 @@ export function TetherMonitorPage() {
           </GlassCard>
         </div>
       </div>
+
+      {modalOpen && (
+        <div className="modal-backdrop" onClick={() => !submitting && setModalOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="modal-header">
+              <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Cable size={16} /> {t('Tambah Data')}
+              </h3>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                style={{ padding: 4 }}
+                aria-label={t('Tutup')}
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div className="row">
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Tegangan Operasi')} (V)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.operating_voltage}
+                      onChange={e => setField('operating_voltage', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Arus Beban')} (A)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.load_current}
+                      onChange={e => setField('load_current', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Resistansi Isolasi')} (MΩ)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.insulation_resistance}
+                      onChange={e => setField('insulation_resistance', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Kontinuitas Konduktor')}</label>
+                    <select
+                      className="form-input"
+                      value={form.conductor_continuity}
+                      onChange={e => setField('conductor_continuity', e.target.value)}
+                    >
+                      <option value="">{t('— Pilih —')}</option>
+                      <option value="TERSAMBUNG">{t('TERSAMBUNG')}</option>
+                      <option value="PUTUS">{t('PUTUS')}</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('SNR Serat Optik (EOP)')} (dB)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.optical_snr}
+                      onChange={e => setField('optical_snr', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Redaman Optik')} (dB/km)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.optical_attenuation}
+                      onChange={e => setField('optical_attenuation', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Suhu Selubung')} (°C)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.sheath_temperature}
+                      onChange={e => setField('sheath_temperature', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Tegangan Tarik Kevlar')} (N)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.kevlar_tension}
+                      onChange={e => setField('kevlar_tension', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">{t('Path Folder')}</label>
+                <input
+                  className="form-input font-mono"
+                  placeholder="D:\Data\TetherCable\2026-09-11"
+                  value={form.folder_path}
+                  onChange={e => setField('folder_path', e.target.value)}
+                  spellCheck={false}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">{t('Deskripsi')}</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  value={form.description}
+                  onChange={e => setField('description', e.target.value)}
+                  placeholder={t('Catatan tambahan hasil pemeriksaan')}
+                  style={{ resize: 'vertical' }}
+                />
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setModalOpen(false)} disabled={submitting}>
+                {t('Batal')}
+              </button>
+              <button className="btn btn-primary" onClick={submitTetherData} disabled={submitting}>
+                {submitting ? <><RefreshCw size={15} className="spin" /> {t('Menyimpan...')}</> : <><Save size={15} /> {t('Simpan')}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </LicenseGate>
   );
 }
