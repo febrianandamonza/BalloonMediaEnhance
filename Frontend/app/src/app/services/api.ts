@@ -125,12 +125,12 @@ export interface TetherCableMonitorPayload {
   optical_attenuation?: number | null;
   sheath_temperature?: number | null;
   kevlar_tension?: number | null;
-  folder_path?: string | null;
   description?: string | null;
 }
 
 export interface TetherCableMonitorRecord extends TetherCableMonitorPayload {
   id: string;
+  folder_path: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -941,11 +941,35 @@ class ApiService {
   // ==========================================
   // TETHER CABLE MONITOR
   // ==========================================
-  async createTetherCableMonitor(payload: TetherCableMonitorPayload) {
+  async createTetherCableMonitor(payload: TetherCableMonitorPayload, file: File) {
+    const formData = new FormData();
+    const entries: [string, string | number | null | undefined][] = [
+      ['operating_voltage', payload.operating_voltage],
+      ['load_current', payload.load_current],
+      ['insulation_resistance', payload.insulation_resistance],
+      ['conductor_continuity', payload.conductor_continuity],
+      ['optical_snr', payload.optical_snr],
+      ['optical_attenuation', payload.optical_attenuation],
+      ['sheath_temperature', payload.sheath_temperature],
+      ['kevlar_tension', payload.kevlar_tension],
+      ['description', payload.description],
+    ];
+    entries.forEach(([key, value]) => {
+      if (value !== null && value !== undefined) formData.append(key, String(value));
+    });
+    formData.append('image', file);
     return this.request<TetherCableMonitorRecord>('/tether-cable-monitor', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: formData,
     });
+  }
+
+  async getTetherCableMonitors() {
+    return this.request<TetherCableMonitorRecord[]>('/tether-cable-monitor');
+  }
+
+  async getTetherCableMonitorById(id: string) {
+    return this.request<TetherCableMonitorRecord>(`/tether-cable-monitor/${id}`);
   }
 
   // ==========================================

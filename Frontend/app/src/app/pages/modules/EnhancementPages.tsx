@@ -9,17 +9,18 @@ import {
   ConfigSelect,
 } from '../../components/ui';
 import { salinTeks } from '../../lib/clipboard';
+import { fullTimestamp } from '../../lib/notifications';
 import { CompareSlider, VideoCompare } from '../../components/media';
 import api, {
   API_BASE_MEDIA, type FlightMissionRecord, type FlightInformationRecord,
   type EnhanceImageResult, type EnhanceVideoResult,
-  type TetherCableMonitorPayload,
+  type TetherCableMonitorPayload, type TetherCableMonitorRecord,
 } from '../../services/api';
 import {
   Wand2, Image as ImageIcon, SlidersHorizontal, Save,
   RefreshCw, Clapperboard, Palette, Camera, Thermometer,
   PlugZap, Cable, Activity, Zap, Gauge, ShieldCheck, Radio, Copy,
-  KeyRound, Plus, TerminalSquare, Waves, CircuitBoard, AlertTriangle, X,
+  KeyRound, Plus, TerminalSquare, Waves, CircuitBoard, AlertTriangle, X, Eye,
 } from 'lucide-react';
 
 /* Deret deterministik untuk grafik tren. */
@@ -778,7 +779,7 @@ export function VideoEnhancementPage() {
               </div>
             </GlassCard>
 
-           
+
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -799,7 +800,7 @@ export function VideoEnhancementPage() {
               </div>
             </GlassCard>
 
-          
+
           </div>
         </div>
       </div>
@@ -1019,15 +1020,55 @@ const EMPTY_TETHER_FORM: Record<keyof TetherCableMonitorPayload, string> = {
   optical_attenuation: '',
   sheath_temperature: '',
   kevlar_tension: '',
-  folder_path: '',
   description: '',
 };
 
 export function TetherMonitorPage() {
-  const { pushToast, notify, t } = useApp();
+  const { pushToast, notify, t, lang } = useApp();
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState(EMPTY_TETHER_FORM);
+  const [photo, setPhoto] = useState<{ name: string; url: string; raw: File } | null>(null);
+  const [photoDrag, setPhotoDrag] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const [history, setHistory] = useState<TetherCableMonitorRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
+  const fetchHistory = async () => {
+    setHistoryLoading(true);
+    const rows = await api.getTetherCableMonitors().catch(() => []);
+    setHistory(rows);
+    setHistoryLoading(false);
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<TetherCableMonitorRecord | null>(null);
+
+  const openDetail = async (id: string) => {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetailRecord(null);
+    try {
+      const record = await api.getTetherCableMonitorById(id);
+      setDetailRecord(record);
+    } catch {
+      pushToast({ tone: 'error', title: t('Gagal memuat detail') });
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const photoUrl = (path: string) => {
+    const normalized = path.replace(/\\/g, '/');
+    return `${API_BASE_MEDIA}${normalized.startsWith('/') ? normalized : `/${normalized}`}`;
+  };
 
   const voltage = useMemo(() => series(11, 40, 230, 6, 1), []);
   const current = useMemo(() => series(23, 40, 1.82, 0.26, 2), []);
@@ -1037,7 +1078,25 @@ export function TetherMonitorPage() {
   const setField = (key: keyof TetherCableMonitorPayload, value: string) =>
     setForm(f => ({ ...f, [key]: value }));
 
+  const pickPhoto = (f: File | undefined) => {
+    if (!f) return;
+    if (!/\.(jpe?g|png)$/i.test(f.name)) {
+      pushToast({ tone: 'error', title: t('Format tidak didukung'), detail: t('Gunakan berkas JPG atau PNG.') });
+      return;
+    }
+    setPhoto({ name: f.name, url: URL.createObjectURL(f), raw: f });
+  };
+
+  const formComplete = Object.values(form).every(v => v.trim() !== '') && photo !== null;
+
+  const resetTetherModal = () => {
+    setForm(EMPTY_TETHER_FORM);
+    setPhoto(null);
+    setModalOpen(false);
+  };
+
   const submitTetherData = async () => {
+    if (!photo) return;
     setSubmitting(true);
     try {
       const toNum = (v: string) => (v.trim() === '' ? null : Number(v));
@@ -1051,9 +1110,8 @@ export function TetherMonitorPage() {
         optical_attenuation: toNum(form.optical_attenuation),
         sheath_temperature: toNum(form.sheath_temperature),
         kevlar_tension: toNum(form.kevlar_tension),
-        folder_path: toStr(form.folder_path),
         description: toStr(form.description),
-      });
+      }, photo.raw);
       pushToast({ tone: 'success', title: t('Data tether cable tersimpan') });
       notify({
         title: t('Data tether cable tersimpan'),
@@ -1064,8 +1122,8 @@ export function TetherMonitorPage() {
         page: 'tether-monitor',
         silent: true,
       });
-      setForm(EMPTY_TETHER_FORM);
-      setModalOpen(false);
+      resetTetherModal();
+      fetchHistory();
     } catch (err) {
       pushToast({
         tone: 'error',
@@ -1078,15 +1136,16 @@ export function TetherMonitorPage() {
   };
 
   /* Ambang batas operasi mengacu pada spesifikasi kabel penambat. */
-  const params = [
-    { label: 'Tegangan Operasi', value: '229,6 V', target: '230 VAC ±5%', ok: true, icon: <Zap size={13} /> },
-    { label: 'Arus Beban', value: '1,82 A', target: '≤ 2,2 A', ok: true, icon: <Activity size={13} /> },
-    { label: 'Resistansi Isolasi', value: '128 MΩ', target: '> 100 MΩ', ok: true, icon: <ShieldCheck size={13} /> },
-    { label: 'Kontinuitas Konduktor', value: 'TERSAMBUNG', target: 'Tidak putus', ok: true, icon: <Cable size={13} /> },
-    { label: 'SNR Serat Optik (EOP)', value: '42,6 dB', target: '> 40 dB', ok: true, icon: <Waves size={13} /> },
-    { label: 'Redaman Optik', value: '0,31 dB/km', target: '< 0,40 dB/km', ok: true, icon: <Waves size={13} /> },
-    { label: 'Suhu Selubung', value: '38,4 °C', target: '< 70 °C', ok: true, icon: <Thermometer size={13} /> },
-    { label: 'Tegangan Tarik Kevlar', value: '1.240 N', target: '< 4.500 N', ok: true, icon: <Gauge size={13} /> },
+  const latest = history[0];
+  const tetherParams = [
+    { label: 'Tegangan Operasi', value: latest?.operating_voltage != null ? `${latest.operating_voltage} V` : '—', target: '230 VAC ±5%', ok: true, icon: <Zap size={13} /> },
+    { label: 'Arus Beban', value: latest?.load_current != null ? `${latest.load_current} A` : '—', target: '≤ 2,2 A', ok: true, icon: <Activity size={13} /> },
+    { label: 'Resistansi Isolasi', value: latest?.insulation_resistance != null ? `${latest.insulation_resistance} MΩ` : '—', target: '> 100 MΩ', ok: true, icon: <ShieldCheck size={13} /> },
+    { label: 'Kontinuitas Konduktor', value: latest?.conductor_continuity ?? '—', target: 'Tidak putus', ok: true, icon: <Cable size={13} /> },
+    { label: 'SNR Serat Optik (EOP)', value: latest?.optical_snr != null ? `${latest.optical_snr} dB` : '—', target: '> 40 dB', ok: true, icon: <Waves size={13} /> },
+    { label: 'Redaman Optik', value: latest?.optical_attenuation != null ? `${latest.optical_attenuation} dB/km` : '—', target: '< 0,40 dB/km', ok: true, icon: <Waves size={13} /> },
+    { label: 'Suhu Selubung', value: latest?.sheath_temperature != null ? `${latest.sheath_temperature} °C` : '—', target: '< 70 °C', ok: true, icon: <Thermometer size={13} /> },
+    { label: 'Tegangan Tarik Kevlar', value: latest?.kevlar_tension != null ? `${latest.kevlar_tension} N` : '—', target: '< 4.500 N', ok: true, icon: <Gauge size={13} /> },
   ];
 
   return (
@@ -1103,9 +1162,8 @@ export function TetherMonitorPage() {
             </button>
           }
         />
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10, marginBottom: 16 }}>
-          {params.map(p => (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10, marginBottom: 16, marginTop: 16 }}>
+          {tetherParams.map(p => (
             <div key={t(p.label)} className="metric">
               <div className="metric-label">{p.icon}{t(p.label)}</div>
               <div className="metric-value" style={{ color: p.ok ? 'var(--success-400)' : 'var(--danger-400)' }}>{p.value}</div>
@@ -1114,66 +1172,55 @@ export function TetherMonitorPage() {
           ))}
         </div>
 
-        <div className="grid-2" style={{ marginBottom: 14 }}>
-          <GlassCard tilt={false}>
-            <SectionHead icon={<Zap size={15} />} title={t('Tren Kelistrikan')} sub={t('40 pembacaan terakhir · interval 1 detik')} />
-            <Sparkline data={voltage} color="var(--accent-emerald)" height={82} label={t('Tegangan kabel utama')} unit=" V" />
-            <div style={{ height: 12 }} />
-            <Sparkline data={current} color="var(--accent-amber)" height={82} label={t('Arus beban')} unit=" A" />
-          </GlassCard>
-
-          <GlassCard tilt={false}>
-            <SectionHead icon={<Waves size={15} />} title={t('Tren Isolasi & Optik')} sub={t('40 pembacaan terakhir')} />
-            <Sparkline data={insulation} color="var(--accent-primary)" height={82} label={t('Resistansi isolasi')} unit=" MΩ" />
-            <div style={{ height: 12 }} />
-            <Sparkline data={snr} color="var(--accent-secondary)" height={82} label={t('SNR serat optik (EOP)')} unit=" dB" />
-          </GlassCard>
-        </div>
-
-        <div className="grid-2">
-          <GlassCard tilt={false}>
-            <SectionHead icon={<Cable size={15} />} title={t('Spesifikasi Kabel Penambat')} />
-            <KVList rows={[
-              ['Panjang Terpasang', '600 m'],
-              ['Panjang Terulur', '450 m'],
-              ['Konstruksi', 'Kevlar reinforced + serat optik'],
-              ['Konduktor Daya', '2 × 1,5 mm² tembaga'],
-              ['Kapasitas Tarik', '4.500 N (breaking 9.000 N)'],
-              ['Serat Optik', '1 × single-mode G.652.D'],
-              ['Berat per Meter', '38 g/m'],
-              ['Umur Layanan', '1.850 jam / 5.000 jam'],
-            ]} />
-          </GlassCard>
-
-          <GlassCard tilt={false}>
-            <SectionHead icon={<AlertTriangle size={15} />} title={t('Riwayat Diagnostik')} sub={t('Lima pemeriksaan terakhir')} />
+        <GlassCard tilt={false}>
+          <SectionHead icon={<AlertTriangle size={15} />} title={t('Riwayat Diagnostik')} sub={t('Lima pemeriksaan terakhir')} />
+          {!historyLoading && history.length === 0 ? (
+            <EmptyState
+              icon={<AlertTriangle size={22} />}
+              title={t('Belum ada data pemeriksaan')}
+              description={t('Tambahkan data lewat tombol "Tambah Data" untuk mengisi riwayat ini.')}
+            />
+          ) : (
             <div className="table-container">
               <table>
-                <thead><tr><th>{t('Waktu')}</th><th>{t('Jenis')}</th><th>{t('Hasil')}</th><th>{t('Catatan')}</th></tr></thead>
+                <thead><tr><th>{t('Waktu')}</th><th>{t('Kontinuitas')}</th><th>{t('Parameter')}</th><th>{t('Catatan')}</th><th>{t('Aksi')}</th></tr></thead>
                 <tbody>
-                  {[
-                    ['2026-07-27 10:15', 'Rutin harian', 'LULUS', 'Isolasi 128 MΩ · kontinuitas OK'],
-                    ['2026-07-26 10:04', 'Rutin harian', 'LULUS', 'Seluruh parameter nominal'],
-                    ['2026-07-25 16:38', 'Pasca-badai', 'LULUS', 'Isolasi turun ke 112 MΩ, masih di atas batas'],
-                    ['2026-07-25 09:50', 'Rutin harian', 'LULUS', 'SNR optik 41,2 dB'],
-                    ['2026-07-24 14:22', 'Pra-penerbangan', 'LULUS', 'Uji tarik statis 1.180 N'],
-                  ].map(([t, jenis, hasil, catatan]) => (
-                    <tr key={t}>
-                      <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>{t}</td>
-                      <td style={{ fontSize: 12 }}>{jenis}</td>
-                      <td><span className="badge badge-success">{hasil}</span></td>
-                      <td style={{ fontSize: 12 }}>{catatan}</td>
+                  {historyLoading ? (
+                    <tr><td colSpan={5} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Memuat riwayat…')}</td></tr>
+                  ) : history.slice(0, 5).map(row => (
+                    <tr key={row.id}>
+                      <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>
+                        {fullTimestamp(new Date(row.created_at).getTime(), lang)}
+                      </td>
+                      <td>
+                        <span className={`badge ${row.conductor_continuity === 'TERSAMBUNG' ? 'badge-success' : row.conductor_continuity === 'PUTUS' ? 'badge-danger' : 'badge-neutral'}`}>
+                          {row.conductor_continuity ?? '—'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12 }}>
+                        {row.operating_voltage ?? '—'} V · {row.load_current ?? '—'} A · {row.insulation_resistance ?? '—'} MΩ · {row.optical_snr ?? '—'} dB
+                      </td>
+                      <td style={{ fontSize: 12 }}>{row.description ?? '—'}</td>
+                      <td>
+                        <button className="btn btn-ghost btn-sm" onClick={() => openDetail(row.id)}>
+                          <Eye size={13} /> {t('Detail')}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </GlassCard>
-        </div>
+          )}
+        </GlassCard>
+
+
+
+
       </div>
 
       {modalOpen && (
-        <div className="modal-backdrop" onClick={() => !submitting && setModalOpen(false)}>
+        <div className="modal-backdrop" onClick={() => !submitting && resetTetherModal()}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
             <div className="modal-header">
               <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1181,7 +1228,7 @@ export function TetherMonitorPage() {
               </h3>
               <button
                 className="btn btn-ghost"
-                onClick={() => setModalOpen(false)}
+                onClick={resetTetherModal}
                 disabled={submitting}
                 style={{ padding: 4 }}
                 aria-label={t('Tutup')}
@@ -1288,14 +1335,49 @@ export function TetherMonitorPage() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">{t('Path Folder')}</label>
+                <label className="form-label">{t('Foto')}</label>
                 <input
-                  className="form-input font-mono"
-                  placeholder="D:\Data\TetherCable\2026-09-11"
-                  value={form.folder_path}
-                  onChange={e => setField('folder_path', e.target.value)}
-                  spellCheck={false}
+                  ref={photoInputRef}
+                  type="file"
+                  accept=".jpg,.jpeg,.png"
+                  hidden
+                  onChange={e => pickPhoto(e.target.files?.[0])}
                 />
+
+                {photo ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url}
+                      alt={t('Foto pemeriksaan')}
+                      style={{ width: 56, height: 56, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }}
+                    />
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                      {photo.name}
+                    </span>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setPhoto(null)}>
+                      <X size={13} /> {t('Hapus')}
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className={`uploader ${photoDrag ? 'drag' : ''}`}
+                    onClick={() => photoInputRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); setPhotoDrag(true); }}
+                    onDragLeave={() => setPhotoDrag(false)}
+                    onDrop={e => { e.preventDefault(); setPhotoDrag(false); pickPhoto(e.dataTransfer.files?.[0]); }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') photoInputRef.current?.click(); }}
+                  >
+                    <span className="uploader-ring"><ImageIcon size={22} /></span>
+                    <span className="uploader-copy">
+                      <span className="uploader-title">{t('Unggah foto pemeriksaan')}</span>
+                      <span className="uploader-sub">{t('JPG atau PNG · maksimum 50 MB')}</span>
+                    </span>
+                    <span className="btn btn-secondary btn-sm" aria-hidden>{t('Telusuri Berkas')}</span>
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
@@ -1309,14 +1391,76 @@ export function TetherMonitorPage() {
                   style={{ resize: 'vertical' }}
                 />
               </div>
+
+              {!formComplete && (
+                <p style={{ fontSize: 11, color: 'var(--warning-400)', marginTop: 2 }}>
+                  {t('Lengkapi seluruh kolom termasuk foto sebelum menyimpan.')}
+                </p>
+              )}
             </div>
 
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setModalOpen(false)} disabled={submitting}>
+              <button className="btn btn-secondary" onClick={resetTetherModal} disabled={submitting}>
                 {t('Batal')}
               </button>
-              <button className="btn btn-primary" onClick={submitTetherData} disabled={submitting}>
+              <button className="btn btn-primary" onClick={submitTetherData} disabled={submitting || !formComplete}>
                 {submitting ? <><RefreshCw size={15} className="spin" /> {t('Menyimpan...')}</> : <><Save size={15} /> {t('Simpan')}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailOpen && (
+        <div className="modal-backdrop" onClick={() => setDetailOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Eye size={16} /> {t('Detail Pemeriksaan')}
+              </h3>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setDetailOpen(false)}
+                style={{ padding: 4 }}
+                aria-label={t('Tutup')}
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              {detailLoading ? (
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Memuat detail…')}</p>
+              ) : detailRecord && (
+                <>
+                  {detailRecord.folder_path && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={photoUrl(detailRecord.folder_path)}
+                      alt={t('Foto pemeriksaan')}
+                      style={{ width: '100%', maxHeight: 240, objectFit: 'cover', borderRadius: 10, marginBottom: 14 }}
+                    />
+                  )}
+                  <KVList rows={[
+                    [t('Tegangan Operasi'), detailRecord.operating_voltage != null ? `${detailRecord.operating_voltage} V` : '—'],
+                    [t('Arus Beban'), detailRecord.load_current != null ? `${detailRecord.load_current} A` : '—'],
+                    [t('Resistansi Isolasi'), detailRecord.insulation_resistance != null ? `${detailRecord.insulation_resistance} MΩ` : '—'],
+                    [t('Kontinuitas Konduktor'), detailRecord.conductor_continuity ?? '—'],
+                    [t('SNR Serat Optik (EOP)'), detailRecord.optical_snr != null ? `${detailRecord.optical_snr} dB` : '—'],
+                    [t('Redaman Optik'), detailRecord.optical_attenuation != null ? `${detailRecord.optical_attenuation} dB/km` : '—'],
+                    [t('Suhu Selubung'), detailRecord.sheath_temperature != null ? `${detailRecord.sheath_temperature} °C` : '—'],
+                    [t('Tegangan Tarik Kevlar'), detailRecord.kevlar_tension != null ? `${detailRecord.kevlar_tension} N` : '—'],
+                    [t('Deskripsi'), detailRecord.description ?? '—'],
+                    [t('Dibuat'), fullTimestamp(new Date(detailRecord.created_at).getTime(), lang)],
+                    [t('Diperbarui'), fullTimestamp(new Date(detailRecord.updated_at).getTime(), lang)],
+                  ]} />
+                </>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDetailOpen(false)}>
+                {t('Tutup')}
               </button>
             </div>
           </div>
