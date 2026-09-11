@@ -25,8 +25,6 @@ class MooringAvailabilityMonitorCreate(BaseModel):
 
     optical_link_eop: float | None = None
 
-    folder_path: str | None = None
-
     description: str | None = None
 
 

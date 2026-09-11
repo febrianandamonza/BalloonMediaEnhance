@@ -50,7 +50,8 @@ class MooringAvailabilityMonitorRepository(
     def create_monitor(
         self,
         db,
-        data
+        data,
+        image_path
     ):
 
         now = datetime.utcnow()
@@ -65,7 +66,9 @@ class MooringAvailabilityMonitorRepository(
 
             helium_pressure=data.helium_pressure,
 
-            ambient_temperature=data.ambient_temperature,
+            ambient_temperature=(
+                data.ambient_temperature
+            ),
 
             backup_battery_voltage=(
                 data.backup_battery_voltage
@@ -85,7 +88,9 @@ class MooringAvailabilityMonitorRepository(
 
             optical_link_eop=data.optical_link_eop,
 
-            folder_path=data.folder_path,
+            # Kolom folder_path digunakan
+            # untuk menyimpan path file image
+            folder_path=image_path,
 
             description=data.description,
 
