@@ -46,7 +46,8 @@ class TetherCableMonitorRepository(
     def create_monitor(
         self,
         db,
-        data
+        data,
+        image_path
     ):
 
         now = datetime.utcnow()
@@ -59,19 +60,29 @@ class TetherCableMonitorRepository(
 
             load_current=data.load_current,
 
-            insulation_resistance=data.insulation_resistance,
+            insulation_resistance=(
+                data.insulation_resistance
+            ),
 
-            conductor_continuity=data.conductor_continuity,
+            conductor_continuity=(
+                data.conductor_continuity
+            ),
 
             optical_snr=data.optical_snr,
 
-            optical_attenuation=data.optical_attenuation,
+            optical_attenuation=(
+                data.optical_attenuation
+            ),
 
-            sheath_temperature=data.sheath_temperature,
+            sheath_temperature=(
+                data.sheath_temperature
+            ),
 
             kevlar_tension=data.kevlar_tension,
 
-            folder_path=data.folder_path,
+            # Tetap menggunakan kolom folder_path
+            # untuk menyimpan PATH FILE IMAGE
+            folder_path=image_path,
 
             description=data.description,
 
