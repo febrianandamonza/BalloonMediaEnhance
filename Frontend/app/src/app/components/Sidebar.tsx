@@ -74,8 +74,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'enhance-image', label: 'Imaging Enhancement', icon: <Wand2 size={SZ} /> },
       { id: 'enhance-video', label: 'Video Enhancement', icon: <FilmIcon size={SZ} /> },
-      // { id: 'tether-api', label: 'Tether Cable API', icon: <PlugZap size={SZ} /> },
-      // { id: 'tether-monitor', label: 'Tether Cable Monitor', icon: <Cable size={SZ} /> },
+       { id: 'tether-api', label: 'Tether Cable API', icon: <PlugZap size={SZ} /> },
+      { id: 'tether-monitor', label: 'Tether Cable Monitor', icon: <Cable size={SZ} /> },
     ],
   },
   {
@@ -88,7 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'geo-viz', label: 'GeoInt Visualisation', icon: <Map size={SZ} /> },
       { id: 'alerts', label: 'Smart Notification', icon: <BellRing size={SZ} /> },
       { id: 'flight-info', label: 'Flight Information', icon: <PlaneTakeoff size={SZ} /> },
-      // { id: 'mooring', label: 'Mooring Availability', icon: <Anchor size={SZ} /> },
+      { id: 'mooring', label: 'Mooring Availability', icon: <Anchor size={SZ} /> },
       { id: 'simulation', label: 'Flight Simulation', icon: <FlaskConical size={SZ} /> },
     ],
   },
