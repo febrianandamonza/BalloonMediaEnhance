@@ -21,6 +21,11 @@ import {
   Car, PersonStanding, Save, RefreshCw, Loader2, FileVideo,
 } from 'lucide-react';
 
+/** Huruf pertama kapital untuk nama kelas objek ("person" → "Person"). */
+function capitalize(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
 /* Deret pseudo-acak deterministik agar render server & klien konsisten. */
 function series(seed: number, len: number, base: number, spread: number) {
   let s = seed;
@@ -246,7 +251,7 @@ export function CrowdCountingPage() {
   const pick = (f: File | undefined) => {
     if (!f) return;
     if (!/\.(mp4|avi|mov|mkv)$/i.test(f.name)) {
-      pushToast({ tone: 'error', title: t('Format tidak didukung'), detail: t('Gunakan berkas MP4, AVI, MOV, atau MKV.') });
+      pushToast({ tone: 'error', title: t('Format tidak didukung'), detail: t('Gunakan berkas MP4, AVI, MOV, TS, atau MKV.') });
       notify({
         title: t('Format tidak didukung'),
         detail: t('Gunakan berkas MP4, AVI, MOV, atau MKV.'),
@@ -596,7 +601,7 @@ export function CrowdCountingPage() {
                   <span className="uploader-ring"><UploadCloud size={22} /></span>
                   <span className="uploader-copy">
                     <span className="uploader-title">{t('Seret berkas video, atau telusuri')}</span>
-                    <span className="uploader-sub">{t('MP4, AVI, MOV, atau MKV')}</span>
+                    <span className="uploader-sub">{t('MP4, AVI, MOV, TS, atau MKV')}</span>
                   </span>
                   <span className="btn btn-secondary btn-sm" aria-hidden>{t('Telusuri Berkas')}</span>
                 </div>
@@ -734,6 +739,21 @@ export function ImageDetectionPage() {
     () => (detectResult?.objects ?? []).filter(o => o.confidence * 100 >= confidence),
     [detectResult, confidence],
   );
+
+  /* Rincian Deteksi dikelompokkan per kelas objek dan diurutkan
+     berdasarkan jumlah kemunculannya — bukan lagi daftar per-objek
+     berdasarkan confidence (pola sama seperti classCounts di
+     VideoDetectionPage). */
+  const classCounts = useMemo(() => {
+    const counts = new globalThis.Map<string, { count: number; color?: string }>();
+    for (const o of visible) {
+      const entry = counts.get(o.class);
+      if (entry) entry.count += 1;
+      else counts.set(o.class, { count: 1, color: o.color });
+    }
+    return Array.from(counts, ([cls, v]) => ({ cls, count: v.count, color: v.color }))
+      .sort((a, b) => b.count - a.count);
+  }, [visible]);
 
   const previewUrl = detectResult
     ? (detectResult.preview_url.startsWith('http') ? detectResult.preview_url : `${API_BASE_MEDIA}${detectResult.preview_url}`)
@@ -1018,7 +1038,7 @@ export function ImageDetectionPage() {
 
 
 
-              {visible.length === 0 ? (
+              {classCounts.length === 0 ? (
                 <EmptyState
                   icon={<Crosshair size={22} />}
                   title={t('Tidak ada objek di atas ambang')}
@@ -1026,23 +1046,23 @@ export function ImageDetectionPage() {
                 />
               ) : (
                 <div className="table-container">
-                  <table>
+                  <table style={{ fontSize: '10px' }}>
                     <thead>
                       <tr>
                         <th>{t('Kelas Objek')}</th>
-                        <th>{t('Kepercayaan')}</th>
+                        <th>{t('Jumlah')}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {visible.map((d, i) => {
-                        const pct = Math.round(d.confidence * 100);
-                        const color = d.class === 'person' ? 'var(--accent-emerald)' : 'var(--accent-primary)';
+                      {classCounts.map(({ cls, count, color: classColor }) => {
+                        const pct = Math.round((count / classCounts[0].count) * 100);
+                        const color = classColor || (cls === 'person' ? 'var(--accent-emerald)' : 'var(--accent-primary)');
                         return (
-                          <tr key={`${d.class}-${i}`}>
+                          <tr key={cls}>
                             <td style={{ fontWeight: 600 }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                                {d.class === 'person' ? <PersonStanding size={13} /> : <Car size={13} />}
-                                {d.class}
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 14 }}>
+                                {cls === 'person' ? <PersonStanding size={13} /> : <Car size={13} />}
+                                {capitalize(cls)}
                               </span>
                             </td>
                             <td>
@@ -1050,8 +1070,8 @@ export function ImageDetectionPage() {
                                 <div style={{ flex: 1, height: 4, borderRadius: 999, background: 'rgba(148,163,184,0.12)', overflow: 'hidden', minWidth: 90 }}>
                                   <div style={{ width: `${pct}%`, height: '100%', background: color }} />
                                 </div>
-                                <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color }}>
-                                  {pct}%
+                                <span className="font-mono" style={{ fontSize: 14, fontWeight: 700, color }}>
+                                  {count}
                                 </span>
                               </div>
                             </td>
@@ -1267,11 +1287,11 @@ export function VideoDetectionPage() {
 
   const pick = (f: File | undefined) => {
     if (!f) return;
-    if (!/\.(mp4|avi|mov|mkv)$/i.test(f.name)) {
-      pushToast({ tone: 'error', title: t('Format tidak didukung'), detail: t('Gunakan berkas MP4, AVI, MOV, atau MKV.') });
+    if (!/\.(mp4|avi|mov|mkv|ts)$/i.test(f.name)) {
+      pushToast({ tone: 'error', title: t('Format tidak didukung'), detail: t('Gunakan berkas MP4, AVI, MOV, MKV, atau TS.') });
       notify({
         title: t('Format tidak didukung'),
-        detail: t('Gunakan berkas MP4, AVI, MOV, atau MKV.'),
+        detail: t('Gunakan berkas MP4, AVI, MOV, MKV, atau TS.'),
         severity: 'peringatan',
         category: 'Deteksi Objek',
         source: 'Video Analytic',
@@ -1438,7 +1458,7 @@ export function VideoDetectionPage() {
         <input
           ref={inputRef}
           type="file"
-          accept=".mp4,.avi,.mov,.mkv"
+          accept=".mp4,.avi,.mov,.mkv,.ts"
           hidden
           onChange={e => { pick(e.target.files?.[0]); if (inputRef.current) inputRef.current.value = ''; }}
         />
@@ -1575,7 +1595,7 @@ export function VideoDetectionPage() {
                   <span className="uploader-ring"><UploadCloud size={22} /></span>
                   <span className="uploader-copy">
                     <span className="uploader-title">{t('Seret berkas video, atau telusuri')}</span>
-                    <span className="uploader-sub">{t('MP4, AVI, MOV, atau MKV')}</span>
+                    <span className="uploader-sub">{t('MP4, AVI, MOV, TS, atau MKV')}</span>
                   </span>
                   <span className="btn btn-secondary btn-sm" aria-hidden>{t('Telusuri Berkas')}</span>
                 </div>
@@ -1618,9 +1638,9 @@ export function VideoDetectionPage() {
                         return (
                           <tr key={cls}>
                             <td style={{ fontWeight: 600 }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 14 }}>
                                 {cls === 'person' ? <PersonStanding size={13} /> : <Car size={13} />}
-                                {cls}
+                                {capitalize(cls)}
                               </span>
                             </td>
                             <td>
@@ -1628,7 +1648,7 @@ export function VideoDetectionPage() {
                                 <div style={{ flex: 1, height: 4, borderRadius: 999, background: 'rgba(148,163,184,0.12)', overflow: 'hidden', minWidth: 90 }}>
                                   <div style={{ width: `${pct}%`, height: '100%', background: color }} />
                                 </div>
-                                <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color }}>{count}</span>
+                                <span className="font-mono" style={{ fontSize: 14, fontWeight: 700, color }}>{count}</span>
                               </div>
                             </td>
                           </tr>

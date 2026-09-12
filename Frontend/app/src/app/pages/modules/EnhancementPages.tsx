@@ -477,6 +477,7 @@ const PALETTES: { id: string; label: string; from: string; to: string; mid?: str
 export function VideoEnhancementPage() {
   const { pushToast, notify, t } = useApp();
   const [palette, setPalette] = useState('whitehot');
+  const [mode, setMode] = useState<'fast' | 'quality'>('quality');
   const [denoise, setDenoise] = useState(20);
   const [contrast, setContrast] = useState(15);
   const [sharpness, setSharpness] = useState(20);
@@ -530,11 +531,11 @@ export function VideoEnhancementPage() {
 
   const pick = (f: File | undefined) => {
     if (!f) return;
-    if (!/\.(mp4|mov|avi|mkv|webm)$/i.test(f.name)) {
-      pushToast({ tone: 'error', title: 'Format tidak didukung', detail: 'Gunakan berkas MP4, MOV, AVI, MKV, atau WEBM.' });
+    if (!/\.(mp4|mov|avi|mkv|webm|ts)$/i.test(f.name)) {
+      pushToast({ tone: 'error', title: 'Format tidak didukung', detail: 'Gunakan berkas MP4, MOV, AVI, MKV, TS atau WEBM.' });
       notify({
         title: 'Format tidak didukung',
-        detail: 'Gunakan berkas MP4, MOV, AVI, MKV, atau WEBM.',
+        detail: 'Gunakan berkas MP4, MOV, AVI, MKV, TS atau WEBM.',
         severity: 'peringatan',
         category: 'Media',
         source: 'Video Enhancement',
@@ -552,7 +553,7 @@ export function VideoEnhancementPage() {
     if (!file || !missionId || busy) return;
     setBusy(true);
     try {
-      const result = await api.enhanceVideo(file.raw, { denoise, contrast, sharpness });
+      const result = await api.enhanceVideo(file.raw, { denoise, contrast, sharpness, mode });
       setEnhanceResult(result);
       setApplied(true);
       pushToast({
@@ -679,7 +680,7 @@ export function VideoEnhancementPage() {
           }
         />
 
-        <input ref={inputRef} type="file" accept=".mp4,.mov,.avi,.mkv,.webm" hidden onChange={e => pick(e.target.files?.[0])} />
+        <input ref={inputRef} type="file" accept=".mp4,.mov,.avi,.mkv,.webm,.ts" hidden onChange={e => pick(e.target.files?.[0])} />
 
         <GlassCard tilt={false} style={{ marginBottom: 14 }}>
           <SectionHead icon={<Clapperboard size={15} />} title={t('Flight Mission')} sub={t('Wajib dipilih sebelum enhancement dapat diterapkan')} />
@@ -773,7 +774,7 @@ export function VideoEnhancementPage() {
                 <span className="uploader-ring"><Clapperboard size={22} /></span>
                 <span className="uploader-copy">
                   <span className="uploader-title">{t('Tingkatkan video lain')}</span>
-                  <span className="uploader-sub">{t('MP4, MOV, AVI, atau MKV · maksimum 200 MB')}</span>
+                  <span className="uploader-sub">{t('MP4, MOV, AVI, TS, atau MKV · maksimum 200 MB')}</span>
                 </span>
                 <span className="btn btn-secondary btn-sm" aria-hidden>{t('Telusuri Berkas')}</span>
               </div>
@@ -787,6 +788,19 @@ export function VideoEnhancementPage() {
               <SectionHead icon={<Thermometer size={15} />} title={t('Pengaturan Peningkatan')} />
 
               <div className="form-group" style={{ marginTop: 8 }}>
+                <label className="form-label">{t('Mode Pemrosesan')}</label>
+                <Segmented
+                  full
+                  value={mode}
+                  options={[
+                    { id: 'fast', label: 'Fast', icon: <Zap size={13} /> },
+                    { id: 'quality', label: 'Quality', icon: <ShieldCheck size={13} /> },
+                  ]}
+                  onChange={setMode}
+                />
+              </div>
+
+              <div className="form-group">
                 <label className="form-label" htmlFor="vid-denoise">Denoise — {denoise}%</label>
                 <input id="vid-denoise" type="range" min={0} max={100} value={denoise} onChange={e => setDenoise(Number(e.target.value))} style={rangeStyle} />
               </div>

@@ -854,12 +854,13 @@ class ApiService {
   // ==========================================
   /** denoise/contrast/sharpness — 0-100, dikirim sebagai field tambahan
       di luar file (beda dari enhanceImage yang cuma mengirim file). */
-  async enhanceVideo(file: File, params: { denoise: number; contrast: number; sharpness: number }) {
+  async enhanceVideo(file: File, params: { denoise: number; contrast: number; sharpness: number; mode: 'fast' | 'quality' }) {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('denoise', String(params.denoise));
     formData.append('contrast', String(params.contrast));
     formData.append('sharpness', String(params.sharpness));
+    formData.append('mode', params.mode);
     return this.request<EnhanceVideoResult>('/enhance/video', {
       method: 'POST',
       body: formData,
