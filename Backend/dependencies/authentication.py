@@ -30,17 +30,25 @@ def get_current_user(
     )
 
 ):
+    # print("CREDENTIALS:", credentials)
+
     if credentials is None:
         raise HTTPException(
             status_code=401,
             detail="Authorization header missing."
         )
 
+    # print("SCHEME:", credentials.scheme)
+    # print("TOKEN:", credentials.credentials)
+
     token = credentials.credentials
+
+    # print("TOKEN :", token)
 
     payload = decode_access_token(
         token
     )
+    # print("PAYLOAD :", payload)
 
     if payload is None:
 

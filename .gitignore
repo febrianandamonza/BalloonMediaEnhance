@@ -226,6 +226,7 @@ __marimo__/
 Backend/storage
 Backend/output
 Backend/input
+Backend/streams/
 
 # Log
 *.log
