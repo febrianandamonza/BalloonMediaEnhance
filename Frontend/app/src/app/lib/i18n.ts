@@ -514,8 +514,8 @@ export const EN: Record<string, string> = {
   'Sampai': 'To',
   'Bagian Laporan': 'Report Sections',
   'GeoInt Visualisation': 'GeoInt Visualisation',
-  'Peta taktis di atas basemap Esri dengan proyeksi pandang kamera.':
-    'Tactical map over an Esri basemap with camera field-of-view projection.',
+  'Peta taktis di atas basemap dengan proyeksi pandang kamera.':
+    'Tactical map over an basemap with camera field-of-view projection.',
   'Ekspor KML': 'Export KML',
   'Ekspor GPX': 'Export GPX',
   'Tandai Titik': 'Mark Point',

@@ -1,8 +1,8 @@
 'use client';
 /* =====================================================================
-   ESRI BASEMAP — peta taktis GeoInt
+    BASEMAP — peta taktis GeoInt
    ---------------------------------------------------------------------
-   Basemap memakai layanan ubin publik ArcGIS Online milik Esri. Pustaka
+   Basemap memakai layanan ubin publik ArcGIS Online milik . Pustaka
    peta (Leaflet) ikut dibundel dari node_modules, bukan dari CDN, jadi
    berkas program tidak bergantung pada penyedia mana pun.
 
@@ -290,7 +290,7 @@ export default function EsriMap({
       if (failCount.current === 4) {
         setDegraded(true);
         onFallbackRef.current?.(
-          'Layanan ubin Esri tidak terjangkau — peta beralih ke Grid Referensi Lokal.',
+          'Layanan ubin tidak terjangkau — peta beralih ke Grid Referensi Lokal.',
         );
         if (baseRef.current) map.removeLayer(baseRef.current);
         if (refRef.current) { map.removeLayer(refRef.current); refRef.current = null; }

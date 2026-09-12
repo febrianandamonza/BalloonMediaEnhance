@@ -1083,7 +1083,7 @@ export function GeoVisualizationPage() {
           icon={<Map size={22} />}
           title={t('GeoInt Visualisation')}
           code="1.3b"
-          description={t('Peta taktis di atas basemap Esri dengan proyeksi pandang kamera.')}
+          description={t('Peta taktis di atas basemap dengan proyeksi pandang kamera.')}
           actions={
             <>
               <button className="btn btn-secondary sheen" onClick={() => exportTargets('KML')}>
