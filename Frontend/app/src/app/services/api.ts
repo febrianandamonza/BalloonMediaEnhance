@@ -135,6 +135,29 @@ export interface TetherCableMonitorRecord extends TetherCableMonitorPayload {
   updated_at: string;
 }
 
+// ==========================================
+// MOORING AVAILABILITY MONITOR
+// ==========================================
+export interface MooringAvailabilityMonitorPayload {
+  wind_speed?: number | null;
+  winch_tension?: number | null;
+  helium_pressure?: number | null;
+  ambient_temperature?: number | null;
+  backup_battery_voltage?: number | null;
+  backup_battery_percentage?: number | null;
+  emergency_inverter_status?: string | null;
+  lightning_protection_status?: string | null;
+  optical_link_eop?: number | null;
+  description?: string | null;
+}
+
+export interface MooringAvailabilityMonitorRecord extends MooringAvailabilityMonitorPayload {
+  id: string;
+  folder_path: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Satu baris dari respons GET /api/v1/locations — opsi lokasi misi pada
     formulir Misi Baru (FlightInfoPage). */
 export interface LocationRecord {
@@ -970,6 +993,41 @@ class ApiService {
 
   async getTetherCableMonitorById(id: string) {
     return this.request<TetherCableMonitorRecord>(`/tether-cable-monitor/${id}`);
+  }
+
+  // ==========================================
+  // MOORING AVAILABILITY MONITOR
+  // ==========================================
+  async createMooringAvailabilityMonitor(payload: MooringAvailabilityMonitorPayload, file: File) {
+    const formData = new FormData();
+    const entries: [string, string | number | null | undefined][] = [
+      ['wind_speed', payload.wind_speed],
+      ['winch_tension', payload.winch_tension],
+      ['helium_pressure', payload.helium_pressure],
+      ['ambient_temperature', payload.ambient_temperature],
+      ['backup_battery_voltage', payload.backup_battery_voltage],
+      ['backup_battery_percentage', payload.backup_battery_percentage],
+      ['emergency_inverter_status', payload.emergency_inverter_status],
+      ['lightning_protection_status', payload.lightning_protection_status],
+      ['optical_link_eop', payload.optical_link_eop],
+      ['description', payload.description],
+    ];
+    entries.forEach(([key, value]) => {
+      if (value !== null && value !== undefined) formData.append(key, String(value));
+    });
+    formData.append('image', file);
+    return this.request<MooringAvailabilityMonitorRecord>('/mooring-availability-monitor', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async getMooringAvailabilityMonitors() {
+    return this.request<MooringAvailabilityMonitorRecord[]>('/mooring-availability-monitor');
+  }
+
+  async getMooringAvailabilityMonitorById(id: string) {
+    return this.request<MooringAvailabilityMonitorRecord>(`/mooring-availability-monitor/${id}`);
   }
 
   // ==========================================

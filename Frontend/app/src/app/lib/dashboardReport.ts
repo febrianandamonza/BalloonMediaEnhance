@@ -266,3 +266,299 @@ export function generateDashboardPdf(data: DashboardReportData, t: (s: string) =
   const filenameStamp = `${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}`;
   doc.save(`dashboard-${data.stationCode}-${filenameStamp}.pdf`);
 }
+
+/* =====================================================================
+   LAPORAN DIGITAL REPORTING — seluruh halaman
+   ---------------------------------------------------------------------
+   Dipanggil dari ReportingPage (Digital Reporting) lewat import() dinamis,
+   sama seperti generateDashboardPdf — memakai ulang palet & helper di
+   atas berkas ini, termasuk ReportMissionRow/ReportCompletedMissionRow/
+   badgeMeta/missionDetail yang tadinya khusus dipakai generateDashboardPdf.
+   Mencakup seluruh seksi Digital Reporting (simulasi, misi, Tether,
+   Mooring) — bukan cuma Tether/Mooring seperti versi sebelumnya, karena
+   Filter & Export kini bersifat general untuk satu halaman penuh.
+   ===================================================================== */
+
+export interface ReportTetherRow {
+  createdAt: number;
+  operatingVoltage: number | null;
+  loadCurrent: number | null;
+  insulationResistance: number | null;
+  conductorContinuity: string | null;
+  opticalSnr: number | null;
+  opticalAttenuation: number | null;
+  sheathTemperature: number | null;
+  kevlarTension: number | null;
+  description: string | null;
+}
+
+export interface ReportMooringRow {
+  createdAt: number;
+  windSpeed: number | null;
+  winchTension: number | null;
+  heliumPressure: number | null;
+  ambientTemperature: number | null;
+  backupBatteryVoltage: number | null;
+  backupBatteryPercentage: number | null;
+  emergencyInverterStatus: string | null;
+  lightningProtectionStatus: string | null;
+  opticalLinkEop: number | null;
+  description: string | null;
+}
+
+export interface ReportingReportData {
+  station: string;
+  stationCode: string;
+  lang: Lang;
+  dateFrom: string; // yyyy-mm-dd, '' = tak dibatasi
+  dateTo: string;
+  simulationTotal: number;
+  mediaCount: number;
+  mediaSizeMb: number;
+  missions: ReportMissionRow[];
+  missionStatusCounts: { Planned: number; Flight: number; Done: number };
+  completedMissions: ReportCompletedMissionRow[];
+  tether: ReportTetherRow[];
+  mooring: ReportMooringRow[];
+}
+
+function dateRangeLabel(dateFrom: string, dateTo: string, t: (s: string) => string): string {
+  const from = dateFrom || t('Awal');
+  const to = dateTo || t('Sekarang');
+  return `${t('Rentang Tanggal')}: ${from} — ${to}`;
+}
+
+export function generateReportingPdf(data: ReportingReportData, t: (s: string) => string): void {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const now = Date.now();
+
+  /* ---- Kop laporan ---- */
+  setFill(doc, HEADER_BG);
+  doc.rect(0, 0, pageWidth, 88, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(17);
+  doc.text(t('Digital Reporting'), MARGIN, 38);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10.5);
+  doc.text(t('Laporan Ringkasan'), MARGIN, 56);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.text(`${data.station} (${data.stationCode})`, pageWidth - MARGIN, 38, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`${fullTimestamp(now, data.lang)} WIB`, pageWidth - MARGIN, 54, { align: 'right' });
+
+  let y = 88 + 22;
+  setText(doc, MUTED);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(dateRangeLabel(data.dateFrom, data.dateTo, t), MARGIN, y);
+  y += 22;
+
+  /* ---- Tile statistik ---- */
+  const tileGap = 16;
+  const tileW = (pageWidth - MARGIN * 2 - tileGap) / 2;
+  const tileH = 58;
+  drawTile(doc, MARGIN, y, tileW, tileH, String(data.simulationTotal), t('Total Simulasi Dibuat'), ACCENT);
+  drawTile(
+    doc, MARGIN + tileW + tileGap, y, tileW, tileH,
+    String(data.mediaCount), `${t('Media Tersimpan')} · ${data.mediaSizeMb.toLocaleString('id-ID')} MB`, SUCCESS,
+  );
+  y += tileH + 26;
+
+  /* ---- Misi Sedang Terbang ---- */
+  y = ensureSpace(doc, y, 40, pageHeight);
+  setText(doc, INK);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12.5);
+  doc.text(t('Misi Sedang Terbang'), MARGIN, y);
+  y += 14;
+
+  if (data.missions.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    setText(doc, MUTED);
+    doc.text(t('Tidak ada misi berstatus Flight saat ini.'), MARGIN, y + 6);
+    y += 26;
+  } else {
+    autoTable(doc, {
+      startY: y,
+      margin: { left: MARGIN, right: MARGIN },
+      head: [[t('Misi'), t('Kode'), t('Pemimpin'), t('Status'), t('Keterangan')]],
+      body: data.missions.map(m => [
+        m.name, m.code, m.leader, badgeMeta(m.badge, t).label, missionDetail(m, t),
+      ]),
+      theme: 'grid',
+      styles: { fontSize: 9, textColor: [...INK], cellPadding: 6 },
+      headStyles: { fillColor: [...HEADER_BG], textColor: 255, fontStyle: 'bold' },
+      columnStyles: { 3: { cellWidth: 88, halign: 'center' } },
+      didParseCell: (hook) => {
+        if (hook.section !== 'body' || hook.column.index !== 3) return;
+        const m = data.missions[hook.row.index];
+        if (!m) return;
+        const { color } = badgeMeta(m.badge, t);
+        hook.cell.styles.fillColor = [...color];
+        hook.cell.styles.textColor = [255, 255, 255];
+        hook.cell.styles.fontStyle = 'bold';
+      },
+    });
+    y = ((doc as DocWithAutoTable).lastAutoTable?.finalY ?? y + 20) + 26;
+  }
+
+  /* ---- Misi per Status ---- */
+  y = ensureSpace(doc, y, 80, pageHeight);
+  setText(doc, INK);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12.5);
+  doc.text(t('Misi per Status'), MARGIN, y);
+  y += 14;
+
+  const statusGap = 12;
+  const statusW = (pageWidth - MARGIN * 2 - statusGap * 2) / 3;
+  const statusH = 50;
+  drawTile(doc, MARGIN, y, statusW, statusH, String(data.missionStatusCounts.Planned), t('Planned'), WARNING);
+  drawTile(doc, MARGIN + statusW + statusGap, y, statusW, statusH, String(data.missionStatusCounts.Flight), t('Flight'), ACCENT);
+  drawTile(doc, MARGIN + (statusW + statusGap) * 2, y, statusW, statusH, String(data.missionStatusCounts.Done), t('Done'), SUCCESS);
+  y += statusH + 26;
+
+  /* ---- Misi Selesai ---- */
+  y = ensureSpace(doc, y, 40, pageHeight);
+  setText(doc, INK);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12.5);
+  doc.text(t('Misi Selesai'), MARGIN, y);
+  y += 14;
+
+  if (data.completedMissions.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    setText(doc, MUTED);
+    doc.text(t('Belum ada misi yang selesai.'), MARGIN, y + 6);
+    y += 26;
+  } else {
+    autoTable(doc, {
+      startY: y,
+      margin: { left: MARGIN, right: MARGIN },
+      head: [[t('Misi'), t('Kode'), t('Pemimpin'), t('Selesai Pada')]],
+      body: data.completedMissions.map(m => [
+        m.name, m.code, m.leader, fullTimestamp(m.completedAt, data.lang),
+      ]),
+      theme: 'grid',
+      styles: { fontSize: 9, textColor: [...INK], cellPadding: 6 },
+      headStyles: { fillColor: [...HEADER_BG], textColor: 255, fontStyle: 'bold' },
+      didParseCell: (hook) => {
+        if (hook.section !== 'body' || hook.column.index !== 3) return;
+        hook.cell.styles.textColor = [...SUCCESS];
+        hook.cell.styles.fontStyle = 'bold';
+      },
+    });
+    y = ((doc as DocWithAutoTable).lastAutoTable?.finalY ?? y + 20) + 26;
+  }
+
+  /* ---- Tether Cable Monitoring ---- */
+  y = ensureSpace(doc, y, 40, pageHeight);
+  setText(doc, INK);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12.5);
+  doc.text(t('Tether Cable Monitoring'), MARGIN, y);
+  y += 14;
+
+  if (data.tether.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    setText(doc, MUTED);
+    doc.text(t('Belum ada data'), MARGIN, y + 6);
+    y += 26;
+  } else {
+    autoTable(doc, {
+      startY: y,
+      margin: { left: MARGIN, right: MARGIN },
+      head: [[t('Waktu'), t('Kontinuitas'), t('Parameter'), t('Catatan')]],
+      body: data.tether.map(r => [
+        fullTimestamp(r.createdAt, data.lang),
+        r.conductorContinuity ?? '—',
+        `${r.operatingVoltage ?? '—'} V · ${r.loadCurrent ?? '—'} A · ${r.insulationResistance ?? '—'} MΩ · ${r.opticalSnr ?? '—'} dB`,
+        r.description ?? '—',
+      ]),
+      theme: 'grid',
+      styles: { fontSize: 9, textColor: [...INK], cellPadding: 6 },
+      headStyles: { fillColor: [...HEADER_BG], textColor: 255, fontStyle: 'bold' },
+      columnStyles: { 1: { cellWidth: 70, halign: 'center' } },
+      didParseCell: (hook) => {
+        if (hook.section !== 'body' || hook.column.index !== 1) return;
+        const r = data.tether[hook.row.index];
+        if (!r) return;
+        if (r.conductorContinuity === 'TERSAMBUNG') {
+          hook.cell.styles.fillColor = [...SUCCESS];
+          hook.cell.styles.textColor = [255, 255, 255];
+          hook.cell.styles.fontStyle = 'bold';
+        } else if (r.conductorContinuity === 'PUTUS') {
+          hook.cell.styles.fillColor = [...DANGER];
+          hook.cell.styles.textColor = [255, 255, 255];
+          hook.cell.styles.fontStyle = 'bold';
+        }
+      },
+    });
+    y = ((doc as DocWithAutoTable).lastAutoTable?.finalY ?? y + 20) + 26;
+  }
+
+  /* ---- Mooring Availability Monitoring ---- */
+  y = ensureSpace(doc, y, 40, pageHeight);
+  setText(doc, INK);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12.5);
+  doc.text(t('Mooring Availability Monitoring'), MARGIN, y);
+  y += 14;
+
+  if (data.mooring.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    setText(doc, MUTED);
+    doc.text(t('Belum ada data'), MARGIN, y + 6);
+    y += 26;
+  } else {
+    autoTable(doc, {
+      startY: y,
+      margin: { left: MARGIN, right: MARGIN },
+      head: [[t('Waktu'), t('Status'), t('Parameter'), t('Catatan')]],
+      body: data.mooring.map(r => [
+        fullTimestamp(r.createdAt, data.lang),
+        `${t('Inverter')}: ${r.emergencyInverterStatus ?? '—'}\n${t('Petir')}: ${r.lightningProtectionStatus ?? '—'}`,
+        `${r.windSpeed ?? '—'} km/h · ${r.winchTension ?? '—'} N · ${r.heliumPressure ?? '—'} bar · ${r.ambientTemperature ?? '—'} °C`,
+        r.description ?? '—',
+      ]),
+      theme: 'grid',
+      styles: { fontSize: 9, textColor: [...INK], cellPadding: 6 },
+      headStyles: { fillColor: [...HEADER_BG], textColor: 255, fontStyle: 'bold' },
+    });
+    y = ((doc as DocWithAutoTable).lastAutoTable?.finalY ?? y + 20) + 26;
+  }
+
+  /* ---- Footer tiap halaman ---- */
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    setDraw(doc, TILE_BORDER);
+    doc.setLineWidth(0.5);
+    doc.line(MARGIN, pageHeight - 40, pageWidth - MARGIN, pageHeight - 40);
+
+    setText(doc, MUTED);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text(
+      `${t('Dihasilkan otomatis dari data operasional stasiun')} ${data.station} · ${fullTimestamp(now, data.lang)} WIB`,
+      MARGIN, pageHeight - 26,
+    );
+    doc.text(`${i} / ${pageCount}`, pageWidth - MARGIN, pageHeight - 26, { align: 'right' });
+  }
+
+  const stamp = new Date(now);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const filenameStamp = `${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}`;
+  doc.save(`laporan-digital-reporting-${data.stationCode}-${filenameStamp}.pdf`);
+}

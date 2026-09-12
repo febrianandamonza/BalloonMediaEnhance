@@ -7,13 +7,16 @@ import { useApp } from '../../context';
 import {
   PageHead, OfflineNotice, Metric, MetricRow, SectionHead, KVList,
   Sparkline, EmptyState, Segmented, Bar,
-  ConfigSelect, ConfigToggle,
+  ConfigToggle,
 } from '../../components/ui';
 import { salinTeks } from '../../lib/clipboard';
-import { Switch } from '../../components/fx';
+import { Switch, CountUp, Reveal, SpotlightCard, AreaSpark } from '../../components/fx';
 import api, {
+  API_BASE_MEDIA,
   type FlightSimulationRecord, type LocationRecord, type BalloonRecord, type OperatorRecord,
   type FlightMissionRecord, type FlightInformationRecord,
+  type MooringAvailabilityMonitorPayload, type MooringAvailabilityMonitorRecord,
+  type DashboardSimulationRecord, type TetherCableMonitorRecord,
 } from '../../services/api';
 /* Katalog basemap dan geodesi diambil dari lib/geo — modul murni tanpa
    Leaflet, agar bundel server tidak ikut memuat pustaka peta. */
@@ -32,10 +35,11 @@ const EsriMap = dynamic(() => import('../../components/EsriMap'), {
   ),
 });
 import {
-  FileBarChart2, FileText, FileSpreadsheet, Download, CalendarRange,
-  Map, Target, Layers, Crosshair, MapPin, Navigation,
+  FileBarChart2, FileText, Download,
+  Map, Target, Layers, Crosshair, MapPin, Navigation, Image as ImageIcon,
   BellRing, Plus, Check, Filter, AlertTriangle, ShieldAlert, Info,
-  PlaneTakeoff, ClipboardCheck, Timer, Users2, Anchor, Wind, Gauge,
+  PlaneTakeoff, ClipboardCheck, Timer, Users2, Anchor, Wind, Gauge, Cable,
+  MonitorPlay, ArrowUpRight,
   Thermometer, BatteryCharging, Zap, CloudLightning, Waves,
   FlaskConical, Play, CircleCheck, CircleX, CircleAlert, Radio,
   RefreshCw, Eye, Activity, Ruler, Copy, Pencil, Trash2,
@@ -81,62 +85,433 @@ function Tile({ icon, accent, label, value, foot }: {
   );
 }
 
-/* Kotak tanggal terkendali — dipakai pada penyaring rentang laporan. */
-function DateBox({ initial, id }: { initial: string; id?: string }) {
-  const [v, setV] = useState(initial);
+/** Paginasi klien untuk daftar riwayat (dipakai tabel Tether & Mooring
+    di ReportingPage) — logika identik yang sudah dipakai "Misi Selesai"
+    di fungsi yang sama, diekstrak karena dipakai 2×. */
+function usePagedRows<T>(rows: T[], pageSize: number) {
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  useEffect(() => { setPage(p => Math.min(p, pageCount)); }, [pageCount]);
+  const paged = rows.slice((page - 1) * pageSize, page * pageSize);
+  const pageWindow = useMemo(() => {
+    const span = Math.min(3, pageCount);
+    let start = Math.min(Math.max(1, page - 1), pageCount - span + 1);
+    start = Math.max(1, start);
+    return Array.from({ length: span }, (_, i) => start + i);
+  }, [page, pageCount]);
+  return { page, setPage, pageCount, paged, pageWindow };
+}
+
+function PaginationBar({ page, pageCount, pageWindow, setPage, t }: {
+  page: number; pageCount: number; pageWindow: number[];
+  setPage: (updater: number | ((p: number) => number)) => void;
+  t: (s: string) => string;
+}) {
   return (
-    <input
-      id={id}
-      className="form-input font-mono"
-      type="date"
-      value={v}
-      onChange={e => setV(e.target.value)}
-    />
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      marginTop: 10, padding: '8px 12px',
+      background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+      borderRadius: 'var(--radius-md)',
+    }}>
+      <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+        {t('Halaman')} {page} {t('dari')} {pageCount}
+      </span>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <button
+          className="btn btn-secondary btn-sm"
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          disabled={page <= 1}
+          aria-label={t('Halaman sebelumnya')}
+        >
+          <ChevronLeft size={12} />
+        </button>
+        {pageWindow.map(p => (
+          <button
+            key={p}
+            className={`btn btn-sm ${p === page ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setPage(p)}
+            aria-current={p === page ? 'page' : undefined}
+            aria-label={`${t('Halaman')} ${p}`}
+          >
+            {p}
+          </button>
+        ))}
+        <button
+          className="btn btn-secondary btn-sm"
+          onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+          disabled={page >= pageCount}
+          aria-label={t('Halaman berikutnya')}
+        >
+          <ChevronRight size={12} />
+        </button>
+      </div>
+    </div>
   );
 }
 
 /* =====================================================================
    1.3a — DIGITAL REPORTING
+   ---------------------------------------------------------------------
+   Ringkasan operasional gaya Dashboard — logika & markup diporting dari
+   DashboardPage.tsx (StatCard, FlightMissionsCard, derivasi metrik misi
+   dari /dashboard/simulations), ditambah dua kartu statistik baru untuk
+   Tether Cable Monitoring & Mooring Availability Monitoring. Tidak ada
+   lapisan Filter seperti Dashboard — operator tidak memintanya di sini.
    ===================================================================== */
-const REPORT_TEMPLATES = [
-  { id: 'daily', name: 'Laporan Operasi Harian', desc: 'Rekapitulasi misi, jam terbang, temuan analitik, dan status perangkat dalam satu hari operasi.', sections: 7 },
-  { id: 'weekly', name: 'Rekapitulasi Mingguan', desc: 'Agregasi tujuh hari: tren kepadatan, jumlah deteksi, ketersediaan sistem, dan insiden.', sections: 9 },
-  { id: 'incident', name: 'Laporan Insiden', desc: 'Kronologi peristiwa, bukti tangkapan layar, koordinat, dan tindakan penanganan.', sections: 6 },
-  { id: 'flight', name: 'Laporan Penerbangan', desc: 'Logbook per misi: takeoff, landing, ketinggian, konsumsi helium, dan tim operator.', sections: 8 },
-  { id: 'crowd', name: 'Analisis Kepadatan Massa', desc: 'Grafik kepadatan per zona, puncak, rata-rata, dan pelanggaran ambang batas.', sections: 5 },
-  { id: 'maintenance', name: 'Laporan Pemeliharaan', desc: 'Hasil diagnostik kabel penambat, mooring, dan gimbal beserta rekomendasi tindakan.', sections: 6 },
-];
+function elapsedHMS(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
 
-const CLASSIFICATIONS = ['BIASA', 'TERBATAS', 'RAHASIA', 'SANGAT RAHASIA'];
+/** Ambang "mendekati jadwal take off" untuk misi Planned — 15 menit,
+    sama seperti Dashboard. */
+const TAKEOFF_DUE_SOON_MS = 15 * 60_000;
+
+function StatCard({
+  icon, accent, label, value, sub, data, delay = 0,
+}: {
+  icon: React.ReactNode; accent: string; label: string;
+  value: React.ReactNode; sub: string; data: number[];
+  delay?: 0 | 1 | 2 | 3;
+}) {
+  return (
+    <Reveal delay={delay}>
+      <SpotlightCard edge className="dash-stat">
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <span
+            className="ds-ico"
+            style={{
+              background: `color-mix(in srgb, ${accent} 13%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${accent} 24%, transparent)`,
+              color: accent,
+            }}
+          >
+            {icon}
+          </span>
+          <span style={{ minWidth: 0, flex: 1 }}>
+            <span className="ds-label">{label}</span>
+            <span className="ds-value" style={{ color: accent }}>{value}</span>
+            <span className="ds-sub">{sub}</span>
+          </span>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <AreaSpark data={data} color={accent} height={44} />
+        </div>
+      </SpotlightCard>
+    </Reveal>
+  );
+}
+
+function FlightMissionsCard({
+  missions, t, setCurrentPage, loading,
+}: {
+  missions: {
+    code: string; name: string; leader: string; altitude: number;
+    badge: 'flight' | 'due-soon' | 'overdue' | 'landing-overdue';
+    elapsed?: string;
+    minutes?: number;
+  }[];
+  t: (s: string) => string;
+  setCurrentPage: (page: string) => void;
+  loading?: boolean;
+}) {
+  return (
+    <GlassCard tilt={false}>
+      <SectionHead
+        icon={<PlaneTakeoff size={15} />}
+        title={t('Misi Sedang Terbang')}
+        sub={`${loading ? '—' : missions.length} ${t('misi terbang / mendekati jadwal')}`}
+        right={
+          <button className="btn btn-ghost btn-sm" onClick={() => setCurrentPage('flight-info')}>
+            Kelola <ArrowUpRight size={12} />
+          </button>
+        }
+      />
+      {missions.length === 0 ? (
+        <p className="sc-foot" style={{ padding: '4px 2px' }}>
+          {loading ? t('Memuat…') : t('Tidak ada misi berstatus Flight saat ini.')}
+        </p>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8 }}>
+          {missions.map(m => (
+            <button
+              key={m.code}
+              onClick={() => setCurrentPage('flight-info')}
+              className="select-card on"
+            >
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'var(--accent-primary)' }}>
+                  <PlaneTakeoff size={13} />
+                  <span className="sc-title" style={{ margin: 0 }}>{m.name}</span>
+                </span>
+                {m.badge === 'flight' && (
+                  <span className="lic-status on" style={{ fontSize: 9, padding: '3px 8px' }}>
+                    <PlaneTakeoff size={10} /> FLIGHT
+                  </span>
+                )}
+                {m.badge === 'due-soon' && (
+                  <span
+                    className="lic-status"
+                    style={{
+                      fontSize: 9, padding: '3px 8px',
+                      background: 'var(--warning-bg)', color: 'var(--warning-400)',
+                      borderColor: 'rgba(251,191,36,0.22)',
+                    }}
+                  >
+                    <Timer size={10} /> {t('SEGERA')}
+                  </span>
+                )}
+                {m.badge === 'overdue' && (
+                  <span className="lic-status off" style={{ fontSize: 9, padding: '3px 8px' }}>
+                    <AlertTriangle size={10} /> {t('TERLAMBAT')}
+                  </span>
+                )}
+                {m.badge === 'landing-overdue' && (
+                  <span className="lic-status off" style={{ fontSize: 9, padding: '3px 8px' }}>
+                    <AlertTriangle size={10} /> {t('TERLAMBAT MENDARAT')}
+                  </span>
+                )}
+              </span>
+              <span className="sc-foot" style={{ fontFamily: 'var(--font-code)' }}>
+                {m.code} · {m.leader}
+              </span>
+              <span className="sc-foot">
+                {(m.badge === 'flight' || m.badge === 'landing-overdue') && `${t('Terbang')} ${m.elapsed} · ${m.altitude} m`}
+                {m.badge === 'due-soon' && `${t('Take off dalam')} ${m.minutes} ${t('menit')} · ${m.altitude} m`}
+                {m.badge === 'overdue' && `${t('Terlambat take off')} ${m.minutes} ${t('menit')} · ${m.altitude} m`}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </GlassCard>
+  );
+}
 
 export function ReportingPage() {
-  const { pushToast, notify, account, t } = useApp();
-  const [template, setTemplate] = useState(REPORT_TEMPLATES[0].id);
-  const [format, setFormat] = useState<'pdf' | 'xlsx'>('pdf');
-  const [classification, setClassification] = useState('TERBATAS');
-  const [generating, setGenerating] = useState(false);
+  const { t, lang, setCurrentPage, account } = useApp();
 
-  const selected = REPORT_TEMPLATES.find(tpl => tpl.id === template)!;
+  const [dashboardSimulations, setDashboardSimulations] = useState<DashboardSimulationRecord[]>([]);
+  const [dashLoading, setDashLoading] = useState(true);
+  const [now, setNow] = useState(() => Date.now());
+  const [tetherHistory, setTetherHistory] = useState<TetherCableMonitorRecord[]>([]);
+  const [mooringHistory, setMooringHistory] = useState<MooringAvailabilityMonitorRecord[]>([]);
 
-  const generate = () => {
-    setGenerating(true);
-    window.setTimeout(() => {
-      setGenerating(false);
-      pushToast({
-        tone: 'success',
-        title: 'Laporan berhasil dibuat',
-        detail: `${selected.name} · format ${format.toUpperCase()} · klasifikasi ${classification} · watermark ${account?.stationCode ?? 'GCS'}.`,
+  /* Filter — rentang tanggal berdasarkan created_at, berlaku general untuk
+     seluruh halaman (simulasi/misi, Tether, Mooring) dan dipakai juga
+     sebagai rentang Export to PDF. */
+  interface ReportFilterState { dateFrom: string; dateTo: string; }
+  const [filter, setFilter] = useState<ReportFilterState>({ dateFrom: '', dateTo: '' });
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFilterOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [filterOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      api.getDashboardSimulations().catch(() => []),
+      api.getTetherCableMonitors().catch(() => []),
+      api.getMooringAvailabilityMonitors().catch(() => []),
+    ]).then(([simRows, tetherRows, mooringRows]) => {
+      if (cancelled) return;
+      setDashboardSimulations(simRows);
+      setTetherHistory(tetherRows);
+      setMooringHistory(mooringRows);
+    }).finally(() => { if (!cancelled) setDashLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const filteredSimulations = useMemo(() => {
+    const from = filter.dateFrom ? new Date(`${filter.dateFrom}T00:00:00`).getTime() : null;
+    const to = filter.dateTo ? new Date(`${filter.dateTo}T23:59:59`).getTime() : null;
+    if (from == null && to == null) return dashboardSimulations;
+    return dashboardSimulations.filter(sim => {
+      if (!sim.created_at) return false;
+      const ts = new Date(sim.created_at).getTime();
+      if (from != null && ts < from) return false;
+      if (to != null && ts > to) return false;
+      return true;
+    });
+  }, [dashboardSimulations, filter]);
+
+  const allMissions = useMemo(() => filteredSimulations.flatMap(sim => sim.missions ?? []), [filteredSimulations]);
+
+  const missionStatusCounts = useMemo(() => {
+    const counts = { Planned: 0, Flight: 0, Done: 0 };
+    for (const m of allMissions) {
+      const name = m.mission_status?.name;
+      if (name === 'Planned' || name === 'Flight' || name === 'Done') counts[name] += 1;
+    }
+    return counts;
+  }, [allMissions]);
+
+  const flyingMissions = useMemo(() => {
+    const rows: {
+      code: string; name: string; leader: string; altitude: number;
+      badge: 'flight' | 'due-soon' | 'overdue' | 'landing-overdue';
+      elapsed?: string;
+      minutes?: number;
+    }[] = [];
+
+    for (const m of allMissions) {
+      const status = m.mission_status?.name;
+      const info = m.flight_information;
+      const takeoff = info?.takeoff_time ? new Date(info.takeoff_time).getTime() : null;
+      const landing = info?.landing_time ? new Date(info.landing_time).getTime() : null;
+      const altitude = info?.max_altitude != null ? Number(info.max_altitude) : 0;
+      const code = m.mission_code ?? String(m.id);
+      const name = m.mission_name ?? m.mission_code ?? String(m.id);
+      const leader = info?.mission_leader ?? '—';
+
+      if (status === 'Flight') {
+        const overdueLanding = landing != null && now > landing;
+        rows.push({
+          code, name, leader, altitude,
+          badge: overdueLanding ? 'landing-overdue' : 'flight',
+          elapsed: takeoff ? elapsedHMS(now - takeoff) : '00:00:00',
+        });
+      } else if (status === 'Planned' && takeoff != null) {
+        const diff = takeoff - now;
+        if (diff > TAKEOFF_DUE_SOON_MS) continue;
+        if (diff >= 0) {
+          rows.push({ code, name, leader, altitude, badge: 'due-soon', minutes: Math.max(1, Math.ceil(diff / 60_000)) });
+        } else {
+          rows.push({ code, name, leader, altitude, badge: 'overdue', minutes: Math.max(1, Math.ceil(-diff / 60_000)) });
+        }
+      }
+    }
+    return rows;
+  }, [allMissions, now]);
+
+  const simulationTotal = filteredSimulations.length;
+  const mediaCount = useMemo(
+    () => allMissions.reduce((n, m) => n + (m.flight_information?.media?.length ?? 0), 0),
+    [allMissions],
+  );
+  const mediaSizeMb = useMemo(() => {
+    let total = 0;
+    for (const m of allMissions) {
+      for (const md of m.flight_information?.media ?? []) total += md.file_size ?? 0;
+    }
+    return Math.round(total / (1024 ** 2));
+  }, [allMissions]);
+
+  const completedMissions = useMemo(() => {
+    const rows: { id: string; code: string; name: string; leader: string; completedAt: number }[] = [];
+    for (const m of allMissions) {
+      if (m.mission_status?.name !== 'Done') continue;
+      const ts = m.updated_at ? new Date(m.updated_at).getTime()
+        : m.created_at ? new Date(m.created_at).getTime() : 0;
+      rows.push({
+        id: m.id,
+        code: m.mission_code ?? String(m.id),
+        name: m.mission_name ?? m.mission_code ?? String(m.id),
+        leader: m.flight_information?.mission_leader ?? '—',
+        completedAt: ts,
       });
-      notify({
-        title: 'Laporan berhasil dibuat',
-        detail: `${selected.name} · format ${format.toUpperCase()} · klasifikasi ${classification} · watermark ${account?.stationCode ?? 'GCS'}.`,
-        severity: 'informasi',
-        category: 'Sistem',
-        source: 'Digital Reporting',
-        page: 'reporting',
-        silent: true,
-      });
-    }, 1500);
+    }
+    return rows.sort((a, b) => b.completedAt - a.completedAt);
+  }, [allMissions]);
+
+  const COMPLETED_PAGE_SIZE = 5;
+  const [completedPage, setCompletedPage] = useState(1);
+  const completedPageCount = Math.max(1, Math.ceil(completedMissions.length / COMPLETED_PAGE_SIZE));
+  useEffect(() => {
+    setCompletedPage(p => Math.min(p, completedPageCount));
+  }, [completedPageCount]);
+  const pagedCompleted = completedMissions.slice(
+    (completedPage - 1) * COMPLETED_PAGE_SIZE,
+    completedPage * COMPLETED_PAGE_SIZE,
+  );
+  const completedPageWindow = useMemo(() => {
+    const span = Math.min(3, completedPageCount);
+    let start = Math.min(Math.max(1, completedPage - 1), completedPageCount - span + 1);
+    start = Math.max(1, start);
+    return Array.from({ length: span }, (_, i) => start + i);
+  }, [completedPage, completedPageCount]);
+
+  const simulationTrend = useMemo(() => series(29, 30, 20, 10, 0), []);
+  const mediaTrend = useMemo(() => series(53, 30, 180, 60, 0), []);
+
+  const filteredTether = useMemo(() => {
+    const from = filter.dateFrom ? new Date(`${filter.dateFrom}T00:00:00`).getTime() : null;
+    const to = filter.dateTo ? new Date(`${filter.dateTo}T23:59:59`).getTime() : null;
+    return tetherHistory.filter(r => {
+      const ts = new Date(r.created_at).getTime();
+      if (from != null && ts < from) return false;
+      if (to != null && ts > to) return false;
+      return true;
+    });
+  }, [tetherHistory, filter]);
+
+  const filteredMooring = useMemo(() => {
+    const from = filter.dateFrom ? new Date(`${filter.dateFrom}T00:00:00`).getTime() : null;
+    const to = filter.dateTo ? new Date(`${filter.dateTo}T23:59:59`).getTime() : null;
+    return mooringHistory.filter(r => {
+      const ts = new Date(r.created_at).getTime();
+      if (from != null && ts < from) return false;
+      if (to != null && ts > to) return false;
+      return true;
+    });
+  }, [mooringHistory, filter]);
+
+  const tetherPaged = usePagedRows(filteredTether, 5);
+  const mooringPaged = usePagedRows(filteredMooring, 5);
+
+  const exportReportPdf = async () => {
+    const { generateReportingPdf } = await import('../../lib/dashboardReport');
+    generateReportingPdf({
+      station: account?.station ?? '—',
+      stationCode: account?.stationCode ?? 'GCS',
+      lang,
+      dateFrom: filter.dateFrom,
+      dateTo: filter.dateTo,
+      simulationTotal,
+      mediaCount,
+      mediaSizeMb,
+      missions: flyingMissions,
+      missionStatusCounts,
+      completedMissions,
+      tether: filteredTether.map(r => ({
+        createdAt: new Date(r.created_at).getTime(),
+        operatingVoltage: r.operating_voltage ?? null,
+        loadCurrent: r.load_current ?? null,
+        insulationResistance: r.insulation_resistance ?? null,
+        conductorContinuity: r.conductor_continuity ?? null,
+        opticalSnr: r.optical_snr ?? null,
+        opticalAttenuation: r.optical_attenuation ?? null,
+        sheathTemperature: r.sheath_temperature ?? null,
+        kevlarTension: r.kevlar_tension ?? null,
+        description: r.description ?? null,
+      })),
+      mooring: filteredMooring.map(r => ({
+        createdAt: new Date(r.created_at).getTime(),
+        windSpeed: r.wind_speed ?? null,
+        winchTension: r.winch_tension ?? null,
+        heliumPressure: r.helium_pressure ?? null,
+        ambientTemperature: r.ambient_temperature ?? null,
+        backupBatteryVoltage: r.backup_battery_voltage ?? null,
+        backupBatteryPercentage: r.backup_battery_percentage ?? null,
+        emergencyInverterStatus: r.emergency_inverter_status ?? null,
+        lightningProtectionStatus: r.lightning_protection_status ?? null,
+        opticalLinkEop: r.optical_link_eop ?? null,
+        description: r.description ?? null,
+      })),
+    }, t);
   };
 
   return (
@@ -146,184 +521,255 @@ export function ReportingPage() {
           icon={<FileBarChart2 size={22} />}
           title={t('Digital Reporting')}
           code="1.3a"
-          description={t('Laporan misi otomatis dalam format PDF dan Excel berwatermark klasifikasi.')}
+          description={t('Ringkasan operasional stasiun: simulasi, status misi, dan kondisi kabel/mooring.')}
           actions={
-            <button className="btn btn-primary" onClick={generate} disabled={generating}>
-              {generating ? <><RefreshCw size={15} className="spin" /> {t('Menyusun…')}</> : <><FileText size={15} /> {t('Buat Laporan')}</>}
-            </button>
+            <>
+              <button
+                className={`btn ${(filter.dateFrom || filter.dateTo) ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setFilterOpen(true)}
+              >
+                <Filter size={15} /> {t('Filter')}
+              </button>
+              <button className="btn btn-secondary" onClick={exportReportPdf}>
+                <Download size={15} /> {t('Export to PDF')}
+              </button>
+            </>
           }
         />
 
-        <div className="lic-summary">
-          <Tile icon={<FileText size={19} />} accent="var(--accent-primary)" label={t('Templat Tersedia')} value={String(REPORT_TEMPLATES.length)} />
-          <Tile icon={<Download size={19} />} accent="var(--accent-emerald)" label={t('Laporan Bulan Ini')} value="34" foot={t('Juli 2026')} />
-          <Tile icon={<CalendarRange size={19} />} accent="var(--accent-secondary)" label={t('Jadwal Otomatis')} value="2 aktif" foot={t('harian & mingguan')} />
-          <Tile icon={<ShieldAlert size={19} />} accent="var(--accent-tertiary)" label={t('Klasifikasi Default')} value={classification} />
+        <div className="dash-stats" style={{ marginBottom: 16 }}>
+          <StatCard
+            icon={<FlaskConical size={20} />} accent="var(--accent-cyan)" delay={1}
+            label={t('Total Simulasi Dibuat')} value={dashLoading ? '—' : <CountUp to={simulationTotal} />}
+            sub={t('skenario go/no-go tercatat')} data={simulationTrend} />
+          <StatCard
+            icon={<MonitorPlay size={20} />} accent="var(--accent-emerald)" delay={2}
+            label={t('Media Tersimpan')} value={dashLoading ? '—' : <CountUp to={mediaCount} />}
+            sub={dashLoading ? '—' : `${mediaSizeMb.toLocaleString('id-ID')} MB total`} data={mediaTrend} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 16 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <GlassCard tilt={false}>
-              <SectionHead icon={<Layers size={15} />} title={t('Pilih Templat Laporan')} sub={`${selected.sections} bagian akan disertakan`} />
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 8 }}>
-                {REPORT_TEMPLATES.map(tpl => (
-                  <button
-                    key={tpl.id}
-                    onClick={() => setTemplate(tpl.id)}
-                    className={`select-card ${template === tpl.id ? 'on' : ''}`}
-                  >
-                    <span className="sc-title">{t(tpl.name)}</span>
-                    <span className="sc-desc">{t(tpl.desc)}</span>
-                    <span className="sc-foot">{tpl.sections} bagian</span>
-                  </button>
+        <GlassCard tilt={false} style={{ marginBottom: 16 }}>
+          <SectionHead
+            icon={<Cable size={15} />}
+            title={t('Tether Cable Monitoring & Mooring Availability Monitoring')}
+            sub={t('Daftar data pemeriksaan, mengikuti Filter tanggal di atas')}
+          />
+
+          <h4 style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-secondary)', margin: '4px 0 8px' }}>
+            {t('Tether Cable Monitoring')}
+          </h4>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>{t('Waktu')}</th><th>{t('Kontinuitas')}</th><th>{t('Parameter')}</th><th>{t('Catatan')}</th></tr></thead>
+              <tbody>
+                {dashLoading ? (
+                  <tr><td colSpan={4} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Memuat riwayat…')}</td></tr>
+                ) : tetherPaged.paged.length === 0 ? (
+                  <tr><td colSpan={4} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Belum ada data')}</td></tr>
+                ) : tetherPaged.paged.map(row => (
+                  <tr key={row.id}>
+                    <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>
+                      {fullTimestamp(new Date(row.created_at).getTime(), lang)}
+                    </td>
+                    <td>
+                      <span className={`badge ${row.conductor_continuity === 'TERSAMBUNG' ? 'badge-success' : row.conductor_continuity === 'PUTUS' ? 'badge-danger' : 'badge-neutral'}`}>
+                        {row.conductor_continuity ?? '—'}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      {row.operating_voltage ?? '—'} V · {row.load_current ?? '—'} A · {row.insulation_resistance ?? '—'} MΩ · {row.optical_snr ?? '—'} dB
+                    </td>
+                    <td style={{ fontSize: 12 }}>{row.description ?? '—'}</td>
+                  </tr>
                 ))}
-              </div>
-            </GlassCard>
+              </tbody>
+            </table>
+          </div>
+          {filteredTether.length > 0 && (
+            <PaginationBar
+              page={tetherPaged.page} pageCount={tetherPaged.pageCount}
+              pageWindow={tetherPaged.pageWindow} setPage={tetherPaged.setPage} t={t}
+            />
+          )}
+
+          <h4 style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-secondary)', margin: '18px 0 8px' }}>
+            {t('Mooring Availability Monitoring')}
+          </h4>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>{t('Waktu')}</th><th>{t('Status')}</th><th>{t('Parameter')}</th><th>{t('Catatan')}</th></tr></thead>
+              <tbody>
+                {dashLoading ? (
+                  <tr><td colSpan={4} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Memuat riwayat…')}</td></tr>
+                ) : mooringPaged.paged.length === 0 ? (
+                  <tr><td colSpan={4} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Belum ada data')}</td></tr>
+                ) : mooringPaged.paged.map(row => (
+                  <tr key={row.id}>
+                    <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>
+                      {fullTimestamp(new Date(row.created_at).getTime(), lang)}
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      <div>{t('Inverter')}: {row.emergency_inverter_status ?? '—'}</div>
+                      <div>{t('Petir')}: {row.lightning_protection_status ?? '—'}</div>
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      {row.wind_speed ?? '—'} km/h · {row.winch_tension ?? '—'} N · {row.helium_pressure ?? '—'} bar · {row.ambient_temperature ?? '—'} °C
+                    </td>
+                    <td style={{ fontSize: 12 }}>{row.description ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {filteredMooring.length > 0 && (
+            <PaginationBar
+              page={mooringPaged.page} pageCount={mooringPaged.pageCount}
+              pageWindow={mooringPaged.pageWindow} setPage={mooringPaged.setPage} t={t}
+            />
+          )}
+        </GlassCard>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 350px', gap: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <FlightMissionsCard missions={flyingMissions} t={t} setCurrentPage={setCurrentPage} loading={dashLoading} />
 
             <GlassCard tilt={false}>
-              <SectionHead icon={<FileText size={15} />} title={t('Riwayat Laporan')} sub={t('Enam laporan terakhir')} />
-              <div className="table-container">
-                <table>
-                  <thead><tr><th>{t('Judul')}</th><th>{t('Jenis')}</th><th>{t('Format')}</th><th>{t('Klasifikasi')}</th><th>{t('Dibuat')}</th><th style={{ textAlign: 'right' }}>{t('Aksi')}</th></tr></thead>
-                  <tbody>
-                    {[
-                      ['Laporan Operasi Harian — 27 Jul 2026', 'Harian', 'PDF', 'TERBATAS', '2026-07-27 12:00'],
-                      ['Analisis Kepadatan Zona A — Pekan 30', 'Analitik', 'XLSX', 'BIASA', '2026-07-27 09:15'],
-                      ['Laporan Penerbangan Misi #24', 'Penerbangan', 'PDF', 'TERBATAS', '2026-07-27 11:35'],
-                      ['Laporan Insiden — Geofence NW', 'Insiden', 'PDF', 'RAHASIA', '2026-07-26 14:22'],
-                      ['Rekapitulasi Mingguan — Pekan 29', 'Mingguan', 'XLSX', 'TERBATAS', '2026-07-21 08:00'],
-                      ['Laporan Pemeliharaan Tether', 'Pemeliharaan', 'PDF', 'BIASA', '2026-07-20 16:40'],
-                    ].map(([judul, jenis, fmt, klas, waktu]) => (
-                      <tr key={judul}>
-                        <td style={{ fontWeight: 600, fontSize: 12.5 }}>{judul}</td>
-                        <td><span className="badge badge-info">{jenis}</span></td>
-                        <td>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
-                            {fmt === 'PDF' ? <FileText size={13} /> : <FileSpreadsheet size={13} />} {fmt}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={`badge badge-${klas === 'RAHASIA' ? 'danger' : klas === 'TERBATAS' ? 'warning' : 'neutral'}`}>{klas}</span>
-                        </td>
-                        <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>{waktu}</td>
-                        <td>
-                          <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                            <button
-                              className="btn btn-ghost btn-sm"
-                              title={`Pratinjau ${judul}`}
-                              onClick={() => {
-                                pushToast({
-                                  tone: 'info',
-                                  title: 'Membuka pratinjau laporan',
-                                  detail: `${judul} — ${fmt}, klasifikasi ${klas}.`,
-                                });
-                                notify({
-                                  title: 'Membuka pratinjau laporan',
-                                  detail: `${judul} — ${fmt}, klasifikasi ${klas}.`,
-                                  severity: 'informasi',
-                                  category: 'Sistem',
-                                  source: 'Digital Reporting',
-                                  page: 'reporting',
-                                  silent: true,
-                                });
-                              }}
-                            >
-                              <Eye size={13} />
-                            </button>
-                            <button
-                              className="btn btn-ghost btn-sm"
-                              title={`Unduh ${judul}`}
-                              onClick={() => {
-                                pushToast({
-                                  tone: 'success',
-                                  title: 'Laporan diunduh',
-                                  detail: `${judul} disalin ke folder ekspor stasiun dalam format ${fmt}.`,
-                                });
-                                notify({
-                                  title: 'Laporan diunduh',
-                                  detail: `${judul} disalin ke folder ekspor stasiun dalam format ${fmt}.`,
-                                  severity: 'informasi',
-                                  category: 'Sistem',
-                                  source: 'Digital Reporting',
-                                  page: 'reporting',
-                                  silent: true,
-                                });
-                              }}
-                            >
-                              <Download size={13} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <SectionHead icon={<Activity size={15} />} title={t('Misi per Status')} sub={t('Distribusi status misi saat ini')} />
+              <div className="lic-summary" style={{ marginBottom: 0 }}>
+                <Tile icon={<ClipboardCheck size={19} />} accent="var(--warning-400)" label={t('Planned')} value={dashLoading ? '—' : String(missionStatusCounts.Planned)} foot={t('belum lepas landas')} />
+                <Tile icon={<PlaneTakeoff size={19} />} accent="var(--accent-primary)" label={t('Flight')} value={dashLoading ? '—' : String(missionStatusCounts.Flight)} foot={t('sedang berjalan')} />
+                <Tile icon={<CheckCheck size={19} />} accent="var(--accent-emerald)" label={t('Done')} value={dashLoading ? '—' : String(missionStatusCounts.Done)} foot={t('sudah selesai')} />
               </div>
             </GlassCard>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <GlassCard>
-              <SectionHead icon={<Filter size={15} />} title={t('Parameter Laporan')} />
-              <ConfigSelect label={"Rentang Waktu"} options={["Hari ini", "7 hari terakhir", "30 hari terakhir", "Rentang khusus"]} />
-              <div className="grid-2">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="lap-dari">{t('Dari')}</label>
-                  <DateBox id="lap-dari" initial="2026-07-27" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="lap-sampai">{t('Sampai')}</label>
-                  <DateBox id="lap-sampai" initial="2026-07-27" />
-                </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <GlassCard tilt={false}>
+              <SectionHead
+                icon={<CheckCheck size={15} />}
+                title={t('Misi Selesai')}
+                right={
+                  <button className="btn btn-ghost btn-sm" onClick={() => setCurrentPage('flight-info')}>
+                    Semua <ArrowUpRight size={12} />
+                  </button>
+                }
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {pagedCompleted.length === 0 ? (
+                  <p className="sc-foot" style={{ padding: '4px 2px' }}>{t('Belum ada misi yang selesai.')}</p>
+                ) : pagedCompleted.map(m => (
+                  <div key={m.id} className="alert-row" style={{ ['--al' as string]: 'var(--accent-emerald)' }}>
+                    <CheckCheck size={14} style={{ color: 'var(--accent-emerald)', flexShrink: 0, marginTop: 1 }} />
+                    <span style={{ minWidth: 0 }}>
+                      <span className="ar-msg">{m.name}</span>
+                      <span className="ar-meta">{m.leader} · {m.completedAt ? fullTimestamp(m.completedAt, lang) : '—'}</span>
+                    </span>
+                  </div>
+                ))}
               </div>
-              <div className="form-group">
-                <label className="form-label">{t('Format Berkas')}</label>
-                <Segmented
-                  full
-                  value={format}
-                  options={[
-                    { id: 'pdf', label: 'PDF', icon: <FileText size={13} /> },
-                    { id: 'xlsx', label: 'Excel', icon: <FileSpreadsheet size={13} /> },
-                  ]}
-                  onChange={setFormat}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">{t('Klasifikasi Dokumen')}</label>
-                <select className="form-select" value={classification} onChange={e => setClassification(e.target.value)}>
-                  {CLASSIFICATIONS.map(c => <option key={c}>{c}</option>)}
-                </select>
-              </div>
-            </GlassCard>
 
-            <GlassCard>
-              <SectionHead icon={<ClipboardCheck size={15} />} title={t('Konten yang Disertakan')} />
-              {[
-                'Ringkasan eksekutif misi',
-                'Data penerbangan & jam operasi',
-                'Grafik sensor mooring & tether',
-                'Tangkapan layar kamera EO/IR',
-                'Statistik deteksi objek',
-                'Rekapitulasi crowd counting',
-                'Daftar alert & tindak lanjut',
-              ].map((item, i) => (
-                <ConfigToggle key={item} label={item} initial={i < 6} />
-              ))}
-            </GlassCard>
-
-            <GlassCard>
-              <SectionHead icon={<ShieldAlert size={15} />} title={t('Watermark & Pengesahan')} />
-              <KVList rows={[
-                ['Instansi', 'Badan Intelijen Negara'],
-                ['Stasiun', account?.stationCode ?? 'GCS'],
-                ['Watermark', classification],
-                ['Penyusun', account?.username ?? '—'],
-                ['Nomor Dokumen', 'Otomatis (urut per hari)'],
-              ]} />
+              {completedMissions.length > 0 && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  marginTop: 10, padding: '8px 12px',
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-md)',
+                }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                    {t('Halaman')} {completedPage} {t('dari')} {completedPageCount}
+                  </span>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setCompletedPage(p => Math.max(1, p - 1))}
+                      disabled={completedPage <= 1}
+                      aria-label={t('Halaman sebelumnya')}
+                    >
+                      <ChevronLeft size={12} />
+                    </button>
+                    {completedPageWindow.map(p => (
+                      <button
+                        key={p}
+                        className={`btn btn-sm ${p === completedPage ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setCompletedPage(p)}
+                        aria-current={p === completedPage ? 'page' : undefined}
+                        aria-label={`${t('Halaman')} ${p}`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setCompletedPage(p => Math.min(completedPageCount, p + 1))}
+                      disabled={completedPage >= completedPageCount}
+                      aria-label={t('Halaman berikutnya')}
+                    >
+                      <ChevronRight size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </GlassCard>
           </div>
         </div>
       </div>
+
+      {filterOpen && (
+        <div className="modal-backdrop" onClick={() => setFilterOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Filter size={16} /> {t('Filter Laporan')}
+              </h3>
+              <button className="btn btn-ghost" onClick={() => setFilterOpen(false)} style={{ padding: 4 }} aria-label={t('Tutup')}>
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 10 }}>
+                {t('Rentang tanggal berdasarkan waktu data dibuat (created date).')}
+              </p>
+              <div className="row">
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Dari Tanggal')}</label>
+                    <input
+                      type="date"
+                      className="form-input font-mono"
+                      value={filter.dateFrom}
+                      onChange={e => setFilter(f => ({ ...f, dateFrom: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Sampai Tanggal')}</label>
+                    <input
+                      type="date"
+                      className="form-input font-mono"
+                      value={filter.dateTo}
+                      onChange={e => setFilter(f => ({ ...f, dateTo: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setFilter({ dateFrom: '', dateTo: '' })}
+              >
+                {t('Reset Filter')}
+              </button>
+              <button className="btn btn-primary" onClick={() => setFilterOpen(false)}>
+                {t('Terapkan')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </LicenseGate>
   );
 }
@@ -2584,21 +3030,141 @@ export function FlightInfoPage() {
 /* =====================================================================
    1.3e — MONITORING AVAILABILITY MOORING APP SYSTEM
    ===================================================================== */
+const EMPTY_MOORING_FORM: Record<keyof MooringAvailabilityMonitorPayload, string> = {
+  wind_speed: '',
+  winch_tension: '',
+  helium_pressure: '',
+  ambient_temperature: '',
+  backup_battery_voltage: '',
+  backup_battery_percentage: '',
+  emergency_inverter_status: '',
+  lightning_protection_status: '',
+  optical_link_eop: '',
+  description: '',
+};
+
 export function MooringMonitorPage() {
-  const { t } = useApp();
+  const { t, pushToast, notify, lang } = useApp();
   const windSeries = useMemo(() => series(71, 40, 14, 12, 0), []);
   const tensionSeries = useMemo(() => series(89, 40, 1240, 260, 0), []);
   const heliumSeries = useMemo(() => series(97, 40, 165, 8, 0), []);
 
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState(EMPTY_MOORING_FORM);
+  const [photo, setPhoto] = useState<{ name: string; url: string; raw: File } | null>(null);
+  const [photoDrag, setPhotoDrag] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const [history, setHistory] = useState<MooringAvailabilityMonitorRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
+  const fetchHistory = async () => {
+    setHistoryLoading(true);
+    const rows = await api.getMooringAvailabilityMonitors().catch(() => []);
+    setHistory(rows);
+    setHistoryLoading(false);
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<MooringAvailabilityMonitorRecord | null>(null);
+
+  const openDetail = async (id: string) => {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetailRecord(null);
+    try {
+      const record = await api.getMooringAvailabilityMonitorById(id);
+      setDetailRecord(record);
+    } catch {
+      pushToast({ tone: 'error', title: t('Gagal memuat detail') });
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const photoUrl = (path: string) => {
+    const normalized = path.replace(/\\/g, '/');
+    return `${API_BASE_MEDIA}${normalized.startsWith('/') ? normalized : `/${normalized}`}`;
+  };
+
+  const setField = (key: keyof MooringAvailabilityMonitorPayload, value: string) =>
+    setForm(f => ({ ...f, [key]: value }));
+
+  const pickPhoto = (f: File | undefined) => {
+    if (!f) return;
+    if (!/\.(jpe?g|png)$/i.test(f.name)) {
+      pushToast({ tone: 'error', title: t('Format tidak didukung'), detail: t('Gunakan berkas JPG atau PNG.') });
+      return;
+    }
+    setPhoto({ name: f.name, url: URL.createObjectURL(f), raw: f });
+  };
+
+  const formComplete = Object.values(form).every(v => v.trim() !== '') && photo !== null;
+
+  const resetMooringModal = () => {
+    setForm(EMPTY_MOORING_FORM);
+    setPhoto(null);
+    setModalOpen(false);
+  };
+
+  const submitMooringData = async () => {
+    if (!photo) return;
+    setSubmitting(true);
+    try {
+      const toNum = (v: string) => (v.trim() === '' ? null : Number(v));
+      const toStr = (v: string) => (v.trim() === '' ? null : v.trim());
+      await api.createMooringAvailabilityMonitor({
+        wind_speed: toNum(form.wind_speed),
+        winch_tension: toNum(form.winch_tension),
+        helium_pressure: toNum(form.helium_pressure),
+        ambient_temperature: toNum(form.ambient_temperature),
+        backup_battery_voltage: toNum(form.backup_battery_voltage),
+        backup_battery_percentage: toNum(form.backup_battery_percentage),
+        emergency_inverter_status: toStr(form.emergency_inverter_status),
+        lightning_protection_status: toStr(form.lightning_protection_status),
+        optical_link_eop: toNum(form.optical_link_eop),
+        description: toStr(form.description),
+      }, photo.raw);
+      pushToast({ tone: 'success', title: t('Data mooring tersimpan') });
+      notify({
+        title: t('Data mooring tersimpan'),
+        detail: t('Data pemeriksaan mooring baru telah ditambahkan.'),
+        severity: 'informasi',
+        category: 'Mooring',
+        source: 'Mooring Availability Monitor',
+        page: 'mooring',
+        silent: true,
+      });
+      resetMooringModal();
+      fetchHistory();
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: t('Gagal menyimpan data'),
+        detail: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const latest = history[0];
   const sensors = [
-    { label: 'Kecepatan Angin', value: '14 km/h', dir: 'Barat Laut (315°)', icon: <Wind size={13} />, ok: true, limit: '< 35 km/h' },
-    { label: 'Tegangan Tarik Winch', value: '1.240 N', dir: 'Load cell utama', icon: <Gauge size={13} />, ok: true, limit: '< 4.500 N' },
-    { label: 'Tekanan Helium', value: '165 bar', dir: 'Tabung utama', icon: <Waves size={13} />, ok: true, limit: '150 – 180 bar' },
-    { label: 'Suhu Ambien', value: '29,4 °C', dir: 'Stasiun darat', icon: <Thermometer size={13} />, ok: true, limit: '< 45 °C' },
-    { label: 'Baterai Cadangan', value: '24,2 V · 87%', dir: 'Bank baterai', icon: <BatteryCharging size={13} />, ok: true, limit: '> 22 V' },
-    { label: 'Inverter Darurat', value: 'UNIT #1 AKTIF', dir: 'Siaga otomatis', icon: <Zap size={13} />, ok: true, limit: 'Selalu siaga' },
-    { label: 'Proteksi Petir', value: 'AMAN', dir: 'Isolasi terpasang', icon: <CloudLightning size={13} />, ok: true, limit: 'Isolasi utuh' },
-    { label: 'Tautan Optik EOP', value: '42,6 dB', dir: 'Serat optik kabel', icon: <Radio size={13} />, ok: true, limit: '> 40 dB' },
+    { label: 'Kecepatan Angin', value: latest?.wind_speed != null ? `${latest.wind_speed} km/h` : '—', dir: 'Barat Laut (315°)', icon: <Wind size={13} />, ok: true, limit: '< 35 km/h' },
+    { label: 'Tegangan Tarik Winch', value: latest?.winch_tension != null ? `${latest.winch_tension} N` : '—', dir: 'Load cell utama', icon: <Gauge size={13} />, ok: true, limit: '< 4.500 N' },
+    { label: 'Tekanan Helium', value: latest?.helium_pressure != null ? `${latest.helium_pressure} bar` : '—', dir: 'Tabung utama', icon: <Waves size={13} />, ok: true, limit: '150 – 180 bar' },
+    { label: 'Suhu Ambien', value: latest?.ambient_temperature != null ? `${latest.ambient_temperature} °C` : '—', dir: 'Stasiun darat', icon: <Thermometer size={13} />, ok: true, limit: '< 45 °C' },
+    { label: 'Baterai Cadangan', value: latest ? `${latest.backup_battery_voltage ?? '—'} V · ${latest.backup_battery_percentage ?? '—'}%` : '—', dir: 'Bank baterai', icon: <BatteryCharging size={13} />, ok: true, limit: '> 22 V' },
+    { label: 'Inverter Darurat', value: latest?.emergency_inverter_status ?? '—', dir: 'Siaga otomatis', icon: <Zap size={13} />, ok: true, limit: 'Selalu siaga' },
+    { label: 'Proteksi Petir', value: latest?.lightning_protection_status ?? '—', dir: 'Isolasi terpasang', icon: <CloudLightning size={13} />, ok: true, limit: 'Isolasi utuh' },
+    { label: 'Tautan Optik EOP', value: latest?.optical_link_eop != null ? `${latest.optical_link_eop} dB` : '—', dir: 'Serat optik kabel', icon: <Radio size={13} />, ok: true, limit: '> 40 dB' },
   ];
 
   return (
@@ -2609,6 +3175,11 @@ export function MooringMonitorPage() {
           title={t('Mooring Availability Monitoring')}
           code="1.3e"
           description={t('Instrumen stasiun penambat: angin, tarikan winch, helium, dan daya cadangan.')}
+          actions={
+            <button className="btn btn-primary" onClick={() => setModalOpen(true)}>
+              <Plus size={15} /> {t('Tambah Data')}
+            </button>
+          }
         />
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10, marginBottom: 16 }}>
@@ -2621,72 +3192,295 @@ export function MooringMonitorPage() {
           ))}
         </div>
 
-        <div className="grid-2" style={{ marginBottom: 14 }}>
-          <GlassCard tilt={false}>
-            <SectionHead icon={<Wind size={15} />} title={t('Tren Kondisi Lingkungan')} sub={t('40 pembacaan terakhir')} />
-            <Sparkline data={windSeries} color="var(--accent-cyan)" height={82} label={t('Kecepatan angin')} unit=" km/h" />
-            <div style={{ height: 12 }} />
-            <Sparkline data={heliumSeries} color="var(--accent-primary)" height={82} label={t('Tekanan helium')} unit=" bar" />
-          </GlassCard>
-
-          <GlassCard tilt={false}>
-            <SectionHead icon={<Gauge size={15} />} title={t('Tren Beban Mekanis')} sub={t('40 pembacaan terakhir')} />
-            <Sparkline data={tensionSeries} color="var(--accent-amber)" height={82} label={t('Tegangan tarik kabel')} unit=" N" />
-            <div style={{ marginTop: 14 }}>
-              <Bar label={t('Pemanfaatan kapasitas tarik')} value={28} unit="%" color="var(--accent-emerald)" foot="1.240 N dari kapasitas kerja 4.500 N" />
-              <Bar label={t('Kabel terulur')} value={75} unit="%" color="var(--accent-primary)" foot="450 m dari 600 m total" />
-            </div>
-          </GlassCard>
-        </div>
-
-        <div className="grid-2">
-          <GlassCard tilt={false}>
-            <SectionHead icon={<Anchor size={15} />} title={t('Status Winch & Penambat')} />
-            <div className="table-container">
-              <table>
-                <thead><tr><th>{t('Unit')}</th><th>{t('Fungsi')}</th><th>{t('Status')}</th><th>{t('Beban')}</th></tr></thead>
-                <tbody>
-                  {[
-                    ['Winch Utama', 'Kabel penambat daya', 'SIAGA', '1.240 N'],
-                    ['Winch Bantu 1', 'Tali pengarah kiri', 'SIAGA', '310 N'],
-                    ['Winch Bantu 2', 'Tali pengarah kanan', 'SIAGA', '298 N'],
-                    ['Winch Bantu 3', 'Tali pengarah belakang', 'SIAGA', '284 N'],
-                    ['Rem Darurat', 'Penahan mekanis', 'AKTIF', '—'],
-                    ['Daya Eksternal', 'Genset 230 VAC', 'AKTIF', '417 W'],
-                  ].map(row => (
-                    <tr key={row[0]}>
-                      <td style={{ fontWeight: 600 }}>{row[0]}</td>
-                      <td style={{ fontSize: 12 }}>{row[1]}</td>
-                      <td><span className={`badge badge-${row[2] === 'AKTIF' ? 'success' : 'info'}`}>{row[2]}</span></td>
-                      <td className="font-mono text-xs">{row[3]}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </GlassCard>
-
-          <GlassCard tilt={false}>
-            <SectionHead icon={<AlertTriangle size={15} />} title={t('Batas Operasi Mooring')} />
-            <KVList rows={[
-              ['Kecepatan Angin Aman', '< 35 km/h berkelanjutan'],
-              ['Hembusan Maksimum', '< 45 km/h sesaat'],
-              ['Tekanan Helium Kerja', '150 – 180 bar'],
-              ['Kapasitas Tarik Kerja', '4.500 N'],
-              ['Ketinggian Maksimum', '600 m AGL'],
-              ['Suhu Operasi', '−10 °C s.d. +45 °C'],
-              ['Curah Hujan Maksimum', '15 mm/jam'],
-              ['Jarak Aman Petir', '> 10 km'],
-            ]} />
-            <div className="key-hint" style={{ marginTop: 12 }}>
-              <Info size={15} style={{ flexShrink: 0, marginTop: 1, color: 'var(--accent-primary)' }} />
-              <span>
-                {t('Bila kecepatan angin melewati 35 km/h, sistem menerbitkan peringatan kritis dan merekomendasikan penurunan balon melalui modul Smart Notification.')}
-              </span>
-            </div>
-          </GlassCard>
-        </div>
+        <GlassCard tilt={false}>
+          <SectionHead icon={<Anchor size={15} />} title={t('Status Winch & Penambat')} />
+          <div className="table-container">
+            <table>
+              <thead><tr><th>{t('Waktu')}</th><th>{t('Status')}</th><th>{t('Parameter')}</th><th>{t('Catatan')}</th><th>{t('Aksi')}</th></tr></thead>
+              <tbody>
+                {historyLoading ? (
+                  <tr><td colSpan={5} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Memuat riwayat…')}</td></tr>
+                ) : history.length === 0 ? (
+                  <tr><td colSpan={5} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Belum ada data pemeriksaan')}</td></tr>
+                ) : history.map(row => (
+                  <tr key={row.id}>
+                    <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>
+                      {fullTimestamp(new Date(row.created_at).getTime(), lang)}
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      <div>{t('Inverter')}: {row.emergency_inverter_status ?? '—'}</div>
+                      <div>{t('Petir')}: {row.lightning_protection_status ?? '—'}</div>
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      {row.wind_speed ?? '—'} km/h · {row.winch_tension ?? '—'} N · {row.helium_pressure ?? '—'} bar · {row.ambient_temperature ?? '—'} °C
+                    </td>
+                    <td style={{ fontSize: 12 }}>{row.description ?? '—'}</td>
+                    <td>
+                      <button className="btn btn-ghost btn-sm" onClick={() => openDetail(row.id)}>
+                        <Eye size={13} /> {t('Detail')}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </GlassCard>
       </div>
+
+      {modalOpen && (
+        <div className="modal-backdrop" onClick={() => !submitting && resetMooringModal()}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="modal-header">
+              <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Anchor size={16} /> {t('Tambah Data')}
+              </h3>
+              <button
+                className="btn btn-ghost"
+                onClick={resetMooringModal}
+                disabled={submitting}
+                style={{ padding: 4 }}
+                aria-label={t('Tutup')}
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div className="row">
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Kecepatan Angin')} (km/h)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.wind_speed}
+                      onChange={e => setField('wind_speed', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Tegangan Tarik Winch')} (N)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.winch_tension}
+                      onChange={e => setField('winch_tension', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Tekanan Helium')} (bar)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.helium_pressure}
+                      onChange={e => setField('helium_pressure', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Suhu Ambien')} (°C)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.ambient_temperature}
+                      onChange={e => setField('ambient_temperature', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Tegangan Baterai Cadangan')} (V)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.backup_battery_voltage}
+                      onChange={e => setField('backup_battery_voltage', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Persentase Baterai Cadangan')} (%)</label>
+                    <input
+                      type="number" step="any" className="form-input font-mono"
+                      value={form.backup_battery_percentage}
+                      onChange={e => setField('backup_battery_percentage', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Status Inverter Darurat')}</label>
+                    <input
+                      className="form-input"
+                      value={form.emergency_inverter_status}
+                      onChange={e => setField('emergency_inverter_status', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="form-group">
+                    <label className="form-label">{t('Status Proteksi Petir')}</label>
+                    <input
+                      className="form-input"
+                      value={form.lightning_protection_status}
+                      onChange={e => setField('lightning_protection_status', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">{t('Tautan Optik EOP')} (dB)</label>
+                <input
+                  type="number" step="any" className="form-input font-mono"
+                  value={form.optical_link_eop}
+                  onChange={e => setField('optical_link_eop', e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">{t('Foto')}</label>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept=".jpg,.jpeg,.png"
+                  hidden
+                  onChange={e => pickPhoto(e.target.files?.[0])}
+                />
+
+                {photo ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url}
+                      alt={t('Foto pemeriksaan')}
+                      style={{ width: 56, height: 56, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }}
+                    />
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                      {photo.name}
+                    </span>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setPhoto(null)}>
+                      <X size={13} /> {t('Hapus')}
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className={`uploader ${photoDrag ? 'drag' : ''}`}
+                    onClick={() => photoInputRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); setPhotoDrag(true); }}
+                    onDragLeave={() => setPhotoDrag(false)}
+                    onDrop={e => { e.preventDefault(); setPhotoDrag(false); pickPhoto(e.dataTransfer.files?.[0]); }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') photoInputRef.current?.click(); }}
+                  >
+                    <span className="uploader-ring"><ImageIcon size={22} /></span>
+                    <span className="uploader-copy">
+                      <span className="uploader-title">{t('Unggah foto pemeriksaan')}</span>
+                      <span className="uploader-sub">{t('JPG atau PNG · maksimum 50 MB')}</span>
+                    </span>
+                    <span className="btn btn-secondary btn-sm" aria-hidden>{t('Telusuri Berkas')}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">{t('Deskripsi')}</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  value={form.description}
+                  onChange={e => setField('description', e.target.value)}
+                  placeholder={t('Catatan tambahan hasil pemeriksaan')}
+                  style={{ resize: 'vertical' }}
+                />
+              </div>
+
+              {!formComplete && (
+                <p style={{ fontSize: 11, color: 'var(--warning-400)', marginTop: 2 }}>
+                  {t('Lengkapi seluruh kolom termasuk foto sebelum menyimpan.')}
+                </p>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={resetMooringModal} disabled={submitting}>
+                {t('Batal')}
+              </button>
+              <button className="btn btn-primary" onClick={submitMooringData} disabled={submitting || !formComplete}>
+                {submitting ? <><RefreshCw size={15} className="spin" /> {t('Menyimpan...')}</> : <><Save size={15} /> {t('Simpan')}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailOpen && (
+        <div className="modal-backdrop" onClick={() => setDetailOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Eye size={16} /> {t('Detail Pemeriksaan')}
+              </h3>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setDetailOpen(false)}
+                style={{ padding: 4 }}
+                aria-label={t('Tutup')}
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              {detailLoading ? (
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Memuat detail…')}</p>
+              ) : detailRecord && (
+                <>
+                  {detailRecord.folder_path && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={photoUrl(detailRecord.folder_path)}
+                      alt={t('Foto pemeriksaan')}
+                      style={{ width: '100%', maxHeight: 240, objectFit: 'cover', borderRadius: 10, marginBottom: 14 }}
+                    />
+                  )}
+                  <KVList rows={[
+                    [t('Kecepatan Angin'), detailRecord.wind_speed != null ? `${detailRecord.wind_speed} km/h` : '—'],
+                    [t('Tegangan Tarik Winch'), detailRecord.winch_tension != null ? `${detailRecord.winch_tension} N` : '—'],
+                    [t('Tekanan Helium'), detailRecord.helium_pressure != null ? `${detailRecord.helium_pressure} bar` : '—'],
+                    [t('Suhu Ambien'), detailRecord.ambient_temperature != null ? `${detailRecord.ambient_temperature} °C` : '—'],
+                    [t('Tegangan Baterai Cadangan'), detailRecord.backup_battery_voltage != null ? `${detailRecord.backup_battery_voltage} V` : '—'],
+                    [t('Persentase Baterai Cadangan'), detailRecord.backup_battery_percentage != null ? `${detailRecord.backup_battery_percentage} %` : '—'],
+                    [t('Status Inverter Darurat'), detailRecord.emergency_inverter_status ?? '—'],
+                    [t('Status Proteksi Petir'), detailRecord.lightning_protection_status ?? '—'],
+                    [t('Tautan Optik EOP'), detailRecord.optical_link_eop != null ? `${detailRecord.optical_link_eop} dB` : '—'],
+                    [t('Deskripsi'), detailRecord.description ?? '—'],
+                    [t('Dibuat'), fullTimestamp(new Date(detailRecord.created_at).getTime(), lang)],
+                    [t('Diperbarui'), fullTimestamp(new Date(detailRecord.updated_at).getTime(), lang)],
+                  ]} />
+                </>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDetailOpen(false)}>
+                {t('Tutup')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </LicenseGate>
   );
 }

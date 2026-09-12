@@ -84,7 +84,7 @@ const NAV_GROUPS: NavGroup[] = [
     key: 'info',
     icon: <LibraryBig size={15} />,
     items: [
-      // { id: 'reporting', label: 'Digital Reporting', icon: <FileBarChart2 size={SZ} /> },
+      { id: 'reporting', label: 'Digital Reporting', icon: <FileBarChart2 size={SZ} /> },
       { id: 'geo-viz', label: 'GeoInt Visualisation', icon: <Map size={SZ} /> },
       { id: 'alerts', label: 'Smart Notification', icon: <BellRing size={SZ} /> },
       { id: 'flight-info', label: 'Flight Information', icon: <PlaneTakeoff size={SZ} /> },

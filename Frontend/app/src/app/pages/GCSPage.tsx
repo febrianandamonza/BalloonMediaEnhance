@@ -310,9 +310,9 @@ export default function MediaSourcePage() {
         description={t('Katalog rekaman dan citra pengawasan, sekaligus jalur pemasukan berkas baru.')}
         actions={
           <>
-            <button className="btn btn-primary" onClick={() => inputRef.current?.click()}>
+            {/* <button className="btn btn-primary" onClick={() => inputRef.current?.click()}>
               <UploadCloud size={15} /> Unggah Media
-            </button>
+            </button> */}
             <button
               className="btn btn-secondary"
               disabled={!selected}
