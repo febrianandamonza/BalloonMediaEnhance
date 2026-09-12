@@ -128,6 +128,16 @@ export interface TetherCableMonitorPayload {
   description?: string | null;
 }
 
+/** Satu baris log sesi live UDP dari /api/v1/tether-cable-api — murni
+    pencatatan (uid/status/waktu), bukan yang menjalankan FFmpeg. */
+export interface TetherCableApiLogRecord {
+  uid: string;
+  status: string;
+  udp_url: string;
+  created_at: string;
+  stopped_at: string | null;
+}
+
 export interface TetherCableMonitorRecord extends TetherCableMonitorPayload {
   id: string;
   folder_path: string | null;
@@ -835,6 +845,27 @@ class ApiService {
 
   async getNetworkStreamHealth() {
     return this.request<{ status: string; active_streams: string[] }>('/network-stream/health');
+  }
+
+  // ==========================================
+  // TETHER CABLE API (log sesi live UDP — terpisah dari network-stream
+  // yang menjalankan FFmpeg; endpoint ini murni mencatat)
+  // ==========================================
+  async startTetherCableApiLog(udpUrl: string) {
+    return this.request<TetherCableApiLogRecord>('/tether-cable-api/start', {
+      method: 'POST',
+      body: JSON.stringify({ udp_url: udpUrl }),
+    });
+  }
+
+  async stopTetherCableApiLog(uid: string) {
+    return this.request<TetherCableApiLogRecord>(`/tether-cable-api/${uid}/stop`, {
+      method: 'PATCH',
+    });
+  }
+
+  async getTetherCableApiLogs() {
+    return this.request<TetherCableApiLogRecord[]>('/tether-cable-api');
   }
 
   // ==========================================

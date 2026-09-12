@@ -109,6 +109,7 @@ export default function LiveStreamPage() {
 
   const [networkUrl, setNetworkUrl] = useState('');
   const [streamId, setStreamId] = useState<string | null>(null);
+  const [tetherApiUid, setTetherApiUid] = useState<string | null>(null);
   const [hlsUrl, setHlsUrl] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('setup');
   const [loading, setLoading] = useState(false);
@@ -169,6 +170,17 @@ export default function LiveStreamPage() {
       setSeekableStart(0);
       setSeekableEnd(0);
       setPhase('live');
+
+      /* Pencatatan sesi ke /tether-cable-api — murni log, tidak
+         memengaruhi pemutaran video. Kegagalannya tidak boleh membuat
+         live stream (yang sudah jalan lewat FFmpeg) dianggap gagal. */
+      try {
+        const log = await api.startTetherCableApiLog(networkUrl.trim());
+        setTetherApiUid(log.uid);
+      } catch (logErr) {
+        console.error('Gagal mencatat sesi tether-cable-api:', logErr);
+      }
+
       pushToast({ tone: 'success', title: t('Live stream dimulai'), detail: networkUrl.trim() });
       notify({
         title: t('Live stream dimulai'),
@@ -210,8 +222,10 @@ export default function LiveStreamPage() {
     hlsRef.current?.destroy();
     hlsRef.current = null;
     if (streamId) await api.stopNetworkStream(streamId).catch(() => {});
+    if (tetherApiUid) await api.stopTetherCableApiLog(tetherApiUid).catch(() => {});
     setPhase('setup');
     setStreamId(null);
+    setTetherApiUid(null);
     setHlsUrl(null);
     setConnectError(false);
     pushToast({ tone: 'info', title: t('Live stream dihentikan') });

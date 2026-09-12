@@ -15,13 +15,24 @@ import api, {
   API_BASE_MEDIA, type FlightMissionRecord, type FlightInformationRecord,
   type EnhanceImageResult, type EnhanceVideoResult,
   type TetherCableMonitorPayload, type TetherCableMonitorRecord,
+  type TetherCableApiLogRecord,
 } from '../../services/api';
 import {
   Wand2, Image as ImageIcon, SlidersHorizontal, Save,
   RefreshCw, Clapperboard, Palette, Camera, Thermometer,
-  PlugZap, Cable, Activity, Zap, Gauge, ShieldCheck, Radio, Copy,
+  PlugZap, Cable, Activity, Zap, Gauge, ShieldCheck, Copy,
   KeyRound, Plus, TerminalSquare, Waves, CircuitBoard, AlertTriangle, X, Eye,
 } from 'lucide-react';
+
+/** "01:42:07" dari durasi milidetik — dipakai total durasi sesi live
+    tether-cable-api (gabungan yang sudah berhenti + yang masih berjalan). */
+function formatDurationHMS(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
 
 /* Deret deterministik untuk grafik tren. */
 function series(seed: number, len: number, base: number, spread: number, digits = 0) {
@@ -825,32 +836,41 @@ export function VideoEnhancementPage() {
 /* =====================================================================
    1.2c — INTERFACE INTEGRASI (API) MAIN TETHER CABLE
    ===================================================================== */
-const ENDPOINTS = [
-  { method: 'GET', path: '/api/v1/tether/status', desc: 'Ringkasan status kabel penambat: tegangan, arus, isolasi, kontinuitas.' },
-  { method: 'GET', path: '/api/v1/tether/power', desc: 'Parameter kelistrikan terkini beserta stempel waktu pembacaan.' },
-  { method: 'GET', path: '/api/v1/tether/optical', desc: 'Redaman dan SNR jalur serat optik (EOP) pada kabel utama.' },
-  { method: 'GET', path: '/api/v1/tether/history', desc: 'Riwayat pembacaan sensor dalam rentang waktu tertentu.' },
-  { method: 'POST', path: '/api/v1/tether/calibrate', desc: 'Menjalankan kalibrasi ulang sensor arus dan tegangan ground winch.' },
-  { method: 'WS', path: '/ws/tether/telemetry', desc: 'Aliran telemetri real-time kabel penambat via WebSocket.' },
-];
-
 export function TetherAPIPage() {
-  const { pushToast, notify, t } = useApp();
-  const [selected, setSelected] = useState(ENDPOINTS[0]);
+  const { pushToast, notify, t, lang } = useApp();
+  const [logs, setLogs] = useState<TetherCableApiLogRecord[]>([]);
+  const [logsLoading, setLogsLoading] = useState(true);
+  const [selected, setSelected] = useState<TetherCableApiLogRecord | null>(null);
 
-  const sample = useMemo(() => JSON.stringify({
-    timestamp: '2026-07-27T11:42:08+07:00',
-    station: 'GCS-01',
-    voltage_ac: 229.6,
-    current_a: 1.82,
-    power_w: 417.9,
-    insulation_mohm: 128.4,
-    continuity: 'OK',
-    eop_snr_db: 42.6,
-    attenuation_db_km: 0.31,
-    winch_tension_n: 1240,
-    source: 'modbus-tcp://192.168.10.60:502',
-  }, null, 2), []);
+  useEffect(() => {
+    let cancelled = false;
+    api.getTetherCableApiLogs().catch(() => []).then(rows => {
+      if (cancelled) return;
+      setLogs(rows);
+      setSelected(rows[0] ?? null);
+    }).finally(() => { if (!cancelled) setLogsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  /* Berdetak tiap detik supaya durasi sesi yang masih berjalan
+     (status 'live', belum ada stopped_at) ikut bertambah secara live. */
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const isLive = logs.some(l => l.status === 'live');
+  const totalLiveMs = useMemo(() => logs.reduce((sum, l) => {
+    const start = new Date(l.created_at).getTime();
+    const end = l.stopped_at ? new Date(l.stopped_at).getTime() : now;
+    return sum + Math.max(0, end - start);
+  }, 0), [logs, now]);
+
+  const sample = useMemo(
+    () => (selected ? JSON.stringify(selected, null, 2) : '—'),
+    [selected],
+  );
 
   /* Hasil penyalinan ditunggu sebelum melapor. Versi sebelumnya
      melepas promise tanpa penangkap — penolakan izin muncul sebagai
@@ -893,33 +913,99 @@ export function TetherAPIPage() {
         />
 
         <div className="lic-summary">
-          <SummaryStat icon={<Zap size={19} />} accent="var(--accent-emerald)" label={t('Status Layanan')} value="ONLINE" />
-          <SummaryStat icon={<Radio size={19} />} accent="var(--accent-primary)" label={t('Protokol Sumber')} value="Modbus TCP" />
-          <SummaryStat icon={<Activity size={19} />} accent="var(--accent-secondary)" label={t('Interval Polling')} value="1 detik" />
-          <SummaryStat icon={<ShieldCheck size={19} />} accent="var(--accent-tertiary)" label={t('Rate Limit')} value="600/menit" />
+          <SummaryStat
+            icon={<Zap size={19} />}
+            accent={isLive ? 'var(--accent-emerald)' : 'var(--text-disabled)'}
+            label={t('Status Layanan')}
+            value={isLive ? 'ONLINE' : 'OFFLINE'}
+          />
+          <SummaryStat
+            icon={<ShieldCheck size={19} />}
+            accent="var(--accent-tertiary)"
+            label={t('Total Durasi Live')}
+            value={formatDurationHMS(totalLiveMs)}
+          />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 16 }}>
+        <GlassCard tilt={false}>
+          <SectionHead icon={<TerminalSquare size={15} />} title={t('Data Live Stream')} sub={`${logs.length} ${t('sesi tercatat')}`} />
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('Waktu')}</th>
+                  <th>{t('Status')}</th>
+                  <th>{t('URL Live Stream')}</th>
+                  <th>{t('Berhenti Pada')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logsLoading ? (
+                  <tr><td colSpan={4} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Memuat…')}</td></tr>
+                ) : logs.length === 0 ? (
+                  <tr><td colSpan={4} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Belum ada sesi tercatat')}</td></tr>
+                ) : logs.map(row => (
+                  <tr
+                    key={row.uid}
+                    onClick={() => setSelected(row)}
+                    style={{ cursor: 'pointer', background: selected?.uid === row.uid ? 'rgba(96,165,250,0.06)' : undefined }}
+                  >
+                    <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>
+                      {fullTimestamp(new Date(row.created_at).getTime(), lang)}
+                    </td>
+                    <td>
+                      <span className={`badge ${row.status === 'live' ? 'badge-success' : 'badge-neutral'}`}>
+                        {row.status}
+                      </span>
+                    </td>
+                    <td className="font-mono text-xs">{row.udp_url}</td>
+                    <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>
+                      {row.stopped_at ? fullTimestamp(new Date(row.stopped_at).getTime(), lang) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </GlassCard>
+
+        <div style={{ display: 'none', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <GlassCard tilt={false}>
-              <SectionHead icon={<TerminalSquare size={15} />} title={t('Daftar Endpoint')} sub={t('Seluruh endpoint hanya dapat diakses dari segmen jaringan lokal')} />
+              <SectionHead icon={<TerminalSquare size={15} />} title={t('Data Live Stream')} sub={`${logs.length} ${t('sesi tercatat')}`} />
               <div className="table-container">
                 <table>
-                  <thead><tr><th style={{ width: 70 }}>{t('Metode')}</th><th>{t('Path')}</th><th>{t('Keterangan')}</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>{t('Waktu')}</th>
+                      <th>{t('Status')}</th>
+                      <th>{t('URL Live Stream')}</th>
+                      <th>{t('Berhenti Pada')}</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {ENDPOINTS.map(e => (
+                    {logsLoading ? (
+                      <tr><td colSpan={4} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Memuat…')}</td></tr>
+                    ) : logs.length === 0 ? (
+                      <tr><td colSpan={4} style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('Belum ada sesi tercatat')}</td></tr>
+                    ) : logs.map(row => (
                       <tr
-                        key={e.path}
-                        onClick={() => setSelected(e)}
-                        style={{ cursor: 'pointer', background: selected.path === e.path ? 'rgba(96,165,250,0.06)' : undefined }}
+                        key={row.uid}
+                        onClick={() => setSelected(row)}
+                        style={{ cursor: 'pointer', background: selected?.uid === row.uid ? 'rgba(96,165,250,0.06)' : undefined }}
                       >
+                        <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>
+                          {fullTimestamp(new Date(row.created_at).getTime(), lang)}
+                        </td>
                         <td>
-                          <span className={`badge badge-${e.method === 'GET' ? 'success' : e.method === 'POST' ? 'warning' : 'info'}`}>
-                            {e.method}
+                          <span className={`badge ${row.status === 'live' ? 'badge-success' : 'badge-neutral'}`}>
+                            {row.status}
                           </span>
                         </td>
-                        <td className="font-mono text-xs">{e.path}</td>
-                        <td style={{ fontSize: 12 }}>{e.desc}</td>
+                        <td className="font-mono text-xs">{row.udp_url}</td>
+                        <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>
+                          {row.stopped_at ? fullTimestamp(new Date(row.stopped_at).getTime(), lang) : '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -931,7 +1017,7 @@ export function TetherAPIPage() {
               <SectionHead
                 icon={<TerminalSquare size={15} />}
                 title={t('Contoh Respons')}
-                sub={`${selected.method} ${selected.path}`}
+                sub={selected ? `UID ${selected.uid}` : t('Belum ada sesi dipilih')}
                 right={<button className="btn btn-ghost btn-sm" onClick={copy}><Copy size={13} /> {t('Salin')}</button>}
               />
               <pre className="code-block">{sample}</pre>
