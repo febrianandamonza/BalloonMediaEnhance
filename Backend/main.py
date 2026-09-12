@@ -43,6 +43,7 @@ from api.notification import router as notification_router
 from api.dashboard import router as dashboard_router
 from api.tether_cable_monitor import router as tether_cable_monitor_router
 from api.mooring_availability_monitor import router as mooring_availability_monitor_router
+from api.tether_cable_api import router as tether_cable_api_router
 
 
 
@@ -86,6 +87,7 @@ app.include_router(notification_router)
 app.include_router(dashboard_router)
 app.include_router(tether_cable_monitor_router)
 app.include_router(mooring_availability_monitor_router)
+app.include_router(tether_cable_api_router)
 
 app.include_router(enhance_router)
 app.include_router(detection_router)
