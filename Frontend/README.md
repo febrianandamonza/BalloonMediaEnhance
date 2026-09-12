@@ -119,8 +119,8 @@ docker-compose up --build
 | Layanan | Alamat |
 | --- | --- |
 | Antarmuka GCS | `http://localhost:3000` |
-| Backend API | `http://localhost:4000/api/v1` |
-| Dokumentasi API | `http://localhost:4000/docs` |
+| Backend API | `http://localhost:8000/api/v1` |
+| Dokumentasi API | `http://localhost:8000/docs` |
 
 ### Opsi B — Manual (pengembangan)
 

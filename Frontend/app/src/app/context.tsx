@@ -753,17 +753,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const remote = res;
 
       if (res && remote) {
-        // Update last_login
-        try {
-          if (remote.id) {
-            await api.updateUser(String(remote.id), { last_login: getJakartaNow() });
-          }
-        } catch (updateErr) {
-          console.error('Gagal memperbarui last_login:', updateErr);
-        }
-
+        /* last_login sudah dicatat backend di dalam /auth/login sendiri. */
         const profile: OperatorAccount = {
-          userId: remote.user_id ?? remote.id,
+          userId: remote.user_id,
           username: remote.username,
           station: remote.full_name ?? remote.username,
           stationCode: 'GCS',

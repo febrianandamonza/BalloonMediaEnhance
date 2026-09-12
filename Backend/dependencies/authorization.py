@@ -19,8 +19,6 @@ def require_roles(
         )
 
     ):
-        print(current_user)
-
         if current_user.role.name not in roles:
 
             raise HTTPException(

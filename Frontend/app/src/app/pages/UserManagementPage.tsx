@@ -77,7 +77,7 @@ export default function UserManagementPage() {
           email: (u.email as string) || '',
           phone: (u.phone as string) || '',
           station: (u.station as Operator['station']) || 'Semua',
-          role: u.role.id === 1 ? 'Administrator' : 'Operator',
+          role: (u.role as { id?: number } | null)?.id === 1 ? 'Administrator' : 'Operator',
           active: (u.is_active as boolean) ?? true,
           lastLogin: formatLastLogin(u.last_login as string),
         }));
@@ -209,7 +209,7 @@ export default function UserManagementPage() {
       action: {
         label: t('Urungkan'),
         onClick: () => setUsers(prev =>
-          prev.some(x => x.id === korban.id) ? prev : [...prev, korban].sort((a, b) => a.id - b.id)),
+          prev.some(x => x.id === korban.id) ? prev : [...prev, korban].sort((a, b) => Number(a.id) - Number(b.id))),
       },
     });
     notify({

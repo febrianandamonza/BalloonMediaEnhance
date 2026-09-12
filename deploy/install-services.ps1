@@ -18,7 +18,12 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     Write-Host "Meminta hak Administrator..."
     $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
     if ($Uninstall) { $argList += '-Uninstall' }
-    Start-Process -FilePath 'powershell.exe' -ArgumentList $argList -Verb RunAs
+    try {
+        Start-Process -FilePath 'powershell.exe' -ArgumentList $argList -Verb RunAs -ErrorAction Stop
+    } catch {
+        Write-Host "Gagal meminta hak Administrator (UAC dibatalkan?): $($_.Exception.Message)" -ForegroundColor Red
+        Read-Host "Tekan Enter untuk menutup"
+    }
     exit
 }
 
@@ -33,6 +38,22 @@ $NextBin     = Join-Path $FrontendDir 'node_modules\next\dist\bin\next'
 
 $BackendSvc  = 'BalloonBackend'
 $FrontendSvc = 'BalloonFrontend'
+
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+$TranscriptPath = Join-Path $LogDir 'install-services-transcript.log'
+Start-Transcript -Path $TranscriptPath -Append | Out-Null
+
+# Supaya window TIDAK langsung tertutup kalau ada error, dan errornya kebaca.
+trap {
+    Write-Host ""
+    Write-Host "=== TERJADI ERROR ===" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Detail lengkap juga tersimpan di: $TranscriptPath"
+    Stop-Transcript | Out-Null
+    Read-Host "Tekan Enter untuk menutup"
+    exit 1
+}
 
 if (-not (Test-Path $PythonExe)) { throw "Python interpreter tidak ditemukan di $PythonExe (interpreter dengan torch/ultralytics terinstall)." }
 if (-not (Test-Path $NodeExe))   { throw "Node.js tidak ditemukan di $NodeExe" }
@@ -57,6 +78,18 @@ function Ensure-Nssm {
         throw "Gagal menemukan nssm.exe setelah instalasi winget. Install manual dari https://nssm.cc lalu jalankan ulang skrip ini."
     }
     return $path
+}
+
+function Stop-ServiceIfExists {
+    param([string]$Name)
+    if (Get-Service -Name $Name -ErrorAction SilentlyContinue) {
+        Write-Host "Menghentikan service $Name..."
+        & $nssm stop $Name 2>$null | Out-Null
+        $deadline = (Get-Date).AddSeconds(20)
+        while ((Get-Service -Name $Name -ErrorAction SilentlyContinue).Status -ne 'Stopped' -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+        }
+    }
 }
 
 function Install-AppService {
@@ -101,6 +134,7 @@ if ($Uninstall) {
         }
     }
     Write-Host "Selesai uninstall."
+    Stop-Transcript | Out-Null
     Read-Host "Tekan Enter untuk menutup"
     exit
 }
@@ -108,7 +142,10 @@ if ($Uninstall) {
 $nssm = Ensure-Nssm
 Write-Host "Memakai nssm: $nssm"
 
-New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+# Hentikan dulu dalam urutan yang benar (Frontend dulu, baru Backend) --
+# Windows menolak stop service yang masih punya dependent service jalan.
+Stop-ServiceIfExists -Name $FrontendSvc
+Stop-ServiceIfExists -Name $BackendSvc
 
 Write-Host "Menginstall dependencies & build frontend (production)..."
 Push-Location $FrontendDir
@@ -139,4 +176,5 @@ Write-Host "Backend  : http://127.0.0.1:8000/docs"
 Write-Host "Frontend : http://127.0.0.1:3000"
 Write-Host "Cek status : Get-Service $BackendSvc,$FrontendSvc"
 Write-Host "Log ada di : $LogDir"
+Stop-Transcript | Out-Null
 Read-Host "Tekan Enter untuk menutup"

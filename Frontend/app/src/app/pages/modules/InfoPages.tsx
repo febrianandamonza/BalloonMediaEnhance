@@ -2123,7 +2123,7 @@ export function FlightInfoPage() {
                   </select>
                 </RuleField>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, display: 'none' }}>
+                <div style={{ gridTemplateColumns: '1fr 1fr', gap: 10, display: 'none' }}>
                   <RuleField label={t('Kode Misi')}>
                     <input
                       className="form-input"

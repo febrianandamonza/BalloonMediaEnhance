@@ -2,7 +2,7 @@
 // API Service — Frontend → Backend Communication
 // ================================================================
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 export const API_BASE_MEDIA = process.env.NEXT_PUBLIC_MEDIA_API_URL || "http://localhost:8000";
 /** Sama seperti API_BASE tapi skema http(s) diganti ws(s) — dipakai
     VideoDetectionPage menyambung ke /detect/ws/{job_id}. */
@@ -558,9 +558,14 @@ class ApiService {
   // ==========================================
   async login(username: string, password: string) {
     const data = await this.request<{
-      user: RemoteUser;
       access_token: string;
       refresh_token: string;
+      token_type: string;
+      expires_in: number;
+      user_id: string;
+      username: string;
+      full_name: string;
+      role_id: number;
     }>('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

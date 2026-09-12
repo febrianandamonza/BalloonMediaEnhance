@@ -347,7 +347,7 @@ async function main() {
 
   console.log('\n✅ Database seeded successfully!');
   console.log('  Station logins: gcs1 / admin123  ·  gcs2 / admin123');
-  console.log('  API docs: http://localhost:4000/docs');
+  console.log('  API docs: http://localhost:8000/docs');
 }
 
 main()
