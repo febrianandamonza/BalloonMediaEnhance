@@ -24,7 +24,7 @@ YOLO_WEIGHT = WEIGHTS_DIR / "yolo11x.pt"
 class ObjectDetector:
 
     FRAME_INTERVAL = 25
-    CONFIDENCE_THRESHOLD = 0.70
+    CONFIDENCE_THRESHOLD = 0.60
 
     # ------------------------------------------------------------------
     # Umpan langsung ke browser (WebSocket)
