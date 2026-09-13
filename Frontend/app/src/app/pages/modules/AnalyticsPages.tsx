@@ -5,7 +5,7 @@ import GlassCard from '../../components/GlassCard';
 import { useApp, useNavGuard } from '../../context';
 import {
   PageHead, Metric, MetricRow, SectionHead, KVList,
-  Sparkline, EmptyState, Segmented,
+  EmptyState, Segmented,
   OfflineNotice,
 } from '../../components/ui';
 import { CompareSlider, VideoPlayer } from '../../components/media';
@@ -65,10 +65,232 @@ interface CapturedCrowdFrame {
 
 const CROWD_FRAME_BUFFER = 400;
 
+type CrowdSource = 'upload' | 'udp';
+
+/** Batas tunggu pesan `finished` setelah operator menekan Hentikan pada
+    sesi UDP. Backend baru mengirimnya setelah inferensi terakhir selesai
+    (dan paling lama ~10 detik kalau sumber masih dibuka); kalau tak kunjung
+    datang, socket ditutup paksa supaya tombol tidak terkunci di
+    "Menghentikan…". */
+const LIVE_STOP_TIMEOUT_MS = 15000;
+
+/** Pesan galat yang dikirim backend lewat api.request() — { status, message }
+    untuk BadRequestException, { status, detail } untuk HTTPException. Galat
+    tanpa `status` berarti server tidak terjangkau sama sekali, jadi pesan
+    bawaan peramban ("Failed to fetch") diganti fallback yang lebih jelas. */
+function errorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'status' in err) {
+    const { message, detail } = err as { message?: unknown; detail?: unknown };
+    if (typeof message === 'string' && message) return message;
+    if (typeof detail === 'string' && detail) return detail;
+  }
+  return fallback;
+}
+
+/* Lebar label angka pada DensityTrendChart diperkirakan dari jumlah
+   karakternya (fontnya monospace), supaya bisa dicek muat atau tidak
+   sebelum digambar. */
+const TREND_PREV_CHAR_PX = 6.4;
+const TREND_LATEST_CHAR_PX = 7.6;
+const TREND_LABEL_GAP_PX = 6;
+
+function trendLabelStyle(latest: boolean, dimmed: boolean): React.CSSProperties {
+  return {
+    position: 'absolute', fontFamily: 'var(--font-code)',
+    fontSize: latest ? 12 : 10.5, fontWeight: latest ? 700 : 500,
+    color: latest ? 'var(--text-primary)' : 'var(--text-muted)',
+    lineHeight: 1, whiteSpace: 'nowrap', pointerEvents: 'none',
+    opacity: dimmed ? 0.25 : 1, transition: 'opacity 0.15s ease',
+  };
+}
+
+function trendDotStyle(left: number, top: number, color: string): React.CSSProperties {
+  return {
+    position: 'absolute', left: `${left}%`, top: `${top}%`,
+    width: 8, height: 8, borderRadius: '50%', background: color,
+    boxShadow: '0 0 0 2px var(--bg-card-solid)',
+    transform: 'translate(-50%, -50%)', pointerEvents: 'none',
+  };
+}
+
+/** Tren kepadatan dengan angka. `data` dicatat per frame, sedangkan DM-Count
+    baru menghasilkan hitungan baru tiap beberapa frame, jadi angka yang sama
+    berulang membentuk segmen datar. Yang dilabeli karena itu bukan setiap
+    titik, melainkan satu angka per pembacaan: pembacaan terkini di titik
+    paling kanan, pembacaan sebelumnya di tengah segmennya. Label sebelumnya
+    hanya digambar kalau muat di dalam segmennya sendiri — label yang
+    melebar keluar akan tercoret garis naik/turun di sebelahnya — dan tidak
+    menabrak label di kanannya. Angka di titik mana pun tetap bisa dibaca
+    lewat hover.
+
+    Beda dari Sparkline bersama (dipakai Dashboard): teks dan titik digambar
+    sebagai HTML di atas SVG, karena SVG-nya memakai
+    preserveAspectRatio="none" — teks/lingkaran di dalamnya akan ikut gepeng. */
+function DensityTrendChart({ data, color, height = 130 }: { data: number[]; color: string; height?: number }) {
+  const { t } = useApp();
+  const plotRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  /* Lebar grafik dalam piksel — dibutuhkan untuk mengecek label muat di
+     segmennya. Selama belum terukur, hanya label terkini yang digambar. */
+  const [plotWidth, setPlotWidth] = useState(0);
+
+  useEffect(() => {
+    const el = plotRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setPlotWidth(entry.contentRect.width));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const last = data.length - 1;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const span = max - min || 1;
+  const x = (i: number) => (last > 0 ? (i / last) * 100 : 100);
+  /* 22% ruang atas untuk label angka, 8% bawah supaya garis tidak
+     menempel tepi. */
+  const y = (v: number) => 100 - 8 - ((v - min) / span) * 70;
+  /* Label di dekat tepi dijangkar ke dalam supaya tidak terpotong. */
+  const anchor = (i: number) => (x(i) > 88 ? '-100%' : x(i) < 12 ? '0%' : '-50%');
+
+  const pts = data.map((v, i) => `${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(' ');
+
+  const runs: { start: number; end: number }[] = [];
+  data.forEach((v, i) => {
+    const run = runs[runs.length - 1];
+    if (run && data[run.start] === v) run.end = i;
+    else runs.push({ start: i, end: i });
+  });
+  const toPct = (px: number) => (plotWidth > 0 ? (px / plotWidth) * 100 : Infinity);
+  const latestText = data[last].toLocaleString('id-ID');
+  /* Label terkini dijangkar ke tepi kanan titiknya; setiap label sebelumnya
+     harus berakhir sebelum tepi kiri label yang sudah ditempatkan di
+     kanannya. */
+  let leftBound = x(last) - toPct(latestText.length * TREND_LATEST_CHAR_PX);
+  /* Segmen terkini hampir selalu pendek (pembacaan baru tiap beberapa
+     frame). Kalau angkanya baru turun, label yang menempel di atas titiknya
+     akan tercoret garis turun dari segmen sebelumnya — jadi label diangkat
+     di atas titik tertinggi garis sepanjang rentang lebarnya. Segmen yang
+     masuk dari kiri rentang ikut dihitung, lalu loop berhenti. */
+  let latestLabelValue = data[last];
+  for (let i = last - 1; i >= 0; i--) {
+    latestLabelValue = Math.max(latestLabelValue, data[i]);
+    if (x(i) <= leftBound) break;
+  }
+  const prevLabels: { start: number; center: number; top: number; text: string }[] = [];
+  for (let r = runs.length - 2; r >= 0; r--) {
+    const { start, end } = runs[r];
+    const text = data[start].toLocaleString('id-ID');
+    const width = toPct(text.length * TREND_PREV_CHAR_PX);
+    const center = (x(start) + x(end)) / 2;
+    const fitsSegment = x(end) - x(start) >= width;
+    const clearOfRight = center + width / 2 <= leftBound - toPct(TREND_LABEL_GAP_PX);
+    if (!fitsSegment || !clearOfRight) continue;
+    prevLabels.push({ start, center, top: y(data[start]), text });
+    leftBound = center - width / 2;
+  }
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = plotRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || last < 1) return;
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    setHover(Math.round(ratio * last));
+  };
+
+  /* Data terus bergeser selama sesi live, jadi indeks hover bisa sesaat
+     melewati panjang data yang baru. */
+  const hoverIndex = hover != null ? Math.min(hover, last) : null;
+
+  return (
+    <div
+      ref={plotRef}
+      role="img"
+      aria-label={`${t('Tren kepadatan')}: ${t('terkini')} ${data[last].toLocaleString('id-ID')} ${t('jiwa')}, ${t('tertinggi')} ${max.toLocaleString('id-ID')}.`}
+      onPointerMove={onPointerMove}
+      onPointerLeave={() => setHover(null)}
+      style={{ position: 'relative', height, touchAction: 'pan-y' }}
+    >
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', overflow: 'visible' }}
+        aria-hidden
+      >
+        <polyline points={`0,100 ${pts} 100,100`} fill={`color-mix(in srgb, ${color} 12%, transparent)`} stroke="none" />
+        <polyline
+          points={pts}
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        {hoverIndex != null && (
+          <line
+            x1={x(hoverIndex)} x2={x(hoverIndex)} y1="0" y2="100"
+            stroke="var(--border-strong)" strokeWidth="1" vectorEffect="non-scaling-stroke"
+          />
+        )}
+      </svg>
+
+      {prevLabels.map(l => (
+        <span
+          key={l.start}
+          aria-hidden
+          style={{
+            ...trendLabelStyle(false, hoverIndex != null),
+            left: `${l.center}%`, top: `${l.top}%`,
+            transform: 'translate(-50%, calc(-100% - 7px))',
+          }}
+        >
+          {l.text}
+        </span>
+      ))}
+      <span
+        aria-hidden
+        style={{
+          ...trendLabelStyle(true, hoverIndex != null),
+          left: `${x(last)}%`, top: `${y(latestLabelValue)}%`,
+          transform: `translate(${anchor(last)}, calc(-100% - 7px))`,
+        }}
+      >
+        {latestText}
+      </span>
+
+      <span aria-hidden style={trendDotStyle(x(last), y(data[last]), color)} />
+
+      {hoverIndex != null && (
+        <>
+          <span aria-hidden style={trendDotStyle(x(hoverIndex), y(data[hoverIndex]), color)} />
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute', left: `${x(hoverIndex)}%`, top: 0,
+              transform: `translateX(${anchor(hoverIndex)})`,
+              background: 'var(--bg-elevated)', border: '1px solid var(--border-strong)',
+              borderRadius: 6, padding: '4px 8px', fontSize: 11, lineHeight: 1.3,
+              whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 1,
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.18)',
+            }}
+          >
+            <b style={{ fontFamily: 'var(--font-code)', color: 'var(--text-primary)' }}>
+              {data[hoverIndex].toLocaleString('id-ID')} {t('jiwa')}
+            </b>
+            <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>
+              {hoverIndex === last ? t('terkini') : `${last - hoverIndex} ${t('frame lalu')}`}
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function CrowdCountingPage() {
   const { pushToast, notify, offline, t } = useApp();
-  const [source, setSource] = useState<'upload' | 'rtsp'>('upload');
-  const [rtspUrl, setRtspUrl] = useState('rtsp://192.168.10.100:15004/stream1');
+  const [source, setSource] = useState<CrowdSource>('upload');
+  const [udpUrl, setUdpUrl] = useState('udp://@244.10.10.10:15004');
   const [file, setFile] = useState<{ name: string; url: string; raw: File } | null>(null);
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +302,8 @@ export function CrowdCountingPage() {
 
   const [starting, setStarting] = useState(false);
   const [running, setRunning] = useState(false);
+  /* Sesi UDP sudah diminta berhenti, menunggu ringkasan dari backend. */
+  const [stopping, setStopping] = useState(false);
   /* Seluruh frame density-map yang sudah diterima sejauh ini — linimasa
      sesi, dibatasi CROWD_FRAME_BUFFER frame terbaru (lihat komentar pada
      CapturedCrowdFrame). */
@@ -100,10 +324,15 @@ export function CrowdCountingPage() {
   const [frameCount, setFrameCount] = useState(0);
   const [threshold] = useState(500);
   const [history, setHistory] = useState<number[]>([]);
+  /* Akumulasi hitungan seluruh frame sejak sesi dimulai — dasar Rata-rata.
+     `history` tidak bisa dipakai karena hanya menyimpan 40 frame terakhir. */
+  const [countTotal, setCountTotal] = useState({ sum: 0, frames: 0 });
   const [jobResult, setJobResult] = useState<CrowdSessionResult | null>(null);
   const [saving, setSaving] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const startedAtRef = useRef<number | null>(null);
+  const stopTimerRef = useRef<number | null>(null);
+  const isUdp = source === 'udp';
 
   useNavGuard(
     starting || running,
@@ -159,20 +388,35 @@ export function CrowdCountingPage() {
     [flightInfoRecords, missionId],
   );
 
-  const average = history.length
-    ? Math.round(history.reduce((a, b) => a + b, 0) / history.length)
-    : 0;
+  /* Dibulatkan ke atas, sama seperti average_count di ringkasan backend.
+     Begitu sesi selesai, angka backend dipakai langsung supaya persis sama
+     dengan yang tertulis di toast penyelesaian. */
+  const average = jobResult?.summary?.average_count
+    ?? (countTotal.frames ? Math.ceil(countTotal.sum / countTotal.frames) : 0);
   const overThreshold = displayCount > threshold;
 
+  const clearStopTimer = () => {
+    if (stopTimerRef.current != null) {
+      window.clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+  };
+
   const closeSocket = () => {
+    clearStopTimer();
     wsRef.current?.close();
     wsRef.current = null;
     setRunning(false);
+    setStopping(false);
   };
 
   /* Socket ditutup otomatis kalau operator berpindah halaman di
-     tengah-tengah sesi berjalan. */
-  useEffect(() => () => { wsRef.current?.close(); }, []);
+     tengah-tengah sesi berjalan — pada sesi UDP, backend menganggap socket
+     yang putus sebagai permintaan berhenti. */
+  useEffect(() => () => {
+    wsRef.current?.close();
+    if (stopTimerRef.current != null) window.clearTimeout(stopTimerRef.current);
+  }, []);
 
   const openSocket = (jobId: string) => {
     const socket = new WebSocket(`${WS_BASE}/crowd/ws/${jobId}`);
@@ -185,6 +429,21 @@ export function CrowdCountingPage() {
       try {
         const data = JSON.parse(ev.data) as CrowdVideoFrameMessage;
 
+        if (data.error) {
+          pushToast({ tone: 'error', title: t('Sesi crowd counting gagal'), detail: data.error });
+          notify({
+            title: t('Sesi crowd counting gagal'),
+            detail: data.error,
+            severity: 'peringatan',
+            category: 'Ambang Batas',
+            source: 'Crowd Counting',
+            page: 'crowd',
+            silent: true,
+          });
+          closeSocket();
+          return;
+        }
+
         if (data.frame) {
           const next = data.count ?? 0;
           const elapsed = startedAtRef.current ? Date.now() - startedAtRef.current : 0;
@@ -196,6 +455,7 @@ export function CrowdCountingPage() {
           setPeak(p => Math.max(p, next));
           setFrameCount(f => (data.frame_number != null ? data.frame_number + 1 : f + 1));
           setHistory(h => [...h.slice(-39), next]);
+          setCountTotal(c => ({ sum: c.sum + next, frames: c.frames + 1 }));
         }
 
         /* Sesi selesai — backend menyertakan medan penyelesaian di pesan
@@ -208,24 +468,32 @@ export function CrowdCountingPage() {
             processing_time: data.processing_time,
             summary: data.summary,
           });
-          pushToast({
-            tone: 'success',
-            title: t('Sesi crowd counting selesai'),
-            detail: data.summary
-              ? `Puncak ${data.summary.max_count.toLocaleString('id-ID')} jiwa · rata-rata ${data.summary.average_count.toLocaleString('id-ID')} jiwa.`
-              : undefined,
-          });
+          const summaryDetail = data.summary
+            ? `Puncak ${data.summary.max_count.toLocaleString('id-ID')} jiwa · rata-rata ${data.summary.average_count.toLocaleString('id-ID')} jiwa.`
+            : undefined;
+          /* Sesi live berakhir karena operator menekan Hentikan, atau
+             otomatis karena sumber UDP diam terlalu lama. */
+          const sourceLost = data.live && data.reason === 'source_lost';
+          const title = sourceLost
+            ? t('Sumber UDP terputus')
+            : data.live ? t('Sesi live dihentikan') : t('Sesi crowd counting selesai');
+          const detail = sourceLost
+            ? [t('Tidak ada frame baru dari sumber — sesi diakhiri otomatis.'), summaryDetail].filter(Boolean).join(' ')
+            : summaryDetail;
+          pushToast({ tone: sourceLost ? 'warning' : 'success', title, detail });
           notify({
-            title: t('Sesi crowd counting selesai'),
-            detail: data.summary
-              ? `Puncak ${data.summary.max_count.toLocaleString('id-ID')} jiwa · rata-rata ${data.summary.average_count.toLocaleString('id-ID')} jiwa.`
-              : t('Sesi crowd counting selesai'),
-            severity: 'informasi',
+            title,
+            detail: detail ?? title,
+            severity: sourceLost ? 'peringatan' : 'informasi',
             category: 'Ambang Batas',
             source: 'Crowd Counting',
             page: 'crowd',
             silent: true,
           });
+          /* Backend masih melepas pembaca stream setelah mengirim ringkasan
+             (bisa beberapa detik kalau sumber diam) — socket ditutup dari
+             sini supaya tampilan langsung berpindah ke "Sesi Selesai". */
+          if (data.live) closeSocket();
         }
       } catch {
         /* pesan bukan JSON — diabaikan */
@@ -245,7 +513,11 @@ export function CrowdCountingPage() {
       });
     };
 
-    socket.onclose = () => setRunning(false);
+    socket.onclose = () => {
+      clearStopTimer();
+      setRunning(false);
+      setStopping(false);
+    };
   };
 
   const pick = (f: File | undefined) => {
@@ -266,7 +538,17 @@ export function CrowdCountingPage() {
     closeSocket();
     setFile({ name: f.name, url: URL.createObjectURL(f), raw: f });
     setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false);
-    setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setJobResult(null);
+    setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setCountTotal({ sum: 0, frames: 0 }); setJobResult(null);
+  };
+
+  /* Berganti sumber membuang sesi sebelumnya — linimasa & statistik milik
+     sumber lama tidak relevan untuk sumber yang baru dipilih. */
+  const changeSource = (next: CrowdSource) => {
+    if (next === source) return;
+    closeSocket();
+    setSource(next);
+    setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false);
+    setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setCountTotal({ sum: 0, frames: 0 }); setJobResult(null);
   };
 
   const start = async () => {
@@ -284,12 +566,12 @@ export function CrowdCountingPage() {
       });
       return;
     }
-    if (source === 'rtsp') {
-      pushToast({ tone: 'info', title: t('Sumber RTSP belum tersedia'), detail: t('Untuk saat ini jalankan analisis lewat unggah berkas video.') });
+    if (source === 'udp' && !udpUrl.trim()) {
+      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.') });
       notify({
-        title: t('Sumber RTSP belum tersedia'),
-        detail: t('Untuk saat ini jalankan analisis lewat unggah berkas video.'),
-        severity: 'informasi',
+        title: t('Isi alamat UDP dahulu'),
+        detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.'),
+        severity: 'peringatan',
         category: 'Ambang Batas',
         source: 'Crowd Counting',
         page: 'crowd',
@@ -297,7 +579,7 @@ export function CrowdCountingPage() {
       });
       return;
     }
-    if (!file) {
+    if (source === 'upload' && !file) {
       pushToast({ tone: 'error', title: t('Unggah berkas video dahulu'), detail: t('Pilih atau seret berkas video sebelum menjalankan analisis.') });
       notify({
         title: t('Unggah berkas video dahulu'),
@@ -312,25 +594,33 @@ export function CrowdCountingPage() {
     }
     setStarting(true);
     setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false);
-    setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setJobResult(null);
+    setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setCountTotal({ sum: 0, frames: 0 }); setJobResult(null);
     try {
-      const job = await api.detectCrowdVideo(file.raw);
+      /* Sumber upload tanpa berkas sudah ditolak di atas, jadi cabang kedua
+         hanya tercapai untuk sumber UDP. */
+      const job = source === 'upload' && file
+        ? await api.detectCrowdVideo(file.raw)
+        : await api.startCrowdStream(udpUrl.trim());
       openSocket(job.job_id);
-      pushToast({ tone: 'info', title: t('Sesi crowd counting dimulai'), detail: t('Model DM-Count dimuat — inferensi berjalan.') });
+      const startedDetail = source === 'udp'
+        ? `${t('Menghubungkan ke')} ${udpUrl.trim()}.`
+        : t('Model DM-Count dimuat — inferensi berjalan.');
+      pushToast({ tone: 'info', title: t('Sesi crowd counting dimulai'), detail: startedDetail });
       notify({
         title: t('Sesi crowd counting dimulai'),
-        detail: t('Model DM-Count dimuat — inferensi berjalan.'),
+        detail: startedDetail,
         severity: 'informasi',
         category: 'Ambang Batas',
         source: 'Crowd Counting',
         page: 'crowd',
         silent: true,
       });
-    } catch {
-      pushToast({ tone: 'error', title: t('Gagal memulai analisis'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
+    } catch (err) {
+      const detail = errorMessage(err, t('Tidak bisa terhubung ke server. Coba lagi.'));
+      pushToast({ tone: 'error', title: t('Gagal memulai analisis'), detail });
       notify({
         title: t('Gagal memulai analisis'),
-        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        detail,
         severity: 'peringatan',
         category: 'Ambang Batas',
         source: 'Crowd Counting',
@@ -343,6 +633,17 @@ export function CrowdCountingPage() {
   };
 
   const stop = () => {
+    const socket = wsRef.current;
+    /* Sesi UDP diakhiri lewat pesan ke backend, bukan dengan memutus socket:
+       backend menuntaskan inferensi terakhir lalu mengirim ringkasan sesi
+       (pesan `finished`) — toast dikirim saat pesan itu tiba. */
+    if (isUdp && socket?.readyState === WebSocket.OPEN) {
+      if (stopping) return;
+      socket.send(JSON.stringify({ action: 'stop' }));
+      setStopping(true);
+      stopTimerRef.current = window.setTimeout(closeSocket, LIVE_STOP_TIMEOUT_MS);
+      return;
+    }
     closeSocket();
     pushToast({ tone: 'success', title: t('Sesi dihentikan'), detail: `${frameCount.toLocaleString('id-ID')} frame diproses · puncak ${peak.toLocaleString('id-ID')} jiwa.` });
     notify({
@@ -398,7 +699,7 @@ export function CrowdCountingPage() {
       });
       closeSocket();
       setFile(null); setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false);
-      setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setJobResult(null); setMissionId('');
+      setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setCountTotal({ sum: 0, frames: 0 }); setJobResult(null); setMissionId('');
     } catch {
       pushToast({ tone: 'error', title: t('Gagal menyimpan media'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
       notify({
@@ -433,7 +734,11 @@ export function CrowdCountingPage() {
                   : <><Save size={15} /> {t('Simpan Media')}</>}
               </button>
               {running ? (
-                <button className="btn btn-danger" onClick={stop}><Square size={15} /> {t('Hentikan')}</button>
+                <button className="btn btn-danger" onClick={stop} disabled={stopping}>
+                  {stopping
+                    ? <><Loader2 size={15} className="spin" /> {t('Menghentikan…')}</>
+                    : <><Square size={15} /> {t('Hentikan')}</>}
+                </button>
               ) : (
                 <button className="btn btn-primary sheen" onClick={start} disabled={starting || offline}>
                   {starting
@@ -479,9 +784,10 @@ export function CrowdCountingPage() {
                 icon={<Video size={15} />}
                 title={finished ? t('Sesi Selesai') : t('Video Zona')}
                 sub={
-                  running ? t('Aliran langsung dari sesi berjalan')
-                    : finished ? t('Sesi selesai — simpan hasil atau mulai sesi baru')
-                      : file ? file.name : t('Rekaman gimbal Epsilon dengan keluaran density map')
+                  running ? (isUdp ? `${t('Umpan langsung dari')} ${udpUrl.trim()}` : t('Aliran langsung dari sesi berjalan'))
+                    : finished ? (isUdp ? t('Sesi live selesai — hasil sesi UDP tidak disimpan') : t('Sesi selesai — simpan hasil atau mulai sesi baru'))
+                      : isUdp ? udpUrl.trim()
+                        : file ? file.name : t('Rekaman gimbal Epsilon dengan keluaran density map')
                 }
                 right={
                   running
@@ -505,6 +811,18 @@ export function CrowdCountingPage() {
                     <img src={currentFrame.image} alt="Density map crowd counting" />
                   </div>
                 </div>
+              ) : isUdp && (starting || running) ? (
+                <EmptyState
+                  icon={<Loader2 size={22} className="spin" />}
+                  title={t('Menunggu stream UDP…')}
+                  description={`${t('Backend sedang membuka')} ${udpUrl.trim()}. ${t('Frame pertama muncul begitu paket video diterima.')}`}
+                />
+              ) : isUdp ? (
+                <EmptyState
+                  icon={<Radio size={22} />}
+                  title={t('Sumber UDP belum dijalankan')}
+                  description={t('Isi alamat UDP di panel kanan, lalu tekan Mulai Analisis.')}
+                />
               ) : file ? (
                 <VideoPlayer src={file.url} label={file.name} sublabel={t('Menunggu analisis dimulai')} aspect="16 / 9" />
               ) : (
@@ -562,30 +880,32 @@ export function CrowdCountingPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <GlassCard>
               <SectionHead icon={<Radio size={15} />} title={t('Sumber Video')} />
-              {RTSP_SOURCE_ENABLED && (
-                <div className="form-group">
-                  <label className="form-label">{t('Jenis Sumber')}</label>
-                  <Segmented
-                    full
-                    value={source}
-                    options={[{ id: 'upload', label: t('Unggah Berkas') }, { id: 'rtsp', label: 'RTSP' }]}
-                    onChange={setSource}
-                  />
-                </div>
-              )}
+              <div className="form-group">
+                <label className="form-label" htmlFor="crowd-source">{t('Jenis Sumber')}</label>
+                <select
+                  id="crowd-source"
+                  className="form-input"
+                  value={source}
+                  onChange={e => changeSource(e.target.value as CrowdSource)}
+                  disabled={starting || running}
+                >
+                  <option value="upload">{t('Unggah Berkas')}</option>
+                  <option value="udp">{t('Stream UDP')}</option>
+                </select>
+              </div>
 
-              {RTSP_SOURCE_ENABLED && source === 'rtsp' ? (
-                <div className="form-group">
-                  <label className="form-label" htmlFor="crowd-rtsp">{t('Alamat RTSP')}</label>
+              {source === 'udp' ? (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" htmlFor="crowd-udp">{t('Alamat UDP')}</label>
                   <input
-                    id="crowd-rtsp"
-                    className="form-input"
-                    value={rtspUrl}
-                    onChange={e => setRtspUrl(e.target.value)}
+                    id="crowd-udp"
+                    className="form-input font-mono"
+                    value={udpUrl}
+                    onChange={e => setUdpUrl(e.target.value)}
+                    placeholder="udp://@244.10.10.10:15004"
+                    spellCheck={false}
+                    disabled={starting || running}
                   />
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.55 }}>
-                    {t('Sumber RTSP baru sebatas pratinjau alamat — jalankan analisis lewat unggah berkas video untuk saat ini.')}
-                  </p>
                 </div>
               ) : (
                 <div
@@ -613,7 +933,6 @@ export function CrowdCountingPage() {
                 <Metric label={t('Saat Ini')} value={running || finished ? displayCount.toLocaleString('id-ID') : '—'} color="var(--accent-cyan)" foot={t('Orang')} />
                 <Metric label={t('Rata-rata')} value={running || finished ? average.toLocaleString('id-ID') : '—'} color="var(--accent-primary)" foot={t('sepanjang sesi')} />
                 <Metric label={t('Puncak')} value={running || finished ? peak.toLocaleString('id-ID') : '—'} color="var(--accent-tertiary)" foot={t('tertinggi')} />
-                <Metric label={t('Frame Diproses')} value={running || finished ? frameCount.toLocaleString('id-ID') : '—'} foot={t('akumulasi')} />
                 {/* Tidak ada sumber data GPU/latensi asli dari backend saat
                     ini — disembunyikan sampai backend melaporkannya. */}
                 {/* <Metric label={t('Utilisasi GPU')} value={running ? '78%' : '—'} color="var(--accent-emerald)" foot={t('RTX 4090 Laptop')} /> */}
@@ -624,7 +943,7 @@ export function CrowdCountingPage() {
             <GlassCard tilt={false}>
               <SectionHead icon={<Activity size={15} />} title={t('Tren Kepadatan')} sub={t('40 pembacaan terakhir')} />
               {history.length > 2 ? (
-                <Sparkline data={history} color={overThreshold ? 'var(--danger-400)' : 'var(--accent-cyan)'} height={110} unit=" jiwa" />
+                <DensityTrendChart data={history} color={overThreshold ? 'var(--danger-400)' : 'var(--accent-cyan)'} />
               ) : (
                 <EmptyState
                   icon={<Activity size={22} />}

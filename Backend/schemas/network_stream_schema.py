@@ -20,3 +20,15 @@ class StopStreamResponse(BaseModel):
     message: str
 
     stream_id: str
+
+
+class CrowdStreamRequest(BaseModel):
+
+    network_url: str
+
+
+class CrowdStreamJobResponse(BaseModel):
+
+    success: bool
+
+    job_id: str

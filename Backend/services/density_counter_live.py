@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from utils.file_manager import FileManager
+from utils.live_capture import LatestFrameReader
 from utils.pacing import FramePacer
 from utils.websocket_manager import manager
 
@@ -17,6 +18,25 @@ from utils.websocket_manager import manager
 class VideoCrowdCounterLive:
 
     FRAME_INTERVAL = 10
+
+    # ------------------------------------------------------------------
+    # Sumber live (UDP)
+    #
+    # OPEN_TIMEOUT: batas tunggu paket pertama saat sesi dibuka.
+    # READ_TIMEOUT: batas satu cap.read() memblokir di thread pembaca.
+    # SOURCE_LOST: sesi diakhiri otomatis kalau tidak ada frame baru selama
+    #   ini — sengaja lebih longgar dari READ_TIMEOUT supaya jeda sesaat di
+    #   jaringan tidak langsung memutus sesi. Terukur, sesi berakhir ±15 s
+    #   setelah pengirim mati, bukan 10 s: begitu READ_TIMEOUT terpicu,
+    #   FFmpeg masih mengeluarkan sisa frame di decoder, dan frame itu
+    #   mereset hitungan.
+    # POLL_INTERVAL: jeda cek frame baru. Di Windows sleep dibulatkan ke
+    #   tick ~15 ms, tetap di bawah anggaran 40 ms per frame pada 25 fps.
+    # ------------------------------------------------------------------
+    LIVE_OPEN_TIMEOUT_MS = 10000
+    LIVE_READ_TIMEOUT_MS = 5000
+    LIVE_SOURCE_LOST_SECONDS = 10
+    LIVE_POLL_INTERVAL = 0.005
 
     # Ukuran & kualitas JPEG khusus untuk umpan langsung ke browser — tidak
     # memengaruhi resolusi video keluaran yang ditulis ke disk. Mengirim
@@ -95,6 +115,33 @@ class VideoCrowdCounterLive:
         )
 
         return cv2.addWeighted(frame, 0.6, heatmap, 0.4, 0)
+
+    def _encode_stream_frame(self, annotated):
+        """JPEG base64 untuk umpan browser, diperkecil ke STREAM_MAX_WIDTH.
+        None kalau encode gagal."""
+
+        height, width = annotated.shape[:2]
+
+        stream_frame = annotated
+
+        if width > self.STREAM_MAX_WIDTH:
+            ratio = self.STREAM_MAX_WIDTH / width
+            stream_frame = cv2.resize(
+                annotated,
+                (self.STREAM_MAX_WIDTH, int(height * ratio)),
+                interpolation=cv2.INTER_LINEAR
+            )
+
+        success, buffer = cv2.imencode(
+            ".jpg",
+            stream_frame,
+            [cv2.IMWRITE_JPEG_QUALITY, self.STREAM_JPEG_QUALITY]
+        )
+
+        if not success:
+            return None
+
+        return base64.b64encode(buffer).decode()
 
     async def predict_video_stream(
         self,
@@ -205,25 +252,9 @@ class VideoCrowdCounterLive:
 
                 counts.append(count)
 
-                stream_frame = annotated
+                frame_base64 = self._encode_stream_frame(annotated)
 
-                if width > self.STREAM_MAX_WIDTH:
-                    ratio = self.STREAM_MAX_WIDTH / width
-                    stream_frame = cv2.resize(
-                        annotated,
-                        (self.STREAM_MAX_WIDTH, int(height * ratio)),
-                        interpolation=cv2.INTER_LINEAR
-                    )
-
-                success, buffer = cv2.imencode(
-                    ".jpg",
-                    stream_frame,
-                    [cv2.IMWRITE_JPEG_QUALITY, self.STREAM_JPEG_QUALITY]
-                )
-
-                if success:
-
-                    frame_base64 = base64.b64encode(buffer).decode()
+                if frame_base64 is not None:
 
                     progress = round(
                         (frame_index + 1) * 100 / total_frames, 2
@@ -316,3 +347,237 @@ class VideoCrowdCounterLive:
                 }
             }
         )
+
+    async def _send_live(self, job_id, payload, stop_event):
+        """Kirim ke klien sesi live. Socket yang sudah putus bukan galat di
+        sini — itu cara normal sesi berakhir kalau tab ditutup — jadi
+        kegagalan kirim cukup menghentikan sesi, bukan melempar exception
+        yang akan tercetak sebagai traceback."""
+
+        try:
+            await manager.send(job_id, payload)
+            return True
+        except Exception:
+            stop_event.set()
+            return False
+
+    async def predict_live_stream(
+        self,
+        job_id: str,
+        network_url: str,
+        stop_event: asyncio.Event
+    ):
+        """Crowd counting pada stream UDP. Beda dari predict_video_stream:
+
+        - tidak ada VideoWriter/FFmpeg — hasil sesi live hanya ditampilkan,
+          tidak ditulis ke disk, jadi pesan `finished` tidak membawa
+          temp_path/preview_url;
+        - tidak ada FramePacer — sumber sudah realtime; frame diambil dari
+          LatestFrameReader yang otomatis melompati frame tertunggak;
+        - tidak ada total_frames/progress — sesi berakhir karena klien
+          mengirim stop, socket putus, atau sumber diam selama
+          LIVE_SOURCE_LOST_SECONDS.
+        """
+
+        start = time.time()
+
+        reader = LatestFrameReader(
+            network_url,
+            open_timeout_ms=self.LIVE_OPEN_TIMEOUT_MS,
+            read_timeout_ms=self.LIVE_READ_TIMEOUT_MS
+        )
+
+        try:
+
+            opened = await asyncio.to_thread(reader.open)
+
+            if not opened:
+
+                await self._send_live(
+                    job_id,
+                    {
+                        "error": (
+                            f"Tidak ada stream yang diterima dari {network_url} "
+                            f"dalam {self.LIVE_OPEN_TIMEOUT_MS // 1000} detik. "
+                            "Pastikan pengirim aktif dan port tidak sedang "
+                            "dipakai proses lain (mis. Live Stream)."
+                        )
+                    },
+                    stop_event
+                )
+
+                return
+
+            print(
+                f"[crowd-live] tersambung ke {network_url} "
+                f"(fps dilaporkan sumber: {reader.fps:.2f})"
+            )
+
+            last_density_map = None
+            last_count = 0
+            counter_task = None
+
+            last_seq = 0
+            frame_index = 0
+            first_frame_at = None
+            last_frame_at = None
+            counts = []
+            end_reason = "stopped"
+
+            try:
+
+                while not stop_event.is_set():
+
+                    seq, frame = reader.latest()
+
+                    if seq == last_seq:
+
+                        if (
+                            reader.seconds_since_last_frame()
+                            > self.LIVE_SOURCE_LOST_SECONDS
+                        ):
+                            end_reason = "source_lost"
+                            break
+
+                        await asyncio.sleep(self.LIVE_POLL_INTERVAL)
+                        continue
+
+                    last_seq = seq
+
+                    last_frame_at = time.time()
+
+                    if first_frame_at is None:
+                        first_frame_at = last_frame_at
+
+                    # Pola inferensi sama dengan predict_video_stream: hasil
+                    # DM-Count dipanen begitu threadnya selesai, inferensi
+                    # baru hanya dimulai tiap FRAME_INTERVAL frame yang
+                    # diproses dan kalau tidak ada yang sedang berjalan.
+                    if counter_task is not None and counter_task.done():
+
+                        try:
+                            last_density_map, raw_count, _ = counter_task.result()
+                            last_count = math.ceil(raw_count)
+                        except Exception:
+                            print(
+                                f"[crowd-live] DM-Count error at frame {frame_index}:\n"
+                                f"{traceback.format_exc()}"
+                            )
+                        finally:
+                            counter_task = None
+
+                    if (
+                        frame_index % self.FRAME_INTERVAL == 0
+                        and counter_task is None
+                    ):
+                        counter_task = asyncio.create_task(
+                            asyncio.to_thread(
+                                self.counter.predict_frame,
+                                frame.copy()
+                            )
+                        )
+
+                    if last_density_map is not None:
+                        annotated = self._blend_heatmap(last_density_map, frame)
+                        count = last_count
+                    else:
+                        annotated = frame.copy()
+                        count = 0
+
+                    annotated = self._draw_count_overlay(
+                        annotated,
+                        frame.shape[1],
+                        count
+                    )
+
+                    counts.append(count)
+
+                    frame_base64 = self._encode_stream_frame(annotated)
+
+                    if frame_base64 is not None:
+
+                        sent = await self._send_live(
+                            job_id,
+                            {
+                                "frame": frame_base64,
+                                "count": count,
+                                "live": True,
+                                "progress": None,
+                                "frame_number": frame_index,
+                                "total_frame": None,
+                                "elapsed_seconds": round(time.time() - start, 1)
+                            },
+                            stop_event
+                        )
+
+                        if not sent:
+                            break
+
+                    frame_index += 1
+
+                    # Kalau frame baru selalu sudah menunggu, loop tidak
+                    # pernah masuk sleep di atas — serahkan kendali supaya
+                    # task inferensi & listener stop tetap dijadwalkan.
+                    await asyncio.sleep(0)
+
+            finally:
+
+                if counter_task is not None:
+                    try:
+                        await counter_task
+                    except Exception:
+                        print(
+                            "[crowd-live] Final DM-Count error:\n"
+                            f"{traceback.format_exc()}"
+                        )
+
+            # Diukur sampai frame terakhir, bukan sampai sesi berakhir —
+            # kalau sesi berakhir karena sumber diam, jeda tunggu itu tidak
+            # boleh ikut menurunkan angka fps.
+            streaming_seconds = (
+                last_frame_at - first_frame_at
+                if first_frame_at is not None
+                else 0
+            )
+
+            print(
+                f"[crowd-live] selesai ({end_reason}) | "
+                f"{frame_index} frame dalam {streaming_seconds:.1f}s"
+            )
+
+            if not counts:
+                counts = [0]
+
+            await self._send_live(
+                job_id,
+                {
+                    "finished": True,
+                    "live": True,
+                    "reason": end_reason,
+                    "media_type": "VIDEO",
+                    "processing_type": "CROWD_COUNTING",
+                    "processing_time": round(time.time() - start, 2),
+                    "summary": {
+                        "max_count": max(counts),
+                        "min_count": min(counts),
+                        "average_count": math.ceil(sum(counts) / len(counts)),
+                        "last_count": counts[-1],
+                        "total_frames": frame_index,
+                        "fps": (
+                            round(frame_index / streaming_seconds, 2)
+                            if streaming_seconds > 0
+                            else 0
+                        )
+                    }
+                },
+                stop_event
+            )
+
+        finally:
+
+            # Ringkasan sudah terkirim di atas; menunggu thread pembaca
+            # (paling lama ~READ_TIMEOUT kalau sumber sedang diam) tidak
+            # lagi menahan klien.
+            reader.stop()
+
+            await asyncio.to_thread(reader.join)

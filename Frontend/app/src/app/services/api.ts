@@ -383,9 +383,17 @@ export interface CrowdVideoSummary {
 export interface CrowdVideoFrameMessage {
   frame?: string;
   count?: number;
-  progress?: number;
+  /** null pada sesi live (UDP) — stream tidak punya jumlah frame total. */
+  progress?: number | null;
   frame_number?: number;
-  total_frame?: number;
+  total_frame?: number | null;
+  /** true pada setiap pesan sesi live (UDP). */
+  live?: boolean;
+  elapsed_seconds?: number;
+  /** Alasan sesi live berakhir — hanya pada pesan `finished`. */
+  reason?: 'stopped' | 'source_lost';
+  /** Sesi gagal dimulai (mis. sumber UDP tidak mengirim apa pun). */
+  error?: string;
   finished?: boolean;
   temp_path?: string;
   processing_type?: string;
@@ -942,6 +950,17 @@ class ApiService {
     return this.request<CrowdVideoJobResult>('/crowd/video', {
       method: 'POST',
       body: formData,
+    });
+  }
+
+  /** Memulai sesi crowd counting live dari stream UDP. Backend baru membuka
+      sumbernya saat WebSocket /crowd/ws/{job_id} tersambung; sesi diakhiri
+      dengan mengirim {"action":"stop"} lewat socket itu. Hasil sesi live
+      tidak ditulis ke disk, jadi pesan `finished`-nya tanpa temp_path. */
+  async startCrowdStream(networkUrl: string) {
+    return this.request<CrowdVideoJobResult>('/crowd/stream', {
+      method: 'POST',
+      body: JSON.stringify({ network_url: networkUrl }),
     });
   }
 

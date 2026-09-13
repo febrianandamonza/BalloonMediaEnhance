@@ -96,7 +96,7 @@ function NetworkUrlField({ value, onChange, disabled }: { value: string; onChang
         className="form-input font-mono"
         value={value}
         onChange={e => onChange(e.target.value)}
-        placeholder="udp://@0.0.0.0:5600"
+        placeholder="udp://@0.0.0.0:15004"
         spellCheck={false}
         disabled={disabled}
       />
@@ -221,8 +221,8 @@ export default function LiveStreamPage() {
   const stop = async () => {
     hlsRef.current?.destroy();
     hlsRef.current = null;
-    if (streamId) await api.stopNetworkStream(streamId).catch(() => {});
-    if (tetherApiUid) await api.stopTetherCableApiLog(tetherApiUid).catch(() => {});
+    if (streamId) await api.stopNetworkStream(streamId).catch(() => { });
+    if (tetherApiUid) await api.stopTetherCableApiLog(tetherApiUid).catch(() => { });
     setPhase('setup');
     setStreamId(null);
     setTetherApiUid(null);
@@ -309,7 +309,7 @@ export default function LiveStreamPage() {
 
       hls.attachMedia(video);
 
-    // Safari → native HLS
+      // Safari → native HLS
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
       console.log("USING NATIVE HLS");
 

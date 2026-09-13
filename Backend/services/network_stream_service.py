@@ -4,8 +4,9 @@ import signal
 import subprocess
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
-from utils.exceptions import NotFoundException
+from utils.exceptions import BadRequestException, NotFoundException
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STREAMS_DIR = BASE_DIR / "streams"
@@ -135,6 +136,35 @@ class NetworkStreamService:
 
         return stream_id, f"/stream/{stream_id}/output.m3u8"
 
+    def validate_udp_url(self, network_url: str) -> str:
+        """URL ini diteruskan apa adanya ke FFmpeg (lewat cv2.VideoCapture),
+        jadi skemanya wajib dikunci ke udp:// — tanpa itu klien bisa
+        mengirim path lokal (mis. C:/rahasia.mp4) atau protokol FFmpeg lain
+        (file:, concat:) dan backend akan membaca lalu men-stream isinya.
+        Query string tetap diizinkan untuk opsi protokol UDP FFmpeg seperti
+        ?overrun_nonfatal=1&fifo_size=50000000."""
+
+        url = network_url.strip()
+
+        if not url or any(ch.isspace() for ch in url):
+            raise BadRequestException(
+                "URL sumber UDP kosong atau mengandung spasi."
+            )
+
+        parsed = urlparse(url)
+
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+
+        if parsed.scheme != "udp" or not port:
+            raise BadRequestException(
+                "URL sumber harus berformat udp://<host>:<port>, "
+                "mis. udp://@0.0.0.0:15004."
+            )
+
+        return url
 
     def stop_stream(self, stream_id: str) -> None:
 
