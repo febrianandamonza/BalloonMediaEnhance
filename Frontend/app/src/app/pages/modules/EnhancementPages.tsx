@@ -84,7 +84,7 @@ export function ImageEnhancementPage() {
 
   /* Enhancement harus dikaitkan ke satu flight mission — dimuat sekali di
      awal supaya operator wajib memilihnya sebelum "Terapkan" bisa dipakai.
-     Hanya misi dengan mission_status.name "Flight" yang relevan di sini.
+     Misi dengan mission_status.name "Flight" atau "Done" yang relevan di sini.
      /flight-information dimuat sekalian untuk mencari id-nya lewat
      pencocokan mission_id — endpoint /media butuh id flight_information,
      bukan id flight_missions. */
@@ -98,7 +98,7 @@ export function ImageEnhancementPage() {
       const flightOnly = missionRows.filter(m => {
         const status = m.mission_status;
         const name = typeof status === 'string' ? status : status?.name;
-        return name === 'Flight';
+        return name === 'Flight' || name === 'Done';
       });
       setMissions(flightOnly);
       setFlightInfoRecords(infoRows);
@@ -512,7 +512,7 @@ export function VideoEnhancementPage() {
   );
 
   /* Sama seperti ImageEnhancementPage — enhancement harus dikaitkan ke satu
-     flight mission (hanya yang mission_status.name "Flight"), dan
+     flight mission (yang mission_status.name "Flight" atau "Done"), dan
      flight-information dimuat sekalian untuk resolusi flight_information_id
      saat menyimpan ke /media. */
   useEffect(() => {
@@ -525,7 +525,7 @@ export function VideoEnhancementPage() {
       const flightOnly = missionRows.filter(m => {
         const status = m.mission_status;
         const name = typeof status === 'string' ? status : status?.name;
-        return name === 'Flight';
+        return name === 'Flight' || name === 'Done';
       });
       setMissions(flightOnly);
       setFlightInfoRecords(infoRows);

@@ -133,8 +133,8 @@ export function CrowdCountingPage() {
   }, [replaying, frames.length]);
 
   /* Sama seperti ImageDetectionPage/VideoDetectionPage — analisis harus
-     dikaitkan ke satu flight mission (hanya yang mission_status.name
-     "Flight"), dan flight-information dimuat sekalian untuk resolusi
+     dikaitkan ke satu flight mission (yang mission_status.name "Flight"
+     atau "Done"), dan flight-information dimuat sekalian untuk resolusi
      flight_information_id saat menyimpan ke /media. */
   useEffect(() => {
     let cancelled = false;
@@ -146,7 +146,7 @@ export function CrowdCountingPage() {
       const flightOnly = missionRows.filter(m => {
         const status = m.mission_status;
         const name = typeof status === 'string' ? status : status?.name;
-        return name === 'Flight';
+        return name === 'Flight' || name === 'Done';
       });
       setMissions(flightOnly);
       setFlightInfoRecords(infoRows);
@@ -707,7 +707,7 @@ export function ImageDetectionPage() {
   const [flightInfoRecords, setFlightInfoRecords] = useState<FlightInformationRecord[]>([]);
 
   /* Sama seperti ImageEnhancementPage — deteksi harus dikaitkan ke satu
-     flight mission (hanya yang mission_status.name "Flight"), dan
+     flight mission (yang mission_status.name "Flight" atau "Done"), dan
      flight-information dimuat sekalian untuk resolusi flight_information_id
      saat menyimpan ke /media. */
   useEffect(() => {
@@ -720,7 +720,7 @@ export function ImageDetectionPage() {
       const flightOnly = missionRows.filter(m => {
         const status = m.mission_status;
         const name = typeof status === 'string' ? status : status?.name;
-        return name === 'Flight';
+        return name === 'Flight' || name === 'Done';
       });
       setMissions(flightOnly);
       setFlightInfoRecords(infoRows);
@@ -1181,8 +1181,8 @@ export function VideoDetectionPage() {
   }, [replaying, frames.length]);
 
   /* Sama seperti ImageEnhancementPage/ImageDetectionPage — deteksi harus
-     dikaitkan ke satu flight mission (hanya yang mission_status.name
-     "Flight"), dan flight-information dimuat sekalian untuk resolusi
+     dikaitkan ke satu flight mission (yang mission_status.name "Flight"
+     atau "Done"), dan flight-information dimuat sekalian untuk resolusi
      flight_information_id saat menyimpan ke /media. */
   useEffect(() => {
     let cancelled = false;
@@ -1194,7 +1194,7 @@ export function VideoDetectionPage() {
       const flightOnly = missionRows.filter(m => {
         const status = m.mission_status;
         const name = typeof status === 'string' ? status : status?.name;
-        return name === 'Flight';
+        return name === 'Flight' || name === 'Done';
       });
       setMissions(flightOnly);
       setFlightInfoRecords(infoRows);
