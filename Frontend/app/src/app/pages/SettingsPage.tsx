@@ -618,6 +618,7 @@ function DataTab({ s, set }: { s: StationSettings; set: Setter }) {
 
   return (
     <div className="grid-2">
+      {/* Kebijakan Retensi Media — belum digunakan, dinonaktifkan sementara.
       <GlassCard tilt={false}>
         <div className="section-head"><HardDriveDownload size={15} /> {t('Kebijakan Retensi')}</div>
         <div className="grid-2">
@@ -641,6 +642,7 @@ function DataTab({ s, set }: { s: StationSettings; set: Setter }) {
           />
         </div>
       </GlassCard>
+      */}
 
       <GlassCard tilt={false}>
         <div className="section-head"><RotateCcw size={15} /> {t('Pemeliharaan Sistem')}</div>

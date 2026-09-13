@@ -29,6 +29,46 @@ class MediaService:
     ):
         return self.repository.get_all(db)
 
+    def delete(
+        self,
+        db,
+        media_id,
+        http_request: Request,
+        current_user
+    ):
+        entity = self.repository.get_by_id(
+            db,
+            media_id
+        )
+
+        if entity is None:
+            raise NotFoundException(
+                "Media not found."
+            )
+
+        original_filename = entity.original_filename
+        storage_path = entity.storage_path
+
+        self.repository.delete(
+            db,
+            entity
+        )
+
+        FileManager.delete_temp_file(
+            storage_path
+        )
+
+        audit.log(
+            db=db,
+            request=http_request,
+            current_user=current_user,
+            module="Media",
+            action="DELETE",
+            entity="Media",
+            entity_id=media_id,
+            description=f"Media '{original_filename}' deleted."
+        )
+
 
     def save(
         self,

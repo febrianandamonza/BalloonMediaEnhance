@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Request
@@ -63,3 +65,28 @@ def save(
         current_user=current_user,
         request=request
     )
+
+@router.delete(
+    "/{media_id}"
+)
+def delete(
+    media_id: UUID,
+    http_request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            "Admin",
+            "Operator"
+        )
+    )
+):
+    service.delete(
+        db=db,
+        media_id=media_id,
+        http_request=http_request,
+        current_user=current_user
+    )
+
+    return {
+        "message": "Media deleted successfully."
+    }

@@ -113,6 +113,8 @@ export default function MediaSourcePage() {
   const [drag, setDrag] = useState(false);
   /* Berkas yang sedang dibuka pada penampil layar penuh */
   const [viewing, setViewing] = useState<MediaItem | null>(null);
+  /* Berkas yang menunggu konfirmasi penghapusan */
+  const [deleting, setDeleting] = useState<MediaItem | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -129,7 +131,9 @@ export default function MediaSourcePage() {
       if (cancelled) return;
       const flightInfoById = new globalThis.Map(infoRows.map(i => [String(i.id), i]));
       const missionById = new globalThis.Map(missionRows.map(m => [String(m.id), m]));
-      setMedia(mediaRows.map(m => toMediaItem(m, flightInfoById, missionById)));
+      /* Baris tanpa storage_path tidak punya berkas asli di baliknya
+         (data dummy/uji) — disembunyikan dari katalog. */
+      setMedia(mediaRows.map(m => toMediaItem(m, flightInfoById, missionById)).filter(item => Boolean(item.src)));
     }).finally(() => { if (!cancelled) setMediaLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -265,15 +269,32 @@ export default function MediaSourcePage() {
     el.style.setProperty('--my', `${((e.clientY - r.top) / r.height) * 100}%`);
   };
 
-  const removeMedia = (id: string) => {
+  const removeMedia = async (id: string) => {
     const item = media.find(m => m.id === id);
+
+    /* Berkas yang baru diunggah pada sesi ini (belum ada di database,
+       masih berupa preview lokal) cukup dibuang dari state. */
+    if (!item?.src) {
+      setMedia(prev => prev.filter(m => m.id !== id));
+      setSelected(null);
+      if (viewing?.id === id) setViewing(null);
+      return;
+    }
+
+    try {
+      await api.deleteMedia(id);
+    } catch {
+      pushToast({ tone: 'error', title: 'Gagal menghapus berkas', detail: item.name });
+      return;
+    }
+
     setMedia(prev => prev.filter(m => m.id !== id));
     setSelected(null);
     if (viewing?.id === id) setViewing(null);
-    pushToast({ tone: 'warning', title: 'Berkas dihapus', detail: `${item?.name ?? 'Berkas'} dikeluarkan dari katalog media.` });
+    pushToast({ tone: 'warning', title: 'Berkas dihapus', detail: `${item.name} dikeluarkan dari katalog media.` });
     notify({
       title: 'Berkas dihapus',
-      detail: `${item?.name ?? 'Berkas'} dikeluarkan dari katalog media.`,
+      detail: `${item.name} dikeluarkan dari katalog media.`,
       severity: 'peringatan',
       category: 'Media',
       source: 'Surveillance Media',
@@ -282,24 +303,55 @@ export default function MediaSourcePage() {
     });
   };
 
-  /* Menyalin berkas ke folder ekspor stasiun. Karena GCS beroperasi
-     tertutup, "unduh" berarti menulis salinan ke media lepas yang telah
-     didaftarkan, bukan mengirim berkas keluar jaringan. */
-  const exportMedia = (item: MediaItem) => {
-    pushToast({
-      tone: 'success',
-      title: 'Berkas disalin ke folder ekspor',
-      detail: `${item.name} · ${formatBytes(item.bytes)} — tujuan D:\\SkyStar\\export.`,
-    });
-    notify({
-      title: 'Berkas disalin ke folder ekspor',
-      detail: `${item.name} · ${formatBytes(item.bytes)} — tujuan D:\\SkyStar\\export.`,
-      severity: 'informasi',
-      category: 'Media',
-      source: 'Surveillance Media',
-      page: 'media-source',
-      silent: true,
-    });
+  /* Mengunduh berkas lewat mekanisme unduhan bawaan browser (anchor
+     "download"), supaya masuk ke download bar & riwayat unduhan seperti
+     unduhan pada umumnya. Popup pilih folder tunduk pada pengaturan
+     browser masing-masing pengguna ("Ask where to save each file"). */
+  const exportMedia = async (item: MediaItem) => {
+    const fileUrl = item.src || item.preview;
+    if (!fileUrl) {
+      pushToast({
+        tone: 'error',
+        title: 'Berkas tidak tersedia',
+        detail: `${item.name} tidak memiliki sumber berkas untuk diunduh.`,
+      });
+      return;
+    }
+
+    try {
+      const res = await fetch(fileUrl);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = item.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+
+      pushToast({
+        tone: 'success',
+        title: 'Berkas diunduh',
+        detail: `${item.name} · ${formatBytes(item.bytes)}`,
+      });
+      notify({
+        title: 'Berkas diunduh',
+        detail: `${item.name} · ${formatBytes(item.bytes)}`,
+        severity: 'informasi',
+        category: 'Media',
+        source: 'Surveillance Media',
+        page: 'media-source',
+        silent: true,
+      });
+    } catch {
+      pushToast({
+        tone: 'error',
+        title: 'Gagal mengunduh berkas',
+        detail: item.name,
+      });
+    }
   };
 
   return (
@@ -514,7 +566,7 @@ export default function MediaSourcePage() {
               item={m}
               selected={selected === m.id}
               onSelect={() => setSelected(selected === m.id ? null : m.id)}
-              onDelete={() => removeMedia(m.id)}
+              onDelete={() => setDeleting(m)}
               onOpen={() => setViewing(m)}
               onExport={() => exportMedia(m)}
             />
@@ -564,7 +616,7 @@ export default function MediaSourcePage() {
                         <button
                           className="btn btn-ghost btn-sm"
                           title={t('Hapus')}
-                          onClick={e => { e.stopPropagation(); removeMedia(m.id); }}
+                          onClick={e => { e.stopPropagation(); setDeleting(m); }}
                         >
                           <Trash2 size={13} />
                         </button>
@@ -603,6 +655,43 @@ export default function MediaSourcePage() {
           onClose={() => setViewing(null)}
           onExport={() => exportMedia(viewing)}
         />
+      )}
+
+      {deleting && (
+        <div className="modal-backdrop" onClick={() => setDeleting(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }} role="dialog" aria-modal="true">
+            <div className="modal-header">
+              <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Trash2 size={16} /> {t('Hapus Berkas')}
+              </h3>
+              <button className="modal-x" onClick={() => setDeleting(null)} aria-label={t('Tutup')}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: 12.5, lineHeight: 1.65, margin: 0 }}>
+                {t('Berkas berikut akan dihapus permanen dari katalog media beserta salinannya di penyimpanan:')}
+              </p>
+              <p style={{ margin: '10px 0 0', fontSize: 13, fontWeight: 700, wordBreak: 'break-all' }}>
+                {deleting.name}
+              </p>
+              <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.6 }}>
+                {t('Tindakan ini tidak dapat diurungkan.')}
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDeleting(null)}>{t('Batal')}</button>
+              <button
+                className="btn btn-danger"
+                onClick={() => {
+                  const target = deleting;
+                  setDeleting(null);
+                  removeMedia(target.id);
+                }}
+              >
+                <Trash2 size={14} /> {t('Hapus Berkas')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -926,6 +926,10 @@ class ApiService {
     return this.request<MediaRecord[]>('/media');
   }
 
+  async deleteMedia(id: string) {
+    return this.request<unknown>(`/media/${id}`, { method: 'DELETE' });
+  }
+
   // ==========================================
   // OBJECT DETECTION
   // ==========================================
