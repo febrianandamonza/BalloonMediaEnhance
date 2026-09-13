@@ -1,18 +1,17 @@
 import asyncio
-import json
 import uuid
 
 from fastapi import APIRouter, UploadFile, File, WebSocket, WebSocketDisconnect
 
 from api.crowd_counting import density_counter
 from schemas.network_stream_schema import (
-    CrowdStreamRequest,
-    CrowdStreamJobResponse,
+    StreamJobRequest,
+    StreamJobResponse,
 )
 from services.density_counter_live import VideoCrowdCounterLive
 from services.network_stream_service import network_stream_service
 from utils.file_manager import FileManager
-from utils.websocket_manager import manager
+from utils.websocket_manager import listen_for_stop, manager
 
 router = APIRouter(
     prefix="/api/v1/crowd",
@@ -51,10 +50,10 @@ async def start_video_job(
 
 @router.post(
     "/stream",
-    response_model=CrowdStreamJobResponse
+    response_model=StreamJobResponse
 )
 async def start_stream_job(
-    payload: CrowdStreamRequest
+    payload: StreamJobRequest
 ):
     # Sumber baru dibuka saat WebSocket tersambung, bukan di sini: membuka
     # udp://@0.0.0.0:<port> berarti bind port tersebut, dan membukanya dua
@@ -75,36 +74,6 @@ async def start_stream_job(
         "success": True,
         "job_id": job_id
     }
-
-
-async def _listen_for_stop(
-    websocket: WebSocket,
-    stop_event: asyncio.Event
-):
-    """Stream live tidak punya akhir alami seperti EOF berkas, jadi klien
-    mengakhiri sesi dengan mengirim {"action": "stop"}. Socket yang putus
-    (tab ditutup, pindah halaman) juga dianggap permintaan berhenti."""
-
-    try:
-
-        while True:
-
-            text = await websocket.receive_text()
-
-            try:
-                message = json.loads(text)
-            except ValueError:
-                continue
-
-            if isinstance(message, dict) and message.get("action") == "stop":
-                break
-
-    except Exception:
-        # WebSocketDisconnect, atau pesan biner yang tidak kita harapkan.
-        pass
-
-    finally:
-        stop_event.set()
 
 
 @router.websocket("/ws/{job_id}")
@@ -137,7 +106,7 @@ async def websocket_predict_video(
             stop_event = asyncio.Event()
 
             stop_listener = asyncio.create_task(
-                _listen_for_stop(websocket, stop_event)
+                listen_for_stop(websocket, stop_event)
             )
 
             await live_counter.predict_live_stream(

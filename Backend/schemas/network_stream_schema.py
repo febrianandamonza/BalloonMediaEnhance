@@ -22,12 +22,13 @@ class StopStreamResponse(BaseModel):
     stream_id: str
 
 
-class CrowdStreamRequest(BaseModel):
+class StreamJobRequest(BaseModel):
+    """Sesi live UDP untuk crowd counting maupun deteksi objek."""
 
     network_url: str
 
 
-class CrowdStreamJobResponse(BaseModel):
+class StreamJobResponse(BaseModel):
 
     success: bool
 

@@ -21,6 +21,37 @@ import time
 import cv2
 
 
+# ----------------------------------------------------------------------
+# Parameter sesi live — dipakai bersama crowd counting & deteksi objek.
+#
+# OPEN_TIMEOUT: batas tunggu paket pertama saat sesi dibuka.
+# READ_TIMEOUT: batas satu cap.read() memblokir di thread pembaca.
+# SOURCE_LOST: sesi diakhiri otomatis kalau tidak ada frame baru selama
+#   ini — sengaja lebih longgar dari READ_TIMEOUT supaya jeda sesaat di
+#   jaringan tidak langsung memutus sesi. Terukur, sesi berakhir ±15 s
+#   setelah pengirim mati, bukan 10 s: begitu READ_TIMEOUT terpicu,
+#   FFmpeg masih mengeluarkan sisa frame di decoder, dan frame itu
+#   mereset hitungan.
+# POLL_INTERVAL: jeda cek frame baru. Di Windows sleep dibulatkan ke
+#   tick ~15 ms, tetap di bawah anggaran 40 ms per frame pada 25 fps.
+# ----------------------------------------------------------------------
+LIVE_OPEN_TIMEOUT_MS = 10000
+LIVE_READ_TIMEOUT_MS = 5000
+LIVE_SOURCE_LOST_SECONDS = 10
+LIVE_POLL_INTERVAL = 0.005
+
+
+def open_failed_message(network_url: str) -> str:
+
+    return (
+        f"Tidak ada stream yang diterima dari {network_url} "
+        f"dalam {LIVE_OPEN_TIMEOUT_MS // 1000} detik. "
+        "Pastikan pengirim aktif dan port tidak sedang dipakai proses lain "
+        "(mis. Live Stream, atau Crowd Counting/Video Analytic yang sedang "
+        "membuka port yang sama)."
+    )
+
+
 class LatestFrameReader:
 
     def __init__(self, url: str, open_timeout_ms: int, read_timeout_ms: int):

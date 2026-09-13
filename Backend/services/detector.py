@@ -12,8 +12,16 @@ import subprocess
 from pathlib import Path
 
 from utils.file_manager import FileManager
+from utils.live_capture import (
+    LIVE_OPEN_TIMEOUT_MS,
+    LIVE_POLL_INTERVAL,
+    LIVE_READ_TIMEOUT_MS,
+    LIVE_SOURCE_LOST_SECONDS,
+    LatestFrameReader,
+    open_failed_message,
+)
 from utils.pacing import FramePacer
-from utils.websocket_manager import manager
+from utils.websocket_manager import manager, send_live
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -109,6 +117,90 @@ class ObjectDetector:
         )
 
         return results
+
+    def _annotate_frame(self, frame, results):
+        """Salinan frame yang digambari kotak deteksi, beserta daftar
+        objeknya. `results` boleh None (inferensi pertama belum selesai) —
+        frame dikembalikan tanpa kotak."""
+
+        annotated = frame.copy()
+
+        objects = []
+
+        if results is None:
+            return annotated, objects
+
+        for box in results[0].boxes:
+
+            cls = int(box.cls[0])
+            conf = float(box.conf[0])
+
+            label = self.model.names[cls]
+
+            if label not in self.CLASS_MAPPING:
+                continue
+
+            mapped = self.CLASS_MAPPING[label]
+
+            color = self.get_class_color(mapped)
+
+            objects.append({
+                "class": mapped,
+                "confidence": round(conf, 2),
+                "color": color["hex"]
+            })
+
+            x1, y1, x2, y2 = map(
+                int,
+                box.xyxy[0]
+            )
+
+            cv2.rectangle(
+                annotated,
+                (x1, y1),
+                (x2, y2),
+                color["bgr"],
+                2
+            )
+
+            cv2.putText(
+                annotated,
+                f"{mapped} {conf:.2f}",
+                (x1, y1 - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                color["bgr"],
+                2
+            )
+
+        return annotated, objects
+
+    def _encode_stream_frame(self, annotated):
+        """JPEG base64 untuk umpan browser, diperkecil ke STREAM_MAX_WIDTH.
+        None kalau encode gagal."""
+
+        height, width = annotated.shape[:2]
+
+        stream_frame = annotated
+
+        if width > self.STREAM_MAX_WIDTH:
+            ratio = self.STREAM_MAX_WIDTH / width
+            stream_frame = cv2.resize(
+                annotated,
+                (self.STREAM_MAX_WIDTH, int(height * ratio)),
+                interpolation=cv2.INTER_LINEAR
+            )
+
+        success, buffer = cv2.imencode(
+            ".jpg",
+            stream_frame,
+            [cv2.IMWRITE_JPEG_QUALITY, self.STREAM_JPEG_QUALITY]
+        )
+
+        if not success:
+            return None
+
+        return base64.b64encode(buffer).decode()
 
     # async def detect_video_stream(
     #     self,
@@ -731,57 +823,10 @@ class ObjectDetector:
                 # =========================
                 annotation_start = time.time()
 
-                annotated = frame.copy()
-
-                objects = []
-
                 # Beberapa frame pertama belum punya hasil karena inferensi
                 # kini berjalan asinkron — frame tetap ditampilkan, hanya
                 # belum berkotak.
-                if last_results is not None:
-
-                    for box in last_results[0].boxes:
-
-                        cls = int(box.cls[0])
-                        conf = float(box.conf[0])
-
-                        label = self.model.names[cls]
-
-                        if label not in self.CLASS_MAPPING:
-                            continue
-
-                        mapped = self.CLASS_MAPPING[label]
-
-                        color = self.get_class_color(mapped)
-
-                        objects.append({
-                            "class": mapped,
-                            "confidence": round(conf, 2),
-                            "color": color["hex"]
-                        })
-
-                        x1, y1, x2, y2 = map(
-                            int,
-                            box.xyxy[0]
-                        )
-
-                        cv2.rectangle(
-                            annotated,
-                            (x1, y1),
-                            (x2, y2),
-                            color["bgr"],
-                            2
-                        )
-
-                        cv2.putText(
-                            annotated,
-                            f"{mapped} {conf:.2f}",
-                            (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.6,
-                            color["bgr"],
-                            2
-                        )
+                annotated, objects = self._annotate_frame(frame, last_results)
 
                 annotation_time = time.time() - annotation_start
 
@@ -809,25 +854,7 @@ class ObjectDetector:
 
                     encode_start = time.time()
 
-                    stream_frame = annotated
-
-                    if width > self.STREAM_MAX_WIDTH:
-                        ratio = self.STREAM_MAX_WIDTH / width
-                        stream_frame = cv2.resize(
-                            annotated,
-                            (self.STREAM_MAX_WIDTH, int(height * ratio)),
-                            interpolation=cv2.INTER_LINEAR
-                        )
-
-                    success, buffer = cv2.imencode(
-                        ".jpg",
-                        stream_frame,
-                        [cv2.IMWRITE_JPEG_QUALITY, self.STREAM_JPEG_QUALITY]
-                    )
-
-                    frame_base64 = base64.b64encode(
-                        buffer
-                    ).decode() if success else None
+                    frame_base64 = self._encode_stream_frame(annotated)
 
                     encode_time = time.time() - encode_start
 
@@ -1013,6 +1040,196 @@ class ObjectDetector:
             }
 
         )
+
+    async def detect_live_stream(
+        self,
+        job_id: str,
+        network_url: str,
+        stop_event: asyncio.Event
+    ):
+        """Deteksi objek pada stream UDP. Beda dari detect_video_stream:
+
+        - tidak ada VideoWriter/FFmpeg — hasil sesi live hanya ditampilkan,
+          tidak ditulis ke disk, jadi pesan `finished` tidak membawa
+          temp_path/preview_url;
+        - tidak ada FramePacer — sumber sudah realtime; frame diambil dari
+          LatestFrameReader yang otomatis melompati frame tertunggak;
+        - laju kirim dibatasi STREAM_FPS lewat jam dinding, karena stream
+          tidak punya fps berkas yang bisa dijadikan patokan send_every;
+        - sesi berakhir karena klien mengirim stop, socket putus, atau
+          sumber diam selama LIVE_SOURCE_LOST_SECONDS.
+        """
+
+        start = time.time()
+
+        reader = LatestFrameReader(
+            network_url,
+            open_timeout_ms=LIVE_OPEN_TIMEOUT_MS,
+            read_timeout_ms=LIVE_READ_TIMEOUT_MS
+        )
+
+        try:
+
+            opened = await asyncio.to_thread(reader.open)
+
+            if not opened:
+
+                await send_live(
+                    job_id,
+                    {"error": open_failed_message(network_url)},
+                    stop_event
+                )
+
+                return
+
+            print(
+                f"[detect-live] tersambung ke {network_url} "
+                f"(fps dilaporkan sumber: {reader.fps:.2f})"
+            )
+
+            # Frame yang datang lebih rapat dari ini dilewati seluruhnya.
+            # Toleransi 25% supaya sumber 30 fps dengan jitter jaringan tidak
+            # terpotong jadi separuh lajunya; sumber 60 fps tetap tertahan
+            # ke ±30 fps.
+            min_frame_gap = 0.75 / self.STREAM_FPS
+
+            last_results = None
+            yolo_task = None
+
+            last_seq = 0
+            last_processed_at = 0.0
+            frame_index = 0
+            end_reason = "stopped"
+
+            try:
+
+                while not stop_event.is_set():
+
+                    seq, frame = reader.latest()
+
+                    if seq == last_seq:
+
+                        if (
+                            reader.seconds_since_last_frame()
+                            > LIVE_SOURCE_LOST_SECONDS
+                        ):
+                            end_reason = "source_lost"
+                            break
+
+                        await asyncio.sleep(LIVE_POLL_INTERVAL)
+                        continue
+
+                    last_seq = seq
+
+                    now = time.time()
+
+                    if now - last_processed_at < min_frame_gap:
+                        await asyncio.sleep(0)
+                        continue
+
+                    last_processed_at = now
+
+                    # Pola inferensi sama dengan detect_video_stream: hasil
+                    # YOLO dipanen begitu threadnya selesai, inferensi baru
+                    # hanya dimulai tiap FRAME_INTERVAL frame yang diproses
+                    # dan kalau tidak ada yang sedang berjalan.
+                    if yolo_task is not None and yolo_task.done():
+
+                        try:
+                            last_results = yolo_task.result()
+                        except Exception:
+                            print(
+                                f"[detect-live] YOLO error at frame {frame_index}:\n"
+                                f"{traceback.format_exc()}"
+                            )
+                        finally:
+                            yolo_task = None
+
+                    if (
+                        frame_index % self.FRAME_INTERVAL == 0
+                        and yolo_task is None
+                    ):
+                        yolo_task = asyncio.create_task(
+                            asyncio.to_thread(
+                                self.detect_frame,
+                                frame.copy()
+                            )
+                        )
+
+                    annotated, objects = self._annotate_frame(
+                        frame,
+                        last_results
+                    )
+
+                    frame_base64 = self._encode_stream_frame(annotated)
+
+                    if frame_base64 is not None:
+
+                        sent = await send_live(
+                            job_id,
+                            {
+                                "frame": frame_base64,
+                                "objects": objects,
+                                "live": True,
+                                "progress": None,
+                                "frame_number": frame_index,
+                                "total_frame": None,
+                                "elapsed_seconds": round(time.time() - start, 1),
+                                "timestamp": datetime.now().strftime(
+                                    "%H:%M:%S.%f"
+                                )[:-3]
+                            },
+                            stop_event
+                        )
+
+                        if not sent:
+                            break
+
+                    frame_index += 1
+
+                    # Kalau frame baru selalu sudah menunggu, loop tidak
+                    # pernah masuk sleep di atas — serahkan kendali supaya
+                    # task YOLO & listener stop tetap dijadwalkan.
+                    await asyncio.sleep(0)
+
+            finally:
+
+                if yolo_task is not None:
+                    try:
+                        await yolo_task
+                    except Exception:
+                        print(
+                            "[detect-live] Final YOLO error:\n"
+                            f"{traceback.format_exc()}"
+                        )
+
+            print(
+                f"[detect-live] selesai ({end_reason}) | "
+                f"{frame_index} frame dalam {time.time() - start:.1f}s"
+            )
+
+            await send_live(
+                job_id,
+                {
+                    "finished": True,
+                    "live": True,
+                    "reason": end_reason,
+                    "media_type": "VIDEO",
+                    "processing_type": "OBJECT_DETECTION",
+                    "processing_time": round(time.time() - start, 2),
+                    "total_frames": frame_index
+                },
+                stop_event
+            )
+
+        finally:
+
+            # Ringkasan sudah terkirim di atas; menunggu thread pembaca
+            # (paling lama ~READ_TIMEOUT kalau sumber sedang diam) tidak
+            # lagi menahan klien.
+            reader.stop()
+
+            await asyncio.to_thread(reader.join)
 
     # def save_image(self, image, output_path):
 

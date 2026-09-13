@@ -372,7 +372,10 @@ export const EN: Record<string, string> = {
   'Alamat UDP': 'UDP Address',
 
   'Isi alamat UDP dahulu': 'Enter a UDP address first',
-  'Masukkan URL sumber UDP, mis. udp://@0.0.0.0:15004.': 'Enter the UDP source URL, e.g. udp://@0.0.0.0:15004.',
+  'Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.': 'Enter the UDP source URL, e.g. udp://@244.10.10.10:15004.',
+  'Sesi deteksi gagal': 'Detection session failed',
+  'Sesi deteksi dimulai': 'Detection session started',
+  'Isi alamat UDP di panel kanan, lalu tekan Jalankan Deteksi.': 'Enter the UDP address in the right panel, then press Run Detection.',
   'Menghubungkan ke': 'Connecting to',
   'Sesi crowd counting gagal': 'Crowd counting session failed',
   'Sumber UDP terputus': 'UDP source lost',

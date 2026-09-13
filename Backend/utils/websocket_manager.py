@@ -1,3 +1,6 @@
+import asyncio
+import json
+
 from fastapi import WebSocket
 from typing import Dict
 
@@ -49,3 +52,51 @@ class WebSocketManager:
 
 
 manager = WebSocketManager()
+
+
+async def send_live(
+    job_id: str,
+    payload: dict,
+    stop_event: asyncio.Event
+) -> bool:
+    """Kirim ke klien sesi live (UDP). Socket yang sudah putus bukan galat
+    di sini — itu cara normal sesi berakhir kalau tab ditutup — jadi
+    kegagalan kirim cukup menghentikan sesi, bukan melempar exception yang
+    akan tercetak sebagai traceback."""
+
+    try:
+        await manager.send(job_id, payload)
+        return True
+    except Exception:
+        stop_event.set()
+        return False
+
+
+async def listen_for_stop(
+    websocket: WebSocket,
+    stop_event: asyncio.Event
+):
+    """Stream live tidak punya akhir alami seperti EOF berkas, jadi klien
+    mengakhiri sesi dengan mengirim {"action": "stop"}. Socket yang putus
+    (tab ditutup, pindah halaman) juga dianggap permintaan berhenti."""
+
+    try:
+
+        while True:
+
+            text = await websocket.receive_text()
+
+            try:
+                message = json.loads(text)
+            except ValueError:
+                continue
+
+            if isinstance(message, dict) and message.get("action") == "stop":
+                break
+
+    except Exception:
+        # WebSocketDisconnect, atau pesan biner yang tidak kita harapkan.
+        pass
+
+    finally:
+        stop_event.set()

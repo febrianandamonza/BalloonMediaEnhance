@@ -5,7 +5,7 @@ import GlassCard from '../../components/GlassCard';
 import { useApp, useNavGuard } from '../../context';
 import {
   PageHead, Metric, MetricRow, SectionHead, KVList,
-  EmptyState, Segmented,
+  EmptyState,
   OfflineNotice,
 } from '../../components/ui';
 import { CompareSlider, VideoPlayer } from '../../components/media';
@@ -65,7 +65,7 @@ interface CapturedCrowdFrame {
 
 const CROWD_FRAME_BUFFER = 400;
 
-type CrowdSource = 'upload' | 'udp';
+type VideoSourceKind = 'upload' | 'udp';
 
 /** Batas tunggu pesan `finished` setelah operator menekan Hentikan pada
     sesi UDP. Backend baru mengirimnya setelah inferensi terakhir selesai
@@ -289,7 +289,7 @@ function DensityTrendChart({ data, color, height = 130 }: { data: number[]; colo
 
 export function CrowdCountingPage() {
   const { pushToast, notify, offline, t } = useApp();
-  const [source, setSource] = useState<CrowdSource>('upload');
+  const [source, setSource] = useState<VideoSourceKind>('upload');
   const [udpUrl, setUdpUrl] = useState('udp://@244.10.10.10:15004');
   const [file, setFile] = useState<{ name: string; url: string; raw: File } | null>(null);
   const [drag, setDrag] = useState(false);
@@ -543,7 +543,7 @@ export function CrowdCountingPage() {
 
   /* Berganti sumber membuang sesi sebelumnya — linimasa & statistik milik
      sumber lama tidak relevan untuk sumber yang baru dipilih. */
-  const changeSource = (next: CrowdSource) => {
+  const changeSource = (next: VideoSourceKind) => {
     if (next === source) return;
     closeSocket();
     setSource(next);
@@ -886,7 +886,7 @@ export function CrowdCountingPage() {
                   id="crowd-source"
                   className="form-input"
                   value={source}
-                  onChange={e => changeSource(e.target.value as CrowdSource)}
+                  onChange={e => changeSource(e.target.value as VideoSourceKind)}
                   disabled={starting || running}
                 >
                   <option value="upload">{t('Unggah Berkas')}</option>
@@ -1441,14 +1441,15 @@ function formatElapsed(ms: number) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-/* Sumber RTSP disembunyikan sementara — backend baru mendukung deteksi
-   lewat unggah berkas. Ganti ke true begitu jalur RTSP siap dipakai. */
-const RTSP_SOURCE_ENABLED = false;
+/* Batas linimasa sesi live (UDP): sesi tanpa ujung akan menumpuk frame di
+   memori peramban tanpa batas. Sesi berkas tidak dibatasi supaya seluruh
+   video tetap bisa diputar ulang. */
+const DETECT_LIVE_FRAME_BUFFER = 400;
 
 export function VideoDetectionPage() {
   const { pushToast, notify, t } = useApp();
-  const [source, setSource] = useState<'upload' | 'rtsp'>('upload');
-  const [rtspUrl, setRtspUrl] = useState('rtsp://192.168.10.100:15004/stream1');
+  const [source, setSource] = useState<VideoSourceKind>('upload');
+  const [udpUrl, setUdpUrl] = useState('udp://@244.10.10.10:15004');
   const [file, setFile] = useState<{ name: string; url: string; raw: File } | null>(null);
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1460,6 +1461,8 @@ export function VideoDetectionPage() {
 
   const [starting, setStarting] = useState(false);
   const [running, setRunning] = useState(false);
+  /* Sesi UDP sudah diminta berhenti, menunggu pesan `finished` backend. */
+  const [stopping, setStopping] = useState(false);
   /* Seluruh frame yang sudah diterima sejauh ini — linimasa proses. */
   const [frames, setFrames] = useState<CapturedFrame[]>([]);
   /* Indeks frame yang sedang ditampilkan. Mengikuti frame terbaru secara
@@ -1476,6 +1479,8 @@ export function VideoDetectionPage() {
   const [saving, setSaving] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const startedAtRef = useRef<number | null>(null);
+  const stopTimerRef = useRef<number | null>(null);
+  const isUdp = source === 'udp';
 
   useNavGuard(
     starting || running,
@@ -1548,15 +1553,28 @@ export function VideoDetectionPage() {
       .sort((a, b) => b.count - a.count);
   }, [visible]);
 
+  const clearStopTimer = () => {
+    if (stopTimerRef.current != null) {
+      window.clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+  };
+
   const closeSocket = () => {
+    clearStopTimer();
     wsRef.current?.close();
     wsRef.current = null;
     setRunning(false);
+    setStopping(false);
   };
 
   /* Socket ditutup otomatis kalau operator berpindah halaman di
-     tengah-tengah job berjalan. */
-  useEffect(() => () => { wsRef.current?.close(); }, []);
+     tengah-tengah job berjalan — pada sesi UDP, backend menganggap socket
+     yang putus sebagai permintaan berhenti. */
+  useEffect(() => () => {
+    wsRef.current?.close();
+    if (stopTimerRef.current != null) window.clearTimeout(stopTimerRef.current);
+  }, []);
 
   const openSocket = (jobId: string) => {
     const socket = new WebSocket(`${WS_BASE}/detect/ws/${jobId}`);
@@ -1568,9 +1586,28 @@ export function VideoDetectionPage() {
     socket.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data) as DetectVideoFrameMessage;
+        if (data.error) {
+          pushToast({ tone: 'error', title: t('Sesi deteksi gagal'), detail: data.error });
+          notify({
+            title: t('Sesi deteksi gagal'),
+            detail: data.error,
+            severity: 'peringatan',
+            category: 'Deteksi Objek',
+            source: 'Video Analytic',
+            page: 'detection-video',
+            silent: true,
+          });
+          closeSocket();
+          return;
+        }
         if (data.frame) {
-          const t = startedAtRef.current ? Date.now() - startedAtRef.current : 0;
-          setFrames(prev => [...prev, { image: `data:image/jpeg;base64,${data.frame}`, objects: data.objects ?? [], t }]);
+          const elapsed = startedAtRef.current ? Date.now() - startedAtRef.current : 0;
+          setFrames(prev => {
+            const appended = [...prev, { image: `data:image/jpeg;base64,${data.frame}`, objects: data.objects ?? [], t: elapsed }];
+            return data.live && appended.length > DETECT_LIVE_FRAME_BUFFER
+              ? appended.slice(-DETECT_LIVE_FRAME_BUFFER)
+              : appended;
+          });
         }
         /* Job selesai — backend menyertakan medan penyelesaian di pesan
            terakhir, jadi digabung apa adanya begitu muncul. */
@@ -1582,6 +1619,25 @@ export function VideoDetectionPage() {
             preview_url: data.preview_url ?? prev?.preview_url,
             processing_time: data.processing_time ?? prev?.processing_time,
           }));
+        }
+        /* Sesi live berakhir karena operator menekan Hentikan, atau otomatis
+           karena sumber UDP diam terlalu lama. Socket ditutup dari sini:
+           backend masih melepas pembaca stream setelah mengirim pesan ini. */
+        if (data.finished && data.live) {
+          const sourceLost = data.reason === 'source_lost';
+          const title = sourceLost ? t('Sumber UDP terputus') : t('Sesi live dihentikan');
+          const detail = sourceLost ? t('Tidak ada frame baru dari sumber — sesi diakhiri otomatis.') : undefined;
+          pushToast({ tone: sourceLost ? 'warning' : 'success', title, detail });
+          notify({
+            title,
+            detail: detail ?? title,
+            severity: sourceLost ? 'peringatan' : 'informasi',
+            category: 'Deteksi Objek',
+            source: 'Video Analytic',
+            page: 'detection-video',
+            silent: true,
+          });
+          closeSocket();
         }
       } catch {
         /* pesan bukan JSON — diabaikan */
@@ -1601,7 +1657,11 @@ export function VideoDetectionPage() {
       });
     };
 
-    socket.onclose = () => setRunning(false);
+    socket.onclose = () => {
+      clearStopTimer();
+      setRunning(false);
+      setStopping(false);
+    };
   };
 
   const pick = (f: File | undefined) => {
@@ -1624,6 +1684,15 @@ export function VideoDetectionPage() {
     setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false); setJobResult(null);
   };
 
+  /* Berganti sumber membuang sesi sebelumnya — linimasa & hasil deteksi
+     milik sumber lama tidak relevan untuk sumber yang baru dipilih. */
+  const changeSource = (next: VideoSourceKind) => {
+    if (next === source) return;
+    closeSocket();
+    setSource(next);
+    setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false); setJobResult(null);
+  };
+
   const startDetection = async () => {
     if (starting || running) return;
     if (!missionId) {
@@ -1639,12 +1708,12 @@ export function VideoDetectionPage() {
       });
       return;
     }
-    if (source === 'rtsp') {
-      pushToast({ tone: 'info', title: t('Sumber RTSP belum tersedia'), detail: t('Untuk saat ini jalankan deteksi lewat unggah berkas video.') });
+    if (source === 'udp' && !udpUrl.trim()) {
+      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.') });
       notify({
-        title: t('Sumber RTSP belum tersedia'),
-        detail: t('Untuk saat ini jalankan deteksi lewat unggah berkas video.'),
-        severity: 'informasi',
+        title: t('Isi alamat UDP dahulu'),
+        detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.'),
+        severity: 'peringatan',
         category: 'Deteksi Objek',
         source: 'Video Analytic',
         page: 'detection-video',
@@ -1652,7 +1721,7 @@ export function VideoDetectionPage() {
       });
       return;
     }
-    if (!file) {
+    if (source === 'upload' && !file) {
       pushToast({ tone: 'error', title: t('Unggah berkas video dahulu'), detail: t('Pilih atau seret berkas video sebelum menjalankan deteksi.') });
       notify({
         title: t('Unggah berkas video dahulu'),
@@ -1668,13 +1737,31 @@ export function VideoDetectionPage() {
     setStarting(true);
     setFrames([]); setPlayIndex(0); setLiveEdge(true); setReplaying(false); setJobResult(null);
     try {
-      const job = await api.detectVideo(file.raw);
+      /* Sumber upload tanpa berkas sudah ditolak di atas, jadi cabang kedua
+         hanya tercapai untuk sumber UDP. */
+      const job = source === 'upload' && file
+        ? await api.detectVideo(file.raw)
+        : await api.startDetectionStream(udpUrl.trim());
       openSocket(job.job_id);
-    } catch {
-      pushToast({ tone: 'error', title: t('Gagal memulai deteksi'), detail: t('Tidak bisa terhubung ke server. Coba lagi.') });
+      if (source === 'udp') {
+        const detail = `${t('Menghubungkan ke')} ${udpUrl.trim()}.`;
+        pushToast({ tone: 'info', title: t('Sesi deteksi dimulai'), detail });
+        notify({
+          title: t('Sesi deteksi dimulai'),
+          detail,
+          severity: 'informasi',
+          category: 'Deteksi Objek',
+          source: 'Video Analytic',
+          page: 'detection-video',
+          silent: true,
+        });
+      }
+    } catch (err) {
+      const detail = errorMessage(err, t('Tidak bisa terhubung ke server. Coba lagi.'));
+      pushToast({ tone: 'error', title: t('Gagal memulai deteksi'), detail });
       notify({
         title: t('Gagal memulai deteksi'),
-        detail: t('Tidak bisa terhubung ke server. Coba lagi.'),
+        detail,
         severity: 'peringatan',
         category: 'Deteksi Objek',
         source: 'Video Analytic',
@@ -1684,6 +1771,22 @@ export function VideoDetectionPage() {
     } finally {
       setStarting(false);
     }
+  };
+
+  const stop = () => {
+    const socket = wsRef.current;
+    /* Sesi UDP diakhiri lewat pesan ke backend, bukan dengan memutus socket:
+       backend menuntaskan inferensi terakhir lalu mengirim pesan `finished`
+       — toast dikirim saat pesan itu tiba. Sesi berkas tetap dihentikan
+       dengan menutup socket seperti sebelumnya. */
+    if (isUdp && socket?.readyState === WebSocket.OPEN) {
+      if (stopping) return;
+      socket.send(JSON.stringify({ action: 'stop' }));
+      setStopping(true);
+      stopTimerRef.current = window.setTimeout(closeSocket, LIVE_STOP_TIMEOUT_MS);
+      return;
+    }
+    closeSocket();
   };
 
   const saveMedia = async () => {
@@ -1762,7 +1865,11 @@ export function VideoDetectionPage() {
                   : <><Save size={15} /> {t('Simpan Media')}</>}
               </button>
               {running ? (
-                <button className="btn btn-danger" onClick={closeSocket}><Square size={15} /> {t('Hentikan')}</button>
+                <button className="btn btn-danger" onClick={stop} disabled={stopping}>
+                  {stopping
+                    ? <><Loader2 size={15} className="spin" /> {t('Menghentikan…')}</>
+                    : <><Square size={15} /> {t('Hentikan')}</>}
+                </button>
               ) : (
                 <button className="btn btn-primary sheen" onClick={startDetection} disabled={starting}>
                   {starting
@@ -1808,9 +1915,10 @@ export function VideoDetectionPage() {
                 icon={<Video size={15} />}
                 title={finished ? t('Putar Ulang Deteksi') : t('Umpan Deteksi')}
                 sub={
-                  running ? t('Aliran langsung dari job berjalan')
-                    : finished ? t('Job selesai — geser linimasa untuk meninjau ulang')
-                      : file ? file.name : t('Belum ada video dimuat')
+                  running ? (isUdp ? `${t('Umpan langsung dari')} ${udpUrl.trim()}` : t('Aliran langsung dari job berjalan'))
+                    : finished ? (isUdp ? t('Sesi live selesai — hasil sesi UDP tidak disimpan') : t('Job selesai — geser linimasa untuk meninjau ulang'))
+                      : isUdp ? udpUrl.trim()
+                        : file ? file.name : t('Belum ada video dimuat')
                 }
                 right={running
                   ? <span className={`badge ${liveEdge ? 'badge-success' : 'badge-neutral'}`}>{liveEdge ? t('LIVE') : t('DIJEDA')}</span>
@@ -1824,6 +1932,18 @@ export function VideoDetectionPage() {
                     <img src={currentFrame.image} alt="Frame deteksi" />
                   </div>
                 </div>
+              ) : isUdp && (starting || running) ? (
+                <EmptyState
+                  icon={<Loader2 size={22} className="spin" />}
+                  title={t('Menunggu stream UDP…')}
+                  description={`${t('Backend sedang membuka')} ${udpUrl.trim()}. ${t('Frame pertama muncul begitu paket video diterima.')}`}
+                />
+              ) : isUdp ? (
+                <EmptyState
+                  icon={<Radio size={22} />}
+                  title={t('Sumber UDP belum dijalankan')}
+                  description={t('Isi alamat UDP di panel kanan, lalu tekan Jalankan Deteksi.')}
+                />
               ) : file ? (
                 <VideoPlayer src={file.url} label={file.name} sublabel={t('Menunggu deteksi dimulai')} aspect="16 / 9" />
               ) : (
@@ -1875,30 +1995,32 @@ export function VideoDetectionPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <GlassCard>
               <SectionHead icon={<Radio size={15} />} title={t('Sumber Video')} />
-              {RTSP_SOURCE_ENABLED && (
-                <div className="form-group">
-                  <label className="form-label">{t('Jenis Sumber')}</label>
-                  <Segmented
-                    full
-                    value={source}
-                    options={[{ id: 'upload', label: t('Unggah Berkas') }, { id: 'rtsp', label: 'RTSP' }]}
-                    onChange={setSource}
-                  />
-                </div>
-              )}
+              <div className="form-group">
+                <label className="form-label" htmlFor="vid-source">{t('Jenis Sumber')}</label>
+                <select
+                  id="vid-source"
+                  className="form-input"
+                  value={source}
+                  onChange={e => changeSource(e.target.value as VideoSourceKind)}
+                  disabled={starting || running}
+                >
+                  <option value="upload">{t('Unggah Berkas')}</option>
+                  <option value="udp">{t('Stream UDP')}</option>
+                </select>
+              </div>
 
-              {RTSP_SOURCE_ENABLED && source === 'rtsp' ? (
-                <div className="form-group">
-                  <label className="form-label" htmlFor="vid-rtsp">{t('Alamat RTSP')}</label>
+              {source === 'udp' ? (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" htmlFor="vid-udp">{t('Alamat UDP')}</label>
                   <input
-                    id="vid-rtsp"
-                    className="form-input"
-                    value={rtspUrl}
-                    onChange={e => setRtspUrl(e.target.value)}
+                    id="vid-udp"
+                    className="form-input font-mono"
+                    value={udpUrl}
+                    onChange={e => setUdpUrl(e.target.value)}
+                    placeholder="udp://@244.10.10.10:15004"
+                    spellCheck={false}
+                    disabled={starting || running}
                   />
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.55 }}>
-                    {t('Sumber RTSP baru sebatas pratinjau alamat — jalankan deteksi lewat unggah berkas video untuk saat ini.')}
-                  </p>
                 </div>
               ) : (
                 <div

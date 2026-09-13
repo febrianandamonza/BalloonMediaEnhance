@@ -8,9 +8,14 @@ import asyncio
 
 from fastapi import APIRouter, UploadFile, File, WebSocket, WebSocketDisconnect, BackgroundTasks
 
+from schemas.network_stream_schema import (
+    StreamJobRequest,
+    StreamJobResponse,
+)
 from services.detector import ObjectDetector
+from services.network_stream_service import network_stream_service
 from utils.file_manager import FileManager
-from utils.websocket_manager import manager
+from utils.websocket_manager import listen_for_stop, manager
 
 router = APIRouter(
     prefix="/api/v1/detect",
@@ -47,6 +52,33 @@ async def detect_video(
         "job_id": job_id
     }
 
+
+@router.post(
+    "/stream",
+    response_model=StreamJobResponse
+)
+async def detect_stream(
+    payload: StreamJobRequest
+):
+    # Sama seperti /crowd/stream: sumber baru dibuka saat WebSocket
+    # tersambung, supaya port UDP tidak di-bind dua kali.
+
+    network_url = network_stream_service.validate_udp_url(
+        payload.network_url
+    )
+
+    job_id = str(uuid.uuid4())
+
+    video_jobs[job_id] = {
+        "live": True,
+        "input": network_url
+    }
+
+    return {
+        "success": True,
+        "job_id": job_id
+    }
+
 @router.post("/image")
 async def detect(file: UploadFile = File(...)):
 
@@ -59,7 +91,7 @@ async def detect(file: UploadFile = File(...)):
 
     # with open(input_path, "wb") as buffer:
     #     shutil.copyfileobj(file.file, buffer)
-    
+
     # enhanced_path = enhancer.enhance_image(str(input_path))
 
     input_path = FileManager.save_upload_file(file)
@@ -100,6 +132,8 @@ async def websocket_detect(
 
     await manager.connect(job_id, websocket)
 
+    stop_listener = None
+
     try:
 
         job = video_jobs.get(job_id)
@@ -111,6 +145,22 @@ async def websocket_detect(
                 {
                     "error": "Job not found."
                 }
+            )
+
+            return
+
+        if job.get("live"):
+
+            stop_event = asyncio.Event()
+
+            stop_listener = asyncio.create_task(
+                listen_for_stop(websocket, stop_event)
+            )
+
+            await detector.detect_live_stream(
+                job_id,
+                job["input"],
+                stop_event
             )
 
             return
@@ -130,6 +180,9 @@ async def websocket_detect(
         print("Client disconnected.")
 
     finally:
+
+        if stop_listener is not None:
+            stop_listener.cancel()
 
         manager.disconnect(job_id)
 

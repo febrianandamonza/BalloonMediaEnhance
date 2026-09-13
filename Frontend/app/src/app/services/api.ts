@@ -349,6 +349,14 @@ export interface DetectVideoJobResult {
 export interface DetectVideoFrameMessage {
   frame?: string;
   objects?: DetectedObject[];
+  /** true pada setiap pesan sesi live (UDP). */
+  live?: boolean;
+  elapsed_seconds?: number;
+  finished?: boolean;
+  /** Alasan sesi live berakhir — hanya pada pesan `finished`. */
+  reason?: 'stopped' | 'source_lost';
+  /** Sesi gagal dimulai (mis. sumber UDP tidak mengirim apa pun). */
+  error?: string;
   success?: boolean;
   temp_path?: string;
   processing_type?: string;
@@ -938,6 +946,17 @@ class ApiService {
     return this.request<DetectVideoJobResult>('/detect/video', {
       method: 'POST',
       body: formData,
+    });
+  }
+
+  /** Memulai sesi deteksi objek live dari stream UDP — pola sama dengan
+      startCrowdStream: sumber dibuka saat WebSocket /detect/ws/{job_id}
+      tersambung, sesi diakhiri dengan {"action":"stop"}, dan hasilnya tidak
+      ditulis ke disk. */
+  async startDetectionStream(networkUrl: string) {
+    return this.request<DetectVideoJobResult>('/detect/stream', {
+      method: 'POST',
+      body: JSON.stringify({ network_url: networkUrl }),
     });
   }
 

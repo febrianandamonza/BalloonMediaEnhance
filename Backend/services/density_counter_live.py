@@ -10,33 +10,21 @@ import cv2
 import numpy as np
 
 from utils.file_manager import FileManager
-from utils.live_capture import LatestFrameReader
+from utils.live_capture import (
+    LIVE_OPEN_TIMEOUT_MS,
+    LIVE_POLL_INTERVAL,
+    LIVE_READ_TIMEOUT_MS,
+    LIVE_SOURCE_LOST_SECONDS,
+    LatestFrameReader,
+    open_failed_message,
+)
 from utils.pacing import FramePacer
-from utils.websocket_manager import manager
+from utils.websocket_manager import manager, send_live
 
 
 class VideoCrowdCounterLive:
 
     FRAME_INTERVAL = 10
-
-    # ------------------------------------------------------------------
-    # Sumber live (UDP)
-    #
-    # OPEN_TIMEOUT: batas tunggu paket pertama saat sesi dibuka.
-    # READ_TIMEOUT: batas satu cap.read() memblokir di thread pembaca.
-    # SOURCE_LOST: sesi diakhiri otomatis kalau tidak ada frame baru selama
-    #   ini — sengaja lebih longgar dari READ_TIMEOUT supaya jeda sesaat di
-    #   jaringan tidak langsung memutus sesi. Terukur, sesi berakhir ±15 s
-    #   setelah pengirim mati, bukan 10 s: begitu READ_TIMEOUT terpicu,
-    #   FFmpeg masih mengeluarkan sisa frame di decoder, dan frame itu
-    #   mereset hitungan.
-    # POLL_INTERVAL: jeda cek frame baru. Di Windows sleep dibulatkan ke
-    #   tick ~15 ms, tetap di bawah anggaran 40 ms per frame pada 25 fps.
-    # ------------------------------------------------------------------
-    LIVE_OPEN_TIMEOUT_MS = 10000
-    LIVE_READ_TIMEOUT_MS = 5000
-    LIVE_SOURCE_LOST_SECONDS = 10
-    LIVE_POLL_INTERVAL = 0.005
 
     # Ukuran & kualitas JPEG khusus untuk umpan langsung ke browser — tidak
     # memengaruhi resolusi video keluaran yang ditulis ke disk. Mengirim
@@ -348,19 +336,6 @@ class VideoCrowdCounterLive:
             }
         )
 
-    async def _send_live(self, job_id, payload, stop_event):
-        """Kirim ke klien sesi live. Socket yang sudah putus bukan galat di
-        sini — itu cara normal sesi berakhir kalau tab ditutup — jadi
-        kegagalan kirim cukup menghentikan sesi, bukan melempar exception
-        yang akan tercetak sebagai traceback."""
-
-        try:
-            await manager.send(job_id, payload)
-            return True
-        except Exception:
-            stop_event.set()
-            return False
-
     async def predict_live_stream(
         self,
         job_id: str,
@@ -383,8 +358,8 @@ class VideoCrowdCounterLive:
 
         reader = LatestFrameReader(
             network_url,
-            open_timeout_ms=self.LIVE_OPEN_TIMEOUT_MS,
-            read_timeout_ms=self.LIVE_READ_TIMEOUT_MS
+            open_timeout_ms=LIVE_OPEN_TIMEOUT_MS,
+            read_timeout_ms=LIVE_READ_TIMEOUT_MS
         )
 
         try:
@@ -393,16 +368,9 @@ class VideoCrowdCounterLive:
 
             if not opened:
 
-                await self._send_live(
+                await send_live(
                     job_id,
-                    {
-                        "error": (
-                            f"Tidak ada stream yang diterima dari {network_url} "
-                            f"dalam {self.LIVE_OPEN_TIMEOUT_MS // 1000} detik. "
-                            "Pastikan pengirim aktif dan port tidak sedang "
-                            "dipakai proses lain (mis. Live Stream)."
-                        )
-                    },
+                    {"error": open_failed_message(network_url)},
                     stop_event
                 )
 
@@ -434,12 +402,12 @@ class VideoCrowdCounterLive:
 
                         if (
                             reader.seconds_since_last_frame()
-                            > self.LIVE_SOURCE_LOST_SECONDS
+                            > LIVE_SOURCE_LOST_SECONDS
                         ):
                             end_reason = "source_lost"
                             break
 
-                        await asyncio.sleep(self.LIVE_POLL_INTERVAL)
+                        await asyncio.sleep(LIVE_POLL_INTERVAL)
                         continue
 
                     last_seq = seq
@@ -496,7 +464,7 @@ class VideoCrowdCounterLive:
 
                     if frame_base64 is not None:
 
-                        sent = await self._send_live(
+                        sent = await send_live(
                             job_id,
                             {
                                 "frame": frame_base64,
@@ -548,7 +516,7 @@ class VideoCrowdCounterLive:
             if not counts:
                 counts = [0]
 
-            await self._send_live(
+            await send_live(
                 job_id,
                 {
                     "finished": True,
