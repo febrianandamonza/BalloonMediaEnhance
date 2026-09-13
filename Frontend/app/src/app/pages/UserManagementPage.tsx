@@ -77,7 +77,7 @@ export default function UserManagementPage() {
           email: (u.email as string) || '',
           phone: (u.phone as string) || '',
           station: (u.station as Operator['station']) || 'Semua',
-          role: (u.role as { id?: number } | null)?.id === 1 ? 'Administrator' : 'Operator',
+          role: (u.role as { id: number })?.id === 1 ? 'Administrator' : 'Operator',
           active: (u.is_active as boolean) ?? true,
           lastLogin: formatLastLogin(u.last_login as string),
         }));

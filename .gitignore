@@ -240,3 +240,7 @@ __pycache__/
 /Backend/deploy/
 
 /Backend/streams
+/Frontend/Output
+Frontend/Output
+Frontend/docs/SOP_SkyStar_GeoInt_GCS.md
+Frontend/tools/sosialisasi-ppt/build.js

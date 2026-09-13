@@ -1,0 +1,13 @@
+{
+  "name": "skystar-sosialisasi-ppt",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pembangkit templat presentasi sosialisasi Tethered Balloon GeoInt GCS, selaras dengan sistem desain aplikasi.",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "pptxgenjs": "^4.0.1",
+    "wawoff2": "^2.0.1"
+  }
+}
