@@ -522,11 +522,11 @@ export function CrowdCountingPage() {
 
   const pick = (f: File | undefined) => {
     if (!f) return;
-    if (!/\.(mp4|avi|mov|mkv)$/i.test(f.name)) {
-      pushToast({ tone: 'error', title: t('Format tidak didukung'), detail: t('Gunakan berkas MP4, AVI, MOV, TS, atau MKV.') });
+    if (!/\.(mp4|avi|mov|mkv|ts)$/i.test(f.name)) {
+      pushToast({ tone: 'error', title: t('Format tidak didukung'), detail: t('Gunakan berkas MP4, AVI, MOV, MKV, atau TS.') });
       notify({
         title: t('Format tidak didukung'),
-        detail: t('Gunakan berkas MP4, AVI, MOV, atau MKV.'),
+        detail: t('Gunakan berkas MP4, AVI, MOV, MKV, atau TS.'),
         severity: 'peringatan',
         category: 'Ambang Batas',
         source: 'Crowd Counting',
@@ -753,7 +753,7 @@ export function CrowdCountingPage() {
         <input
           ref={inputRef}
           type="file"
-          accept=".mp4,.avi,.mov,.mkv"
+          accept=".mp4,.avi,.mov,.mkv,.ts"
           hidden
           onChange={e => { pick(e.target.files?.[0]); if (inputRef.current) inputRef.current.value = ''; }}
         />

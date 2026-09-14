@@ -37,9 +37,11 @@ async def detect_video(
 
     input_path = FileManager.save_upload_file(file)
 
+    # Hasil selalu di-encode ulang ffmpeg ke MP4 — lihat catatan yang sama
+    # di api/crowd_counting_live.py.
     output_path = FileManager.build_temp_file_path(
         "detection",
-        file.filename
+        "output.mp4"
     )
 
     video_jobs[job_id] = {

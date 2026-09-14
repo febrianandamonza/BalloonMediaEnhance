@@ -32,9 +32,13 @@ async def start_video_job(
 
     input_path = FileManager.save_upload_file(file)
 
+    # Hasil selalu di-encode ulang ffmpeg ke H.264/AAC (MP4), apa pun format
+    # sumbernya (.ts, .mkv, ...). Menyalin ekstensi sumber membuat path
+    # "_temp.mp4" sama dengan path hasil sehingga ffmpeg gagal, dan berkas
+    # .ts tidak bisa diputar browser/terdeteksi sebagai VIDEO saat disimpan.
     output_path = FileManager.build_temp_file_path(
         "crowd_counting",
-        file.filename
+        "output.mp4"
     )
 
     video_jobs[job_id] = {
