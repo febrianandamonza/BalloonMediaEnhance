@@ -926,6 +926,17 @@ class ApiService {
     return this.request<MediaRecord[]>('/media');
   }
 
+  /** Unggah manual ke katalog — processing_type diisi NON_PROCESSING oleh backend. */
+  async uploadMedia(flightInformationId: string | number, files: File[]) {
+    const formData = new FormData();
+    formData.append('flight_information_id', String(flightInformationId));
+    files.forEach(f => formData.append('files', f));
+    return this.request<MediaRecord[]>('/media/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
   async deleteMedia(id: string) {
     return this.request<unknown>(`/media/${id}`, { method: 'DELETE' });
   }

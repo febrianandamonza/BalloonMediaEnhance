@@ -188,6 +188,40 @@ class FileManager:
         return destination
 
     @staticmethod
+    def save_upload_to_media(
+        upload_file,
+        flight_information_id,
+        processing_type
+    ):
+
+        extension = Path(
+            upload_file.filename
+        ).suffix
+
+        destination = (
+
+            FileManager.get_media_directory(
+                flight_information_id,
+                processing_type
+            )
+
+            / f"{uuid4()}{extension}"
+
+        )
+
+        with open(
+            destination,
+            "wb"
+        ) as buffer:
+
+            shutil.copyfileobj(
+                upload_file.file,
+                buffer
+            )
+
+        return destination
+
+    @staticmethod
     def delete_temp_file(
         path
     ):
@@ -200,6 +234,11 @@ class FileManager:
 
     @staticmethod
     def get_mime_type(path):
+
+        # Windows registry often maps .ts to TypeScript/Qt, not MPEG-TS.
+        if Path(path).suffix.lower() == ".ts":
+
+            return "video/mp2t"
 
         mime_type, _ = mimetypes.guess_type(
 
@@ -223,6 +262,10 @@ class FileManager:
 
             ".png",
 
+            ".tif",
+
+            ".tiff",
+
             ".bmp",
 
             ".webp"
@@ -237,7 +280,9 @@ class FileManager:
 
             ".mov",
 
-            ".mkv"
+            ".mkv",
+
+            ".ts"
 
         }
 

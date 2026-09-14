@@ -14,6 +14,22 @@ from utils.file_manager import FileManager
 from utils.audit_helper import audit
 
 from utils.exceptions import NotFoundException
+from utils.exceptions import BadRequestException
+
+NON_PROCESSING_TYPE = "NON_PROCESSING"
+
+UPLOAD_EXTENSIONS = {
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".mkv",
+    ".ts",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".tif",
+    ".tiff"
+}
 
 class MediaService:
 
@@ -28,6 +44,93 @@ class MediaService:
         db
     ):
         return self.repository.get_all(db)
+
+    def upload(
+        self,
+        db,
+        http_request: Request,
+        current_user,
+        flight_information_id,
+        files
+    ):
+        flight_information = (
+            self.flight_information_repository.get_by_id(
+                db,
+                flight_information_id
+            )
+        )
+
+        if flight_information is None:
+            raise NotFoundException(
+                "Flight Information not found."
+            )
+
+        mission = flight_information.mission
+        status = mission.mission_status if mission else None
+
+        if status is not None and status.name == "Planned":
+            raise BadRequestException(
+                "Media cannot be uploaded to a Planned flight mission."
+            )
+
+        for file in files:
+            if Path(file.filename or "").suffix.lower() not in UPLOAD_EXTENSIONS:
+                raise BadRequestException(
+                    f"Unsupported file format: {file.filename}"
+                )
+
+        results = []
+
+        for file in files:
+            destination = FileManager.save_upload_to_media(
+                file,
+                flight_information_id,
+                NON_PROCESSING_TYPE
+            )
+
+            entity = Media(
+                id=uuid4(),
+                flight_information_id=flight_information_id,
+                media_type=FileManager.get_media_type(
+                    destination
+                ),
+                processing_type=NON_PROCESSING_TYPE,
+                original_filename=file.filename,
+                stored_filename=destination.name,
+                storage_path=str(destination),
+                mime_type=FileManager.get_mime_type(
+                    destination
+                ),
+                file_size=destination.stat().st_size,
+                uploaded_by=current_user.id,
+                uploaded_at=datetime.now(
+                    ZoneInfo(
+                        "Asia/Jakarta"
+                    )
+                ).replace(
+                    tzinfo=None
+                )
+            )
+
+            result = self.repository.create(
+                db,
+                entity
+            )
+
+            audit.log(
+                db=db,
+                request=http_request,
+                current_user=current_user,
+                module="Media",
+                action="CREATE",
+                entity="Media",
+                entity_id=result.id,
+                description=f"Media '{result.original_filename}' uploaded."
+            )
+
+            results.append(result)
+
+        return results
 
     def delete(
         self,

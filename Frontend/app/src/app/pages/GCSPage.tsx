@@ -41,6 +41,8 @@ const PROCESSING_TYPE_LABEL: Record<string, string> = {
   IMAGE_ENHANCEMENT: 'Enhancement',
   VIDEO_ENHANCEMENT: 'Enhancement',
   CROWD_COUNTING: 'Crowd Counting',
+  NON_PROCESSING: 'NON-PROCESSING',
+  RECORD: 'NON-PROCESSING',
 };
 
 /** Mengubah baris GET /api/v1/media menjadi MediaItem katalog. mission
@@ -76,8 +78,8 @@ function toMediaItem(
 }
 
 /* Batasan pemasukan berkas — sejalan dengan kapasitas penyimpanan lokal. */
-const ACCEPT = '.mp4,.avi,.mov,.mkv,.jpg,.jpeg,.png,.tif,.tiff';
-const VIDEO_EXT = /\.(mp4|avi|mov|mkv)$/i;
+const ACCEPT = '.mp4,.avi,.mov,.mkv,.ts,.jpg,.jpeg,.png,.tif,.tiff';
+const VIDEO_EXT = /\.(mp4|avi|mov|mkv|ts)$/i;
 const IMAGE_EXT = /\.(jpe?g|png|tiff?)$/i;
 const MAX_BYTES = 2 * 1024 ** 3; // 2 GB
 
@@ -115,6 +117,13 @@ export default function MediaSourcePage() {
   const [viewing, setViewing] = useState<MediaItem | null>(null);
   /* Berkas yang menunggu konfirmasi penghapusan */
   const [deleting, setDeleting] = useState<MediaItem | null>(null);
+  const [missionRecords, setMissionRecords] = useState<FlightMissionRecord[]>([]);
+  const [flightInfoRecords, setFlightInfoRecords] = useState<FlightInformationRecord[]>([]);
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadMissionId, setUploadMissionId] = useState('');
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -129,6 +138,8 @@ export default function MediaSourcePage() {
       api.getFlightMissions().catch(() => []),
     ]).then(([mediaRows, infoRows, missionRows]) => {
       if (cancelled) return;
+      setMissionRecords(missionRows);
+      setFlightInfoRecords(infoRows);
       const flightInfoById = new globalThis.Map(infoRows.map(i => [String(i.id), i]));
       const missionById = new globalThis.Map(missionRows.map(m => [String(m.id), m]));
       /* Baris tanpa storage_path tidak punya berkas asli di baliknya
@@ -354,6 +365,84 @@ export default function MediaSourcePage() {
     }
   };
 
+  /* Unggah manual menempel ke flight mission lewat flight_information_id,
+     sama seperti hasil analytic. Misi berstatus Planned belum terbang,
+     jadi tidak bisa dipilih. */
+  const uploadMissions = useMemo(
+    () => missionRecords.filter(m => {
+      const status = m.mission_status;
+      const name = typeof status === 'string' ? status : status?.name;
+      return name !== 'Planned';
+    }),
+    [missionRecords],
+  );
+
+  const openUpload = () => {
+    setUploadMissionId('');
+    setUploadFiles([]);
+    setShowUpload(true);
+  };
+
+  const addUploadFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    Array.from(files).forEach(f => {
+      if (!VIDEO_EXT.test(f.name) && !IMAGE_EXT.test(f.name)) rejected.push(`${f.name}: format tidak didukung`);
+      else if (f.size > MAX_BYTES) rejected.push(`${f.name}: melebihi batas 2 GB`);
+      else accepted.push(f);
+    });
+    if (rejected.length) {
+      pushToast({ tone: 'error', title: `${rejected.length} berkas ditolak`, detail: rejected.join(' · ') });
+    }
+    setUploadFiles(prev => [
+      ...prev,
+      ...accepted.filter(f => !prev.some(p => p.name === f.name && p.size === f.size)),
+    ]);
+  };
+
+  const submitUpload = async () => {
+    if (!uploadMissionId || uploadFiles.length === 0 || uploading) return;
+    const flightInfo = flightInfoRecords.find(i => String(i.mission_id) === uploadMissionId);
+    if (flightInfo?.id == null) {
+      pushToast({
+        tone: 'error',
+        title: t('Flight mission belum punya data flight information'),
+        detail: t('Tidak ditemukan flight-information untuk misi ini. Lengkapi datanya di modul Flight Information dahulu.'),
+      });
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const rows = await api.uploadMedia(flightInfo.id, uploadFiles);
+      const flightInfoById = new globalThis.Map(flightInfoRecords.map(i => [String(i.id), i]));
+      const missionById = new globalThis.Map(missionRecords.map(m => [String(m.id), m]));
+      setMedia(prev => [...rows.map(r => toMediaItem(r, flightInfoById, missionById)), ...prev]);
+      setShowUpload(false);
+
+      const detail = rows.map(r => r.original_filename ?? r.id).join(' · ');
+      pushToast({ tone: 'success', title: `${rows.length} berkas masuk katalog`, detail });
+      notify({
+        title: `${rows.length} berkas masuk katalog`,
+        detail,
+        severity: 'informasi',
+        category: 'Media',
+        source: 'Surveillance Media',
+        page: 'media-source',
+        silent: true,
+      });
+    } catch (e) {
+      pushToast({
+        tone: 'error',
+        title: 'Gagal mengunggah media',
+        detail: e instanceof Error && e.message ? e.message : t('Tidak bisa terhubung ke server. Coba lagi.'),
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="animate-fade-in">
       <PageHead
@@ -362,9 +451,9 @@ export default function MediaSourcePage() {
         description={t('Katalog rekaman dan citra pengawasan, sekaligus jalur pemasukan berkas baru.')}
         actions={
           <>
-            {/* <button className="btn btn-primary" onClick={() => inputRef.current?.click()}>
-              <UploadCloud size={15} /> Unggah Media
-            </button> */}
+            <button className="btn btn-primary" onClick={openUpload}>
+              <UploadCloud size={15} /> {t('Unggah Media')}
+            </button>
             <button
               className="btn btn-secondary"
               disabled={!selected}
@@ -688,6 +777,91 @@ export default function MediaSourcePage() {
                 }}
               >
                 <Trash2 size={14} /> {t('Hapus Berkas')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUpload && (
+        <div className="modal-backdrop" onClick={() => { if (!uploading) setShowUpload(false); }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }} role="dialog" aria-modal="true">
+            <div className="modal-header">
+              <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <UploadCloud size={16} /> {t('Unggah Media')}
+              </h3>
+              <button className="modal-x" onClick={() => setShowUpload(false)} disabled={uploading} aria-label={t('Tutup')}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">{t('Flight Mission')}</label>
+                <select
+                  className="form-input"
+                  value={uploadMissionId}
+                  onChange={e => setUploadMissionId(e.target.value)}
+                  disabled={mediaLoading || uploading}
+                >
+                  <option value="">{mediaLoading ? t('Memuat misi…') : t('— Pilih flight mission —')}</option>
+                  {uploadMissions.map(m => (
+                    <option key={String(m.id)} value={String(m.id)}>
+                      {m.mission_code ? `${m.mission_code} — ${m.mission_name ?? ''}` : (m.mission_name ?? String(m.id))}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <input
+                ref={uploadInputRef}
+                type="file"
+                accept={ACCEPT}
+                multiple
+                hidden
+                onChange={e => { addUploadFiles(e.target.files); e.target.value = ''; }}
+              />
+              <button className="btn btn-secondary btn-sm" onClick={() => uploadInputRef.current?.click()} disabled={uploading}>
+                <FolderOpen size={14} /> {t('Pilih Berkas')}
+              </button>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                {t('MP4, AVI, MOV, MKV, TS, JPG, PNG, TIFF · maksimum 2 GB per berkas')}
+              </p>
+
+              {uploadFiles.length > 0 && (
+                <div className="upq">
+                  {uploadFiles.map((f, i) => (
+                    <div key={`${f.name}-${f.size}`} className="upq-row">
+                      <span className="upq-thumb">
+                        {VIDEO_EXT.test(f.name) ? <FileVideo size={19} /> : <FileImage size={19} />}
+                      </span>
+                      <span className="upq-main">
+                        <span className="upq-name">{f.name}</span>
+                        <span className="upq-meta">
+                          <span>{formatBytes(f.size)}</span>
+                          <span>{VIDEO_EXT.test(f.name) ? 'Video' : 'Citra'}</span>
+                        </span>
+                      </span>
+                      <button
+                        className="toast-close"
+                        onClick={() => setUploadFiles(prev => prev.filter((_, j) => j !== i))}
+                        disabled={uploading}
+                        aria-label={`Buang ${f.name}`}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowUpload(false)} disabled={uploading}>{t('Batal')}</button>
+              <button
+                className="btn btn-primary"
+                onClick={submitUpload}
+                disabled={!uploadMissionId || uploadFiles.length === 0 || uploading}
+              >
+                {uploading
+                  ? <><Loader2 size={14} className="spin" /> {t('Mengunggah…')}</>
+                  : <><UploadCloud size={14} /> {t('Unggah')}</>}
               </button>
             </div>
           </div>
