@@ -1,0 +1,306 @@
+/* =====================================================================
+   NAVIGASI SAMPING — ENAM KELOMPOK YANG DAPAT DIBUKA TUTUP
+
+   Sebelumnya nama kelompok hanya berupa label kapital 9 px berwarna
+   redup: secara visual ia bagian dari latar, bukan bagian dari
+   navigasi. Operator harus memindai seluruh daftar untuk menemukan
+   modul, dan tidak ada cara memendekkan daftar itu.
+
+   Sekarang setiap kelompok adalah kepala yang dapat dibaca dan ditekan,
+   membawa ikon, jumlah modul, dan status lisensinya sendiri.
+
+   Animasi buka tutup memakai baris grid 0fr → 1fr. Teknik ini
+   menumbuhkan wadah sampai setinggi isinya tanpa satu pun pengukuran
+   JavaScript dan tanpa max-height yang harus ditebak — sesuatu yang
+   dulu mustahil dilakukan dengan CSS murni.
+
+   Dimuat setelah lembar komponen dan sebelum motion.css, supaya lapisan
+   mikrointeraksi tetap menang untuk keadaan sorot, fokus, dan tekan.
+   ===================================================================== */
+
+/* ===== 1. Kelompok ===== */
+.nav-group {
+  position: relative;
+  margin-bottom: 3px;
+}
+
+/* ===== 2. Kepala kelompok ===== */
+.nav-head {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+}
+
+.nav-head:hover {
+  background: rgba(148, 163, 184, 0.06);
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+/* Kelompok yang memuat halaman aktif tetap menonjol meski ditutup,
+   sehingga operator tidak kehilangan jejak posisinya. */
+.nav-group.has-active > .nav-head {
+  background: linear-gradient(
+    100deg,
+    rgba(96, 165, 250, 0.12),
+    rgba(129, 140, 248, 0.05) 60%,
+    transparent
+  );
+  border-color: rgba(96, 165, 250, 0.18);
+  color: var(--text-primary);
+}
+
+.nav-head-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--glass-bg-light);
+  color: var(--text-muted);
+  transition: color var(--m-quick, 160ms) ease, border-color var(--m-quick, 160ms) ease,
+              background var(--m-quick, 160ms) ease;
+}
+
+.nav-head:hover .nav-head-icon { color: var(--text-secondary); }
+
+.nav-group.has-active .nav-head-icon,
+.nav-group.open .nav-head-icon {
+  color: var(--accent-primary);
+  border-color: rgba(96, 165, 250, 0.32);
+  background: rgba(96, 165, 250, 0.1);
+}
+
+.nav-head-text {
+  flex: 1;
+  min-width: 0;
+  display: block;
+}
+
+/* Judul kelompok kini benar-benar terbaca: ukuran normal, kontras
+   penuh, tanpa penjarangan huruf yang menyulitkan.
+
+   Nama panjang seperti "Analytic & Object Detection" dibiarkan turun ke
+   baris kedua alih-alih dipotong dengan elipsis. Judul yang terpotong
+   memaksa operator menebak isi menu — persis kebalikan dari tujuan
+   kepala kelompok ini. */
+.nav-head-title {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.32;
+  letter-spacing: -0.005em;
+  color: inherit;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.nav-head-sub {
+  display: block;
+  margin-top: 1px;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-lic-dot {
+  flex-shrink: 0;
+  margin-top: 6px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+}
+
+.nav-lic-dot.on { color: var(--success-400); background: rgba(52, 211, 153, 0.12); }
+.nav-lic-dot.off { color: var(--warning-400); background: rgba(251, 191, 36, 0.12); }
+
+.nav-head-chev {
+  flex-shrink: 0;
+  margin-top: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--text-disabled);
+  transform: rotate(-90deg);
+  transition: transform var(--m-base, 240ms) var(--m-spring, cubic-bezier(0.34, 1.4, 0.5, 1)),
+              color var(--m-quick, 160ms) ease;
+}
+
+.nav-group.open .nav-head-chev { transform: rotate(0deg); }
+.nav-head:hover .nav-head-chev { color: var(--text-secondary); }
+
+/* ===== 3. Panel submenu =====
+   Inilah bagian yang membuat animasi bekerja tanpa tinggi tetap. */
+.nav-sub {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--m-base, 240ms) var(--m-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+              opacity var(--m-quick, 160ms) ease;
+  opacity: 0;
+}
+
+.nav-group.open .nav-sub {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+/* Anak dari baris grid harus memotong isinya sendiri, jika tidak isi
+   tetap terlihat meski barisnya sudah menyusut ke nol. */
+.nav-sub-inner {
+  overflow: hidden;
+  min-height: 0;
+  padding-left: 18px;
+  /* Tanpa padding atas: padding tetap menyumbang tinggi meskipun baris
+     grid sudah menyusut ke nol, menyisakan celah 2 px yang terlihat saat
+     kelompok tertutup. Jarak diberikan lewat margin butir pertama, yang
+     ikut terpotong bersama isinya. */
+}
+
+.nav-sub-inner .nav-item:first-child { margin-top: 2px; }
+
+/* Garis penghubung ke induk — memberi kesan pohon tanpa menambah
+   satu pun elemen ke dalam pohon DOM. */
+.nav-sub-inner::before {
+  content: '';
+  position: absolute;
+  left: 23px;
+  top: 44px;
+  bottom: 6px;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    rgba(96, 165, 250, 0.28),
+    rgba(148, 163, 184, 0.12) 55%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+.nav-group:not(.open) .nav-sub-inner::before { opacity: 0; }
+
+/* Butir menyembul bertahap saat kelompok dibuka; jeda diambil dari
+   urutan yang ditulis komponen. */
+.nav-group.open .nav-item {
+  animation: nav-item-in var(--m-base, 240ms) var(--m-ease, cubic-bezier(0.22, 1, 0.36, 1)) backwards;
+  animation-delay: calc(var(--i, 0) * 26ms);
+}
+
+@keyframes nav-item-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Setiap butir mendapat pentol kecil pada garis penghubung. */
+.nav-sub-inner .nav-item::after {
+  content: '';
+  position: absolute;
+  left: -13px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  transition: background var(--m-quick, 160ms) ease, box-shadow var(--m-quick, 160ms) ease;
+}
+
+.nav-sub-inner .nav-item:hover::after { background: var(--text-muted); }
+
+.nav-sub-inner .nav-item.active::after {
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px rgba(96, 165, 250, 0.7);
+}
+
+/* ===== 4. Sidebar tercuit =====
+   Hanya ikon yang tersisa. Kepala kelompok berubah menjadi pemisah
+   yang tetap dapat ditekan untuk membentangkan kembali sidebar. */
+.sidebar.collapsed .nav-head {
+  justify-content: center;
+  padding: 7px 0;
+  margin-bottom: 2px;
+}
+
+.sidebar.collapsed .nav-head-text,
+.sidebar.collapsed .nav-head-chev,
+.sidebar.collapsed .nav-lic-dot { display: none; }
+
+.sidebar.collapsed .nav-head-icon {
+  width: 30px;
+  height: 30px;
+}
+
+/* Submenu selalu terlihat dalam mode tercuit: menyembunyikannya akan
+   membuat modul tidak dapat dijangkau sama sekali. */
+.sidebar.collapsed .nav-sub {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.sidebar.collapsed .nav-sub-inner {
+  padding-left: 0;
+  overflow: visible;
+}
+
+.sidebar.collapsed .nav-sub-inner::before,
+.sidebar.collapsed .nav-sub-inner .nav-item::after { display: none; }
+
+.sidebar.collapsed .nav-item { animation: none; }
+
+/* ===== 5. Mode terang ===== */
+[data-theme='light'] .nav-head:hover {
+  background: rgba(15, 23, 42, 0.045);
+}
+
+[data-theme='light'] .nav-group.has-active > .nav-head {
+  background: linear-gradient(
+    100deg,
+    rgba(59, 130, 246, 0.1),
+    rgba(139, 92, 246, 0.04) 60%,
+    transparent
+  );
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+[data-theme='light'] .nav-head-icon { background: rgba(255, 255, 255, 0.7); }
+
+[data-theme='light'] .nav-group.has-active .nav-head-icon,
+[data-theme='light'] .nav-group.open .nav-head-icon {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+[data-theme='light'] .nav-sub-inner::before {
+  background: linear-gradient(
+    180deg,
+    rgba(59, 130, 246, 0.32),
+    rgba(15, 23, 42, 0.12) 55%,
+    transparent
+  );
+}
+
+/* ===== 6. Gerak minimum =====
+   Kelompok tetap membuka dan menutup — tanpa itu navigasi tidak dapat
+   dipakai — namun langsung, tanpa pertumbuhan dan tanpa penyembulan. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-sub { transition: none; }
+  .nav-head-chev { transition: none; }
+  .nav-group.open .nav-item { animation: none; }
+}

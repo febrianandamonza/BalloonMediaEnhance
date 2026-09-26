@@ -1,0 +1,266 @@
+/* =====================================================================
+   PENYELARASAN MODE TERANG
+   ---------------------------------------------------------------------
+   Lapisan fx.css dan media.css dibangun lebih dulu untuk ruang kendali
+   gelap, sehingga banyak nilainya dipatok langsung: lapisan putih tipis
+   di atas latar gelap, peredup hitam pekat, dan teks terang.
+
+   Di atas kertas putih nilai-nilai itu runtuh — lapisan putih menjadi
+   tak terlihat dan teks terang hilang. Berkas ini menerjemahkan setiap
+   pola tersebut ke padanan mode terang: lapisan tipis menjadi tinta
+   gelap transparan, peredup menjadi putih, dan teks kembali gelap.
+
+   Dimuat paling akhir agar selalu menang atas lapisan sebelumnya.
+   ===================================================================== */
+
+[data-theme='light'] {
+  /* Bayangan pada latar terang harus jauh lebih lembut daripada di
+     ruang gelap, jika tidak kartu terlihat kotor. */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.07);
+  --shadow-lg: 0 8px 26px rgba(15, 23, 42, 0.09);
+  --shadow-xl: 0 18px 44px rgba(15, 23, 42, 0.11);
+}
+
+/* ---------------------------------------------------------------------
+   1. Kaca (liquid glass)
+   --------------------------------------------------------------------- */
+[data-theme='light'] .lq {
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.72) 38%, rgba(255, 255, 255, 0.86) 100%);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.9) inset,
+    0 -1px 0 0 rgba(15, 23, 42, 0.05) inset,
+    0 14px 34px -18px rgba(15, 23, 42, 0.18);
+}
+[data-theme='light'] .lq::before {
+  background: linear-gradient(
+    140deg,
+    rgba(15, 23, 42, 0.14) 0%,
+    rgba(15, 23, 42, 0.05) 32%,
+    rgba(37, 99, 235, 0.14) 62%,
+    rgba(15, 23, 42, 0.1) 100%
+  );
+}
+[data-theme='light'] .lq::after {
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.7), transparent 72%);
+}
+[data-theme='light'] .lq-thick {
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.86) 44%, rgba(255, 255, 255, 0.94));
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.95) inset,
+    0 -1px 0 0 rgba(15, 23, 42, 0.06) inset,
+    0 30px 70px -34px rgba(15, 23, 42, 0.28);
+}
+[data-theme='light'] .lq-thin { background: rgba(15, 23, 42, 0.028); }
+[data-theme='light'] .lq-live:hover {
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.95) inset,
+    0 20px 48px -22px rgba(15, 23, 42, 0.24),
+    0 0 0 1px rgba(37, 99, 235, 0.14);
+}
+
+/* Sorotan kursor: biru pucat, bukan cahaya putih yang hilang di kertas */
+[data-theme='light'] .spotlight::before {
+  background: radial-gradient(240px circle at var(--sx, 50%) var(--sy, 50%),
+    rgba(37, 99, 235, 0.09), transparent 62%);
+}
+[data-theme='light'] .spot-edge::after {
+  background: radial-gradient(180px circle at var(--sx, 50%) var(--sy, 50%),
+    rgba(37, 99, 235, 0.4), transparent 60%);
+}
+
+/* ---------------------------------------------------------------------
+   2. Gradien berbutir & aurora
+   --------------------------------------------------------------------- */
+[data-theme='light'] .grainient { background-color: #eef2f8; }
+[data-theme='light'] .grainient > .gr-mesh { opacity: 0.34; filter: blur(64px) saturate(108%); }
+[data-theme='light'] .grainient > .gr-grain { opacity: 0.2; mix-blend-mode: multiply; }
+[data-theme='light'] .grainient-static {
+  background:
+    radial-gradient(90% 120% at 12% 0%, rgba(79, 70, 229, 0.09), transparent 58%),
+    radial-gradient(70% 90% at 100% 100%, rgba(34, 211, 238, 0.08), transparent 60%),
+    #ffffff;
+}
+[data-theme='light'] .grainient-static::after { mix-blend-mode: multiply; opacity: 0.18; }
+[data-theme='light'] .aurora span { opacity: 0.22; }
+[data-theme='light'] .fx-stars { display: none; }
+[data-theme='light'] .fx-grid-floor {
+  background-image:
+    linear-gradient(to right, rgba(37, 99, 235, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 99, 235, 0.1) 1px, transparent 1px);
+}
+
+/* Hero dashboard: peredam mendatar dibalik ke putih */
+[data-theme='light'] .dash-hero { border-color: rgba(15, 23, 42, 0.07); }
+[data-theme='light'] .dash-hero > .gr-mesh { opacity: 0.3; }
+
+/* Teks kilau harus memakai tinta gelap */
+[data-theme='light'] .txt-shine {
+  background: linear-gradient(100deg,
+    var(--text-muted) 0%, var(--text-primary) 42%, #0b1220 50%,
+    var(--text-primary) 58%, var(--text-muted) 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+[data-theme='light'] .txt-grad {
+  background: linear-gradient(112deg, #0f172a 0%, #2563eb 58%, #0891b2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* ---------------------------------------------------------------------
+   3. Kendali & permukaan tipis
+   --------------------------------------------------------------------- */
+[data-theme='light'] .sw { background: rgba(15, 23, 42, 0.14); }
+[data-theme='light'] .sw::after { background: #ffffff; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25); }
+[data-theme='light'] .sw-row { background: rgba(15, 23, 42, 0.02); }
+[data-theme='light'] .sw-row:hover { background: rgba(15, 23, 42, 0.04); }
+
+[data-theme='light'] .btn-glass {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 6px 16px -10px rgba(15, 23, 42, 0.3);
+}
+[data-theme='light'] .btn-glass:hover {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.16);
+}
+
+[data-theme='light'] .quick-tile { background: rgba(15, 23, 42, 0.022); }
+[data-theme='light'] .quick-tile:hover { background: rgba(37, 99, 235, 0.055); }
+
+[data-theme='light'] .note-inline { background: rgba(15, 23, 42, 0.022); }
+[data-theme='light'] .uploader { background-color: rgba(15, 23, 42, 0.018); }
+[data-theme='light'] .uploader:hover { background-color: rgba(15, 23, 42, 0.035); }
+[data-theme='light'] .uploader.drag { background-color: rgba(37, 99, 235, 0.06); }
+
+/* ---------------------------------------------------------------------
+   4. Notifikasi
+   --------------------------------------------------------------------- */
+[data-theme='light'] .toast {
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.97), rgba(255, 255, 255, 0.9) 46%);
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 16px 38px -18px rgba(15, 23, 42, 0.3);
+}
+[data-theme='light'] .toast-clear {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+[data-theme='light'] .toast-close:hover { background: rgba(15, 23, 42, 0.06); }
+[data-theme='light'] .toast-life { background: rgba(15, 23, 42, 0.1); }
+
+/* ---------------------------------------------------------------------
+   5. Media, pembanding, dan pemutar
+   --------------------------------------------------------------------- */
+[data-theme='light'] .cmp,
+[data-theme='light'] .vp,
+[data-theme='light'] .mv-stage {
+  background: #e6eaf1;
+  border-color: rgba(15, 23, 42, 0.12);
+}
+/* Panggung media tetap gelap di dalamnya karena isinya memang citra;
+   yang disesuaikan hanya bingkai dan penanda di sekelilingnya. */
+[data-theme='light'] .vcmp-loading { background: rgba(240, 243, 248, 0.88); }
+[data-theme='light'] .mv-backdrop { background: rgba(15, 23, 42, 0.42); }
+[data-theme='light'] .modal-backdrop { background: rgba(15, 23, 42, 0.4); }
+[data-theme='light'] .modal-x:hover { background: rgba(15, 23, 42, 0.06); }
+[data-theme='light'] .vp-controls button:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* ---------------------------------------------------------------------
+   6. Peta GeoInt
+   --------------------------------------------------------------------- */
+[data-theme='light'] .esri-wrap {
+  background: #e6eaf1;
+  border-color: rgba(15, 23, 42, 0.12);
+}
+[data-theme='light'] .esri-wrap .leaflet-container { background: #e6eaf1; }
+[data-theme='light'] .esri-wrap .leaflet-tile-pane { filter: none; }
+[data-theme='light'] .esri-wrap .leaflet-control-zoom a {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: var(--text-secondary);
+}
+[data-theme='light'] .esri-wrap .leaflet-control-zoom a:hover { background: #ffffff; color: var(--text-primary); }
+[data-theme='light'] .esri-wrap .leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.86) !important;
+  border-color: rgba(15, 23, 42, 0.1);
+}
+[data-theme='light'] .esri-wrap .leaflet-popup-content-wrapper,
+[data-theme='light'] .esri-wrap .leaflet-popup-tip {
+  background: rgba(255, 255, 255, 0.97);
+  border-color: rgba(15, 23, 42, 0.14);
+  color: var(--text-primary);
+}
+
+/* Panel mengambang di atas citra tetap gelap: latarnya foto satelit,
+   bukan kertas. Kontrasnya justru paling baik seperti ini. */
+[data-theme='light'] .map-hud { border-color: rgba(255, 255, 255, 0.14); }
+
+[data-theme='light'] .map-toolbar { background: rgba(15, 23, 42, 0.022); }
+[data-theme='light'] .map-tool { background: rgba(15, 23, 42, 0.03); }
+[data-theme='light'] .map-tool:hover:not(:disabled) { background: rgba(15, 23, 42, 0.06); }
+[data-theme='light'] .map-tool.on {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.32);
+  box-shadow: none;
+}
+[data-theme='light'] .tgt-row { background: rgba(15, 23, 42, 0.02); }
+[data-theme='light'] .tgt-row:hover { background: rgba(15, 23, 42, 0.04); }
+[data-theme='light'] .tgt-row.on { background: rgba(37, 99, 235, 0.07); }
+[data-theme='light'] .tgt-actions button:hover { background: rgba(15, 23, 42, 0.07); }
+
+/* ---------------------------------------------------------------------
+   7. Kartu lisensi & sertifikat
+   --------------------------------------------------------------------- */
+[data-theme='light'] .lic-card {
+  background:
+    repeating-linear-gradient(116deg,
+      rgba(146, 110, 20, 0.035) 0px, rgba(146, 110, 20, 0.035) 1px,
+      transparent 1px, transparent 7px),
+    radial-gradient(120% 90% at 100% 0%, color-mix(in oklab, var(--lic-accent, #2563eb) 8%, transparent), transparent 56%),
+    #ffffff;
+  border-color: rgba(15, 23, 42, 0.09);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 12px 30px -20px rgba(15, 23, 42, 0.22);
+}
+[data-theme='light'] .lic-card:hover {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 22px 48px -24px rgba(15, 23, 42, 0.3);
+}
+[data-theme='light'] .lic-card.is-locked { filter: saturate(0.85); }
+
+/* ---------------------------------------------------------------------
+   8. Keadaan luring
+   --------------------------------------------------------------------- */
+[data-theme='light'] .offline-bar {
+  background: linear-gradient(90deg, #b91c1c, #991b1b);
+  border-bottom-color: rgba(127, 29, 29, 0.4);
+}
+[data-theme='light'] .offline-panel { background: rgba(220, 38, 38, 0.04); }
+[data-theme='light'] .offline-last > span { background: rgba(15, 23, 42, 0.03); }
+[data-theme='light'] .emergency-btn.is-off {
+  background: linear-gradient(140deg, #64748b, #475569);
+  border-color: rgba(15, 23, 42, 0.14);
+}
+
+/* ---------------------------------------------------------------------
+   9. Konfigurasi
+   --------------------------------------------------------------------- */
+[data-theme='light'] .kv-table td { border-bottom-color: rgba(15, 23, 42, 0.07); }
+[data-theme='light'] .settings-dirty { border-color: rgba(180, 83, 9, 0.28); }
+[data-theme='light'] .settings-errors { border-color: rgba(185, 28, 28, 0.26); }
+
+/* ---------------------------------------------------------------------
+   10. Layar masuk
+   --------------------------------------------------------------------- */
+[data-theme='light'] .auth-card,
+[data-theme='light'] .auth-panel {
+  box-shadow: 0 30px 70px -34px rgba(15, 23, 42, 0.34);
+}
+[data-theme='light'] .auth-step.on { background: rgba(37, 99, 235, 0.07); }
+[data-theme='light'] .auth-summary > div { background: rgba(15, 23, 42, 0.022); }
+[data-theme='light'] .auth-accounts button { background: rgba(15, 23, 42, 0.022); }
+[data-theme='light'] .auth-accounts button:hover { background: rgba(37, 99, 235, 0.06); }
+[data-theme='light'] .auth-input .peek:hover { background: rgba(15, 23, 42, 0.06); }

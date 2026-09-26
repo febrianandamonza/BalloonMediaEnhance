@@ -1,0 +1,100 @@
+name: SkyStar GeoInt — CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # =============================================
+  # LINT + TYPE CHECK
+  # =============================================
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [app, backend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}' }
+      - name: Install dependencies
+        working-directory: ./${{ matrix.project }}
+        run: npm ci
+      - name: Generate Prisma (backend only)
+        if: matrix.project == 'backend'
+        working-directory: ./backend
+        run: npx prisma generate
+      - name: Type check
+        working-directory: ./${{ matrix.project }}
+        run: npx tsc --noEmit
+
+  # =============================================
+  # UNIT TESTS
+  # =============================================
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        project: [backend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}' }
+      - name: Install dependencies
+        working-directory: ./${{ matrix.project }}
+        run: npm ci
+      - name: Generate Prisma
+        if: matrix.project == 'backend'
+        working-directory: ./backend
+        run: npx prisma generate
+      - name: Run tests
+        working-directory: ./${{ matrix.project }}
+        run: npm test -- --passWithNoTests
+
+  # =============================================
+  # BUILD VERIFICATION
+  # =============================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        project: [app, backend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}' }
+      - name: Install dependencies
+        working-directory: ./${{ matrix.project }}
+        run: npm ci
+      - name: Generate Prisma (backend only)
+        if: matrix.project == 'backend'
+        working-directory: ./backend
+        run: npx prisma generate
+      - name: Build
+        working-directory: ./${{ matrix.project }}
+        run: npm run build
+
+  # =============================================
+  # DOCKER BUILD
+  # =============================================
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Backend Image
+        run: docker build -t skystar-backend:latest ./backend
+      - name: Build Frontend Image
+        run: docker build -t skystar-frontend:latest ./app

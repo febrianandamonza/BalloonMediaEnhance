@@ -1,0 +1,345 @@
+Table roles {
+  id bigint [pk, increment]
+  name varchar(50) [not null, unique]
+  description text
+  created_at timestamp
+}
+
+Table users {
+  id uuid [pk]
+
+  role_id bigint [not null]
+
+  username varchar(100) [not null, unique]
+  password_hash text [not null]
+
+  full_name varchar(150) [not null]
+
+  email varchar(150)
+  phone varchar(30)
+
+  is_active boolean
+
+  last_login timestamp
+
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table licenses {
+  id uuid [pk]
+
+  user_id uuid [not null, unique]
+
+  license_number varchar(100) [not null, unique]
+
+  issued_by varchar(150)
+
+  issued_date date
+
+  expired_date date
+
+  status varchar(30)
+
+  created_at timestamp
+}
+
+Table locations {
+  id bigint [pk, increment]
+
+  name varchar(150)
+
+  city varchar(100)
+
+  province varchar(100)
+
+  latitude decimal
+
+  longitude decimal
+}
+
+Table balloons {
+  id uuid [pk]
+
+  serial_number varchar(100)
+
+  balloon_name varchar(150)
+
+  capacity decimal
+
+  max_altitude decimal
+
+  status varchar(50)
+
+  created_at timestamp
+}
+
+Table mission_status {
+  id bigint [pk, increment]
+
+  name varchar(50)
+
+  description text
+}
+
+Table mission_roles {
+  id bigint [pk, increment]
+
+  name varchar(100)
+
+  description text
+}
+
+Table flight_simulations {
+  id uuid [pk]
+
+  simulation_name varchar(150)
+
+  payload_weight decimal
+
+  helium_volume decimal
+
+  flight_altitude decimal
+
+  estimated_duration integer
+
+  wind_speed decimal
+
+  gust_speed decimal
+
+  visibility decimal
+
+  rainfall decimal
+
+  temperature decimal
+
+  go_no_go boolean
+
+  remarks text
+
+  created_by uuid
+
+  created_at timestamp
+}
+
+Table flight_missions {
+  id uuid [pk]
+
+  simulation_id uuid [not null]
+
+  mission_code varchar(100) [not null, unique]
+
+  mission_name varchar(150)
+
+  description text
+
+  location_id bigint
+
+  balloon_id uuid
+
+  status_id bigint
+
+  created_by uuid
+
+  created_at timestamp
+
+  updated_at timestamp
+}
+
+Table mission_members {
+  id bigint [pk, increment]
+
+  mission_id uuid
+
+  user_id uuid
+
+  mission_role_id bigint
+
+  created_at timestamp
+}
+
+Table flight_information {
+  id uuid [pk]
+
+  mission_id uuid [not null, unique]
+
+  mission_leader varchar(150)
+
+  operator_id uuid
+
+  takeoff_time timestamp
+
+  landing_time timestamp
+
+  duration integer
+
+  max_altitude decimal
+
+  cable_length decimal
+
+  weather varchar(100)
+
+  remarks text
+
+  created_at timestamp
+}
+
+Table media {
+  id uuid [pk]
+
+  flight_information_id uuid [not null]
+
+  media_type varchar(20)
+
+  original_filename varchar(255)
+
+  stored_filename varchar(255)
+
+  mime_type varchar(100)
+
+  file_size bigint
+
+  uploaded_by uuid
+
+  uploaded_at timestamp
+}
+
+Table ai_job_types {
+  id bigint [pk, increment]
+
+  name varchar(100) [not null, unique]
+
+  description text
+}
+
+Table ai_models {
+  id bigint [pk, increment]
+
+  model_name varchar(100) [not null]
+
+  version varchar(50)
+
+  framework varchar(50)
+
+  description text
+
+  created_at timestamp
+}
+
+Table ai_jobs {
+  id uuid [pk]
+
+  media_id uuid [not null]
+
+  job_type_id bigint [not null]
+
+  model_id bigint [not null]
+
+  status varchar(30)
+
+  output_filename varchar(255)
+
+  thumbnail_filename varchar(255)
+
+  processing_time decimal
+
+  started_at timestamp
+
+  finished_at timestamp
+
+  created_by uuid
+}
+
+Table ai_frame_results {
+  id bigint [pk, increment]
+
+  job_id uuid [not null]
+
+  frame_number integer
+
+  timestamp_ms bigint
+
+  person_count integer
+
+  vehicle_count integer
+
+  crowd_count integer
+
+  processing_time decimal
+}
+
+Table audit_modules {
+  id bigint [pk, increment]
+
+  name varchar(100) [not null, unique]
+
+  description text
+}
+
+Table audit_logs {
+  id bigint [pk, increment]
+
+  user_id uuid
+
+  module_id bigint
+
+  action varchar(50)
+
+  entity varchar(100)
+
+  entity_id uuid
+
+  description text
+
+  ip_address varchar(50)
+
+  user_agent text
+
+  status varchar(30)
+
+  created_at timestamp
+}
+
+Ref: users.role_id > roles.id
+
+Ref: licenses.user_id > users.id
+
+Ref: flight_simulations.created_by > users.id
+
+Ref: flight_missions.simulation_id > flight_simulations.id
+
+Ref: flight_missions.location_id > locations.id
+
+Ref: flight_missions.balloon_id > balloons.id
+
+Ref: flight_missions.status_id > mission_status.id
+
+Ref: flight_missions.created_by > users.id
+
+Ref: mission_members.mission_id > flight_missions.id
+
+Ref: mission_members.user_id > users.id
+
+Ref: mission_members.mission_role_id > mission_roles.id
+
+Ref: flight_information.mission_id > flight_missions.id
+
+Ref: flight_information.operator_id > users.id
+
+Ref: media.flight_information_id > flight_information.id
+
+Ref: media.uploaded_by > users.id
+
+Ref: ai_jobs.media_id > media.id
+
+Ref: ai_jobs.job_type_id > ai_job_types.id
+
+Ref: ai_jobs.model_id > ai_models.id
+
+Ref: ai_jobs.created_by > users.id
+
+Ref: ai_frame_results.job_id > ai_jobs.id
+
+Ref: audit_logs.user_id > users.id
+
+Ref: audit_logs.module_id > audit_modules.id

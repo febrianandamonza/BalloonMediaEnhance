@@ -1,0 +1,17 @@
+{
+  "name": "skystar-docs-generator",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Pembangkit dokumen keluaran (ringkasan sistem + empat manual book) dan penangkap tangkapan layar antarmuka GCS.",
+  "scripts": {
+    "capture": "node capture.js",
+    "build": "node build.js",
+    "all": "node capture.js && node build.js"
+  },
+  "dependencies": {
+    "docx": "^9.5.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.50.0"
+  }
+}

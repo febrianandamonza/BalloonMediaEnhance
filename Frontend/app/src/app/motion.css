@@ -1,0 +1,743 @@
+/* =====================================================================
+   LAPISAN MIKROINTERAKSI
+
+   Satu tempat untuk seluruh perilaku sentuh, sorot, fokus, dan tekan.
+   Ditulis sebagai sistem, bukan tempelan per komponen: setiap aturan di
+   sini berlaku lintas halaman, sehingga tombol di modul mana pun
+   memberi umpan balik yang sama.
+
+   Tiga kaidah yang dipegang berkas ini:
+
+   1. Setiap gerak harus punya sebab. Ia menandai perubahan keadaan,
+      arah, atau hierarki — bukan hiasan. Tidak ada animasi tanpa henti
+      kecuali penanda yang memang menyatakan sesuatu sedang berjalan.
+   2. Hanya transform dan opacity yang dianimasikan. Keduanya ditangani
+      compositor, sehingga daftar panjang pun tetap lancar. Properti
+      yang memicu tata letak ulang tidak pernah disentuh.
+   3. Umpan balik papan tik setara dengan tetikus. Setiap elemen yang
+      bereaksi pada :hover wajib punya :focus-visible.
+
+   Dimuat setelah seluruh lembar komponen dan sebelum theme-light.css.
+   ===================================================================== */
+
+/* =====================================================================
+   1. TOKEN GERAK
+
+   Skala durasi dibuat pendek dan sedikit. Nilai di luar skala ini
+   membuat antarmuka terasa tidak satu tangan.
+   ===================================================================== */
+:root {
+  /* Tekan — harus terasa seketika, di ambang sadar. */
+  --m-press: 90ms;
+  /* Sorot dan fokus. */
+  --m-quick: 160ms;
+  /* Perpindahan keadaan yang terlihat. */
+  --m-base: 240ms;
+  /* Masuknya elemen baru. */
+  --m-enter: 380ms;
+
+  /* Baku: cepat di awal, melambat di akhir — terasa seperti benda nyata
+     yang berhenti karena gesekan. */
+  --m-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Untuk sesuatu yang keluar; boleh mempercepat lalu hilang. */
+  --m-ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  /* Pantulan halus untuk penanda yang berpindah tempat. */
+  --m-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+
+  /* Jarak angkat baku saat elemen disorot. */
+  --m-lift: -2px;
+  /* Skala saat ditekan. Cukup untuk terasa, tidak sampai terlihat. */
+  --m-squish: 0.972;
+}
+
+/* =====================================================================
+   2. CINCIN FOKUS UNIVERSAL
+
+   Sebelumnya hanya sepuluh aturan :focus-visible di seluruh aplikasi
+   melawan lebih dari seratus aturan :hover — pengguna papan tik nyaris
+   tidak mendapat isyarat apa pun. Satu aturan di bawah menutup jurang
+   itu sekaligus.
+
+   :focus-visible, bukan :focus, supaya cincin tidak muncul saat elemen
+   diklik dengan tetikus.
+   ===================================================================== */
+/* Selektor ditulis tanpa :where() dengan sengaja. Lembar gaya yang ada
+   sudah memuat penghapus seperti `.sidebar-search input { outline: 0 }`
+   dan `.form-input { outline: none }`; aturan berkekhususan nol akan
+   kalah melawan keduanya. Bentuk elemen+pseudo-kelas di bawah bernilai
+   (0,1,1) — cukup untuk menang, tanpa perlu !important sama sekali. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Elemen yang sudah punya cincinnya sendiri tidak digandakan. */
+.nc-panel :focus-visible,
+.toast :focus-visible {
+  outline-offset: 1px;
+}
+
+/* Kolom pencarian sidebar sudah memiliki bingkai sendiri yang menyala
+   saat isinya difokus. Cincin diberikan kepada bingkai itu, bukan kepada
+   kolom di dalamnya, agar tidak muncul dua kotak bersarang. */
+.sidebar-search:focus-within {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+.sidebar-search input:focus-visible { outline: none; }
+
+/* Penggeser nilai: cincin dipasang pada batangnya karena ibu jari
+   penggeser digambar oleh peramban dan tidak menerima outline. */
+.slider-row input[type='range']:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 3px;
+}
+
+/* Cincin ikut menyala saat tampil di atas latar terang. */
+[data-theme='light'] a:focus-visible,
+[data-theme='light'] button:focus-visible,
+[data-theme='light'] input:focus-visible,
+[data-theme='light'] select:focus-visible,
+[data-theme='light'] textarea:focus-visible,
+[data-theme='light'] [tabindex]:focus-visible,
+[data-theme='light'] .sidebar-search:focus-within {
+  outline-color: #2563eb;
+}
+
+/* =====================================================================
+   3. UMPAN BALIK TEKAN
+
+   Kekurangan terbesar sebelum berkas ini ada: seluruh aplikasi hanya
+   punya satu aturan :active. Tanpa itu, sebuah tombol tidak pernah
+   terasa benar-benar tertekan — pengguna ragu apakah kliknya masuk.
+   ===================================================================== */
+/* Ditulis sebagai kelas biasa, bukan :where(). Lembar gaya lama memberi
+   `.btn` dan `.header-btn` sebuah `transition: all`, yang mengalahkan
+   aturan berkekhususan nol. Selain kalah, `transition: all` juga ikut
+   menganimasikan properti yang tidak diniatkan — termasuk cincin fokus,
+   yang seharusnya muncul seketika. Daftar properti di bawah dikurasi
+   dan sengaja diberi kekhususan yang sama agar menang lewat urutan. */
+.btn,
+.header-btn,
+.nav-item,
+.seg button,
+.nc-tool,
+.nc-act,
+.rule-act,
+.toast-close,
+.modal-x,
+.chip,
+.tab {
+  transition:
+    transform var(--m-press) var(--m-ease),
+    background-color var(--m-quick) var(--m-ease),
+    border-color var(--m-quick) var(--m-ease),
+    color var(--m-quick) var(--m-ease),
+    box-shadow var(--m-quick) var(--m-ease);
+}
+
+.btn:active:not(:disabled),
+.header-btn:active:not(:disabled),
+.nav-item:active:not(:disabled),
+.seg button:active:not(:disabled),
+.nc-tool:active:not(:disabled),
+.nc-act:active:not(:disabled),
+.rule-act:active:not(:disabled),
+.toast-close:active:not(:disabled),
+.modal-x:active:not(:disabled),
+.chip:active:not(:disabled),
+.tab:active:not(:disabled) {
+  transform: scale(var(--m-squish));
+  transition-duration: var(--m-press);
+}
+
+/* Tombol utama turun sedikit alih-alih mengecil — pada tombol lebar,
+   penyusutan terbaca sebagai goyangan. */
+.btn-primary:active:not(:disabled),
+.btn-danger:active:not(:disabled) {
+  transform: translateY(1px) scale(0.99);
+}
+
+/* Yang nonaktif tidak boleh bergerak sama sekali. Gerakan pada kendali
+   mati adalah janji palsu. */
+:where(.btn, .header-btn, .nc-tool, .rule-act):disabled {
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* =====================================================================
+   4. RIAK TEKAN
+
+   Titik sentuh diberi gelombang yang berangkat dari posisi kursor,
+   sehingga tombol lebar tetap terasa ditekan tepat di tempat yang
+   diklik. Elemen span disisipkan oleh MotionLayer saat pointer turun.
+   ===================================================================== */
+.m-ripple {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0);
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.34) 0%,
+    rgba(255, 255, 255, 0.14) 45%,
+    transparent 70%
+  );
+  animation: m-ripple var(--m-enter) var(--m-ease) forwards;
+  z-index: 0;
+}
+
+[data-theme='light'] .m-ripple {
+  background: radial-gradient(
+    circle,
+    rgba(15, 23, 42, 0.16) 0%,
+    rgba(15, 23, 42, 0.07) 45%,
+    transparent 70%
+  );
+}
+
+@keyframes m-ripple {
+  to { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
+
+/* Isi tombol harus tetap di atas riak — .m-ripple dikecualikan karena
+   ia butuh position: absolute agar tidak ikut memuaikan lebar/tinggi
+   tombol saat animasinya berjalan (lihat definisi .m-ripple di atas). */
+.btn > *:not(.m-ripple) { position: relative; z-index: 1; }
+
+/* =====================================================================
+   5. TOMBOL
+
+   Ikon panah bergeser searah maknanya saat tombol disorot. Isyarat kecil
+   ini memberi tahu ke mana tombol akan membawa, sebelum ditekan.
+   ===================================================================== */
+.btn:hover:not(:disabled) svg {
+  transition: transform var(--m-base) var(--m-spring);
+}
+
+/* Panah maju bergeser ke kanan; panah unduh bergerak turun. */
+.btn:hover:not(:disabled) svg.lucide-arrow-right,
+.btn:hover:not(:disabled) svg.lucide-arrow-up-right,
+.btn:hover:not(:disabled) svg.lucide-chevron-right {
+  transform: translateX(2px);
+}
+
+.btn:hover:not(:disabled) svg.lucide-download,
+.btn:hover:not(:disabled) svg.lucide-arrow-down {
+  transform: translateY(2px);
+}
+
+.btn:hover:not(:disabled) svg.lucide-refresh-cw,
+.btn:hover:not(:disabled) svg.lucide-rotate-cw {
+  transform: rotate(38deg);
+}
+
+.btn:hover:not(:disabled) svg.lucide-plus {
+  transform: rotate(90deg);
+}
+
+.btn:hover:not(:disabled) svg.lucide-trash-2 {
+  transform: rotate(-8deg);
+}
+
+/* Keadaan sedang bekerja: tombol dikunci dan menampilkan denyut yang
+   menyatakan proses masih berjalan — satu-satunya animasi berulang yang
+   dibenarkan pada tombol. */
+.btn[data-busy='true'] {
+  pointer-events: none;
+  position: relative;
+  color: transparent !important;
+}
+
+.btn[data-busy='true']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  color: var(--text-primary);
+  animation: m-spin 620ms linear infinite;
+}
+
+@keyframes m-spin { to { transform: rotate(360deg); } }
+
+/* =====================================================================
+   6. KENDALI TERSEGMENTASI — PIL YANG MELUNCUR
+
+   Sebelumnya penanda pilihan berpindah dengan berkedip: latar hilang di
+   satu tombol lalu muncul di tombol lain. Kini satu pil bergerak dari
+   posisi lama ke posisi baru, sehingga mata dapat mengikuti perpindahan
+   dan memahami hubungan antar pilihan.
+
+   Posisi dan lebar diisi oleh MotionLayer sebagai custom property,
+   sehingga tidak ada satu pun simpul DOM tambahan yang disisipkan ke
+   dalam pohon yang dikelola React.
+   ===================================================================== */
+.seg { position: relative; }
+
+.seg::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: var(--m-pill-w, 0);
+  transform: translateX(var(--m-pill-x, 0));
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--m-base) var(--m-spring),
+    width var(--m-base) var(--m-spring),
+    opacity var(--m-quick) var(--m-ease);
+  opacity: var(--m-pill-o, 0);
+  pointer-events: none;
+  z-index: 0;
+}
+
+[data-theme='light'] .seg::after { background: #fff; }
+
+/* Tombol duduk di atas pil, dan tidak lagi menggambar latarnya sendiri. */
+.seg button { position: relative; z-index: 1; }
+
+.seg:has(::after) button.on {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Pil belum sempat diukur pada bingkai pertama; sampai saat itu tombol
+   terpilih tetap memakai latarnya sendiri agar tidak ada kedipan. */
+.seg:not([style*='--m-pill-w']) button.on {
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+/* =====================================================================
+   7. NAVIGASI SAMPING
+
+   Rel penanda halaman aktif meluncur dari menu sebelumnya ke menu baru,
+   memberi kesan satu penanda yang berpindah alih-alih dua penanda yang
+   berkedip bergantian.
+   ===================================================================== */
+.sidebar-nav { position: relative; }
+
+.sidebar-nav::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: var(--m-rail-h, 0);
+  transform: translateY(var(--m-rail-y, 0));
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--accent-primary), var(--accent-secondary));
+  box-shadow: 0 0 12px rgba(96, 165, 250, 0.5);
+  opacity: var(--m-rail-o, 0);
+  transition:
+    transform var(--m-base) var(--m-spring),
+    height var(--m-base) var(--m-spring),
+    opacity var(--m-quick) var(--m-ease);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Penanda lama pada tiap butir dimatikan agar tidak tampak ganda. */
+.sidebar-nav:not([style*='--m-rail-h']) .nav-item.active::before { opacity: 1; }
+.sidebar-nav[style*='--m-rail-h'] .nav-item.active::before { opacity: 0; }
+
+/* Ikon bergeser sedikit ke dalam saat disorot — mengarahkan mata ke
+   label tanpa memindahkan tata letak. */
+.nav-item svg {
+  transition: transform var(--m-base) var(--m-spring);
+}
+
+.nav-item:hover:not(.active) svg { transform: translateX(2px); }
+.nav-item.active svg { transform: scale(1.06); }
+
+/* Menu terkunci menolak dengan getaran satu kali, bukan diam saja. */
+.nav-item.locked:active { animation: m-nope 260ms var(--m-ease); }
+
+@keyframes m-nope {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+/* =====================================================================
+   8. KOLOM ISIAN
+
+   Bingkai fokus mekar keluar sekali saat kolom disentuh, lalu diam.
+   Isyarat sekali pakai seperti ini menandai perpindahan fokus tanpa
+   menarik perhatian terus-menerus.
+   ===================================================================== */
+.form-input,
+.form-select,
+textarea.form-input {
+  transition:
+    border-color var(--m-quick) var(--m-ease),
+    box-shadow var(--m-quick) var(--m-ease),
+    background-color var(--m-quick) var(--m-ease);
+}
+
+.form-input:hover:not(:focus):not(:disabled),
+.form-select:hover:not(:focus):not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.form-input:focus,
+.form-select:focus,
+textarea.form-input:focus {
+  animation: m-bloom var(--m-base) var(--m-ease);
+}
+
+@keyframes m-bloom {
+  from { box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.34); }
+  to { box-shadow: 0 0 0 4px rgba(96, 165, 250, 0); }
+}
+
+/* Kolom yang ditolak bergetar sekali. Diulang terus akan terbaca
+   sebagai kerusakan, bukan sebagai koreksi. */
+.form-input[aria-invalid='true'],
+.form-input.is-invalid {
+  border-color: var(--danger-400);
+  animation: m-shake 380ms var(--m-ease);
+}
+
+@keyframes m-shake {
+  0%, 100% { transform: translateX(0); }
+  18% { transform: translateX(-5px); }
+  38% { transform: translateX(4px); }
+  58% { transform: translateX(-3px); }
+  78% { transform: translateX(2px); }
+}
+
+/* Anak panah pada daftar pilih berputar saat kolom aktif. */
+.form-select { transition: background-position var(--m-base) var(--m-ease); }
+
+/* Kotak centang: tanda digambar, bukan sekadar muncul. */
+input[type='checkbox'],
+input[type='radio'] {
+  transition: transform var(--m-press) var(--m-ease);
+  cursor: pointer;
+}
+
+input[type='checkbox']:active,
+input[type='radio']:active { transform: scale(0.88); }
+
+input[type='checkbox']:checked { animation: m-check 280ms var(--m-spring); }
+
+@keyframes m-check {
+  0% { transform: scale(0.8); }
+  55% { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+/* =====================================================================
+   9. KARTU
+
+   Terangkat sedikit saat disorot, dan tepinya menyala mengikuti warna
+   aksen. Cukup untuk menyatakan "ini dapat disentuh", tidak sampai
+   membuat halaman bergoyang saat kursor melintas.
+   ===================================================================== */
+/* Kelas yang dipakai pohon sesungguhnya adalah .glass-card-3d dan
+   .select-card; .card hanya tersisa di lembar gaya lama. */
+.glass-card-3d,
+.select-card {
+  transition:
+    transform var(--m-base) var(--m-ease),
+    border-color var(--m-base) var(--m-ease),
+    box-shadow var(--m-base) var(--m-ease);
+}
+
+/* Kartu bermiring 3D mengurus transform-nya sendiri lewat JavaScript;
+   menambah translateY di sini akan saling menimpa. Yang diberi angkat
+   hanya kartu yang tidak dimiringkan. */
+.glass-card-3d:not([style*='--rx']):hover,
+.select-card:hover {
+  transform: translateY(var(--m-lift));
+  border-color: var(--border-strong);
+}
+
+/* Kartu yang benar-benar dapat diklik diberi reaksi tekan. */
+.select-card:active,
+.glass-card-3d[role='button']:active {
+  transform: translateY(0) scale(0.995);
+  transition-duration: var(--m-press);
+}
+
+/* Petak ringkasan angka: ikonnya berdenyut sekali saat petak disorot. */
+.metric:hover .metric-label svg,
+.lic-summary-tile:hover .ico { animation: m-pop 420ms var(--m-spring); }
+
+.lic-summary-tile {
+  transition: transform var(--m-base) var(--m-ease), border-color var(--m-base) var(--m-ease);
+}
+
+.lic-summary-tile:hover {
+  transform: translateY(var(--m-lift));
+  border-color: var(--border-strong);
+}
+
+@keyframes m-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+/* =====================================================================
+   10. TABEL
+
+   Baris menyoroti dirinya dan menggeser isinya sedikit ke kanan,
+   sehingga mata tahu persis baris mana yang sedang dibaca pada tabel
+   yang lebar.
+   ===================================================================== */
+table tbody tr {
+  transition:
+    background-color var(--m-quick) var(--m-ease),
+    box-shadow var(--m-quick) var(--m-ease);
+}
+
+table tbody tr:hover {
+  background: rgba(148, 163, 184, 0.06);
+  box-shadow: inset 3px 0 0 var(--accent-primary);
+}
+
+[data-theme='light'] table tbody tr:hover {
+  background: rgba(15, 23, 42, 0.035);
+}
+
+/* Tombol di dalam baris baru muncul saat barisnya disentuh — tabel jadi
+   bersih saat dibaca, dan tetap lengkap saat dipakai. */
+table tbody tr .btn-ghost {
+  opacity: 0.42;
+  transition: opacity var(--m-quick) var(--m-ease), transform var(--m-press) var(--m-ease);
+}
+
+table tbody tr:hover .btn-ghost,
+table tbody tr:focus-within .btn-ghost { opacity: 1; }
+
+/* Kepala tabel yang dapat diurutkan memutar penandanya. */
+table th[aria-sort] svg { transition: transform var(--m-base) var(--m-spring); }
+table th[aria-sort='descending'] svg { transform: rotate(180deg); }
+
+/* =====================================================================
+   11. LENCANA DAN PENANDA KEADAAN
+
+   Denyut hanya diberikan pada penanda yang benar-benar menyatakan
+   sesuatu sedang berlangsung. Lencana diam tidak berdenyut.
+   ===================================================================== */
+.badge {
+  transition: transform var(--m-press) var(--m-ease), background-color var(--m-quick) var(--m-ease);
+}
+
+.badge:hover { transform: translateY(-1px); }
+
+/* Titik status daring: satu denyut lambat yang menyatakan tautan hidup. */
+.site-status-dot.online::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid var(--success-400);
+  animation: m-halo 2.4s var(--m-ease) infinite;
+}
+
+@keyframes m-halo {
+  0% { transform: scale(0.7); opacity: 0.8; }
+  70%, 100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* Saat platform padam, denyut berhenti. Penanda yang tetap berdenyut di
+   sistem mati adalah kebohongan visual. */
+.is-offline .site-status-dot.online::after,
+.site-status-dot.offline::after { animation: none; content: none; }
+
+/* =====================================================================
+   12. MASUKNYA HALAMAN DAN ELEMEN
+
+   Isi halaman naik sedikit sambil memudar masuk. Kartu di dalamnya
+   menyusul bertahap, sehingga mata membaca dari atas ke bawah alih-alih
+   disergap seluruh halaman sekaligus.
+
+   Jeda dibatasi enam petak; lebih dari itu, baris terakhir terasa
+   lambat merespons.
+   ===================================================================== */
+.page-content > * {
+  animation: m-rise var(--m-enter) var(--m-ease) backwards;
+}
+
+@keyframes m-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.lic-summary > * {
+  animation: m-rise var(--m-enter) var(--m-ease) backwards;
+}
+
+.lic-summary > *:nth-child(1) { animation-delay: 40ms; }
+.lic-summary > *:nth-child(2) { animation-delay: 80ms; }
+.lic-summary > *:nth-child(3) { animation-delay: 120ms; }
+.lic-summary > *:nth-child(4) { animation-delay: 160ms; }
+.lic-summary > *:nth-child(5) { animation-delay: 200ms; }
+.lic-summary > *:nth-child(6) { animation-delay: 240ms; }
+
+/* =====================================================================
+   13. DIALOG
+
+   Latar mengabur masuk, panel naik dan membesar dari 96%. Arah gerak
+   menyatakan bahwa dialog datang dari kedalaman, bukan menempel di
+   permukaan.
+   ===================================================================== */
+.modal-backdrop { animation: m-fade var(--m-base) var(--m-ease); }
+
+@keyframes m-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.modal { animation: m-modal var(--m-enter) var(--m-spring); }
+
+@keyframes m-modal {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* =====================================================================
+   14. KEADAAN KOSONG DAN PEMUATAN
+   ===================================================================== */
+.empty-state-ico { transition: transform var(--m-base) var(--m-spring); }
+.empty-state:hover .empty-state-ico { transform: translateY(-3px) rotate(-4px); }
+
+/* Kilau pemuatan: mengalir sekali per putaran, bukan berkedip. */
+.m-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.m-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(148, 163, 184, 0.18),
+    transparent
+  );
+  animation: m-sheen 1.4s var(--m-ease) infinite;
+}
+
+@keyframes m-sheen { to { transform: translateX(100%); } }
+
+/* =====================================================================
+   15. SALIN KE PAPAN KLIP
+
+   Ikon berganti menjadi centang dan kembali sendiri. Umpan balik yang
+   melekat pada tombolnya sendiri lebih cepat dibaca daripada pesan yang
+   muncul di sudut layar.
+   ===================================================================== */
+.btn[data-copied='true'] {
+  color: var(--success-400) !important;
+  border-color: rgba(52, 211, 153, 0.4) !important;
+}
+
+.btn[data-copied='true'] svg { animation: m-pop 420ms var(--m-spring); }
+
+/* =====================================================================
+   16. TAUTAN DALAM TEKS
+
+   Garis bawah tumbuh dari kiri, bukan muncul utuh sekaligus.
+   ===================================================================== */
+.link-underline {
+  position: relative;
+  text-decoration: none;
+}
+
+.link-underline::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 100%;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--m-base) var(--m-ease);
+}
+
+.link-underline:hover::after,
+.link-underline:focus-visible::after { transform: scaleX(1); }
+
+/* =====================================================================
+   17. GERAK MINIMUM
+
+   Bagian terpenting dari berkas ini. Saat sistem operasi meminta
+   pengurangan gerak, seluruh perpindahan dihentikan dan hanya perubahan
+   warna serta opacity yang disisakan — antarmuka tetap memberi umpan
+   balik, tanpa satu pun benda yang bergerak.
+
+   Perhatikan bahwa animasi tidak dibuat 0s melainkan 1ms: sebagian
+   kode bergantung pada peristiwa animationend, dan durasi nol membuat
+   peristiwa itu tidak pernah dikirim pada sebagian peramban.
+   ===================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Perpindahan dimatikan; umpan balik dialihkan ke warna. */
+  :where(.btn, .header-btn, .nav-item, .seg button, .nc-tool, .nc-act,
+         .rule-act, .glass-card-3d, .select-card, .badge):active,
+  :where(.glass-card-3d, .select-card, .lic-summary-tile):hover {
+    transform: none !important;
+  }
+
+  .btn:hover svg,
+  .nav-item:hover svg,
+  .nav-item.active svg { transform: none !important; }
+
+  .m-ripple,
+  .site-status-dot.online::after,
+  .m-skeleton::after { display: none; }
+
+  /* Pil dan rel tetap berpindah — tanpa itu penanda halaman aktif
+     menjadi tidak terlihat — namun langsung, tanpa peluncuran. */
+  .seg::after,
+  .sidebar-nav::before { transition: none !important; }
+}
+
+/* =====================================================================
+   18. PERANGKAT SENTUH
+
+   Keadaan :hover pada layar sentuh menempel setelah disentuh dan tidak
+   pernah lepas. Di perangkat tanpa penunjuk halus, seluruh isyarat
+   sorot dimatikan dan hanya reaksi tekan yang disisakan.
+   ===================================================================== */
+@media (hover: none) {
+  .glass-card-3d:hover,
+  .select-card:hover,
+  .lic-summary-tile:hover { transform: none; }
+
+  table tbody tr .btn-ghost { opacity: 1; }
+
+  .nav-item:hover:not(.active) svg { transform: none; }
+}

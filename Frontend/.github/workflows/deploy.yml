@@ -1,0 +1,62 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main, master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            set -e
+            
+            echo "=== SkyStar (Baloon) Deploy Started ==="
+            
+            cd /var/www/balon
+            
+            # Pull latest code
+            git fetch --all
+            git reset --hard origin/master || git reset --hard origin/main
+            
+            # Build frontend app
+            cd app
+            npm install
+            npm run build
+            
+            # Restart PM2 process
+            PORT=3001 pm2 restart skystar-balon 2>/dev/null || PORT=3001 pm2 start npm --name skystar-balon -- start
+            
+            # Ensure PM2 auto-start after VPS reboot
+            pm2 startup systemd -u root --hp /root 2>/dev/null || true
+            pm2 save
+            
+            # Health check — wait 10s then verify
+            echo "⏳ Waiting 10s for startup..."
+            sleep 10
+            
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001 2>/dev/null || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "304" ]; then
+              echo "✅ Health check PASSED — skystar-balon is responding (HTTP $HTTP_CODE)"
+            else
+              echo "⚠️ Health check WARNING — HTTP $HTTP_CODE, attempting rebuild..."
+              cd /var/www/balon/app
+              rm -rf .next
+              npm run build
+              PORT=3001 pm2 restart skystar-balon
+              sleep 8
+              HTTP_CODE2=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001 2>/dev/null || echo "000")
+              echo "Retry health check: HTTP $HTTP_CODE2"
+            fi
+            
+            echo "=== Deploy Complete ==="
+            pm2 list

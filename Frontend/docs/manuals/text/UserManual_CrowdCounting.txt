@@ -1,0 +1,51 @@
+
+--- PAGE 1 ---
+User Manual  Crowd Counting
+
+--- PAGE 2 ---
+Table of Contents  Introduction   3  Activate License key   4  Application Guidelines   5  2   Crowd Counting : User Manual
+
+--- PAGE 3 ---
+1. Introduction  The Crowd counting model uses a deep learning neural network to estimate the  number of people appearing in an image with high accuracy and high processing  speed.  The neural network contains many convolution layers to understand images. It takes  an image (or a video) as input and it outputs a density map of the human head.  “ Figure 1 ” illustrates an example of the output of a processed input image. The  brighter color on the output map indicates the higher density of the human head.  Therefore, the estimated number of people appearing in the crowd is obtained based  on the generated density map. For example, the estimated counting value is “512” for  the below image.  Figure 1: Example of the crowd counting density map  3   Crowd Counting : User Manual
+
+--- PAGE 4 ---
+2. Prerequisite  The Crowd Counting application depends on the high computing capacity as the  application uses a deep learning neural network to estimate the number of people  appearing in an image. The Application needs a   CUDA   enabled   GPU   in order to  speed up the compute-intensive algorithms and Cuda Toolkit should be installed prior  to the installation of the Crows Counting application.  Setup Cuda Toolkit on Windows 10(Nvidia GPU)  ●   Download the Cuda toolkit from the link.  ●   Select the appropriate platform as shown in the below figure.  ●   Run the Cuda toolkit installer.  Setup Crowd Counting Application  ●   Run the provided ObjectDetectionInstaller.exe. The Installer will check if the  toolkit is already installed or not and abort the installation if no cuda toolkit is  installed.  ●   Installer will prompt for administrator rights during the installation and make  sure that proper administrative rights are given for smooth installation.  ●   The Installer will check dependent modules and install if it is not installed.  How to Verify the Cuda Toolkit Installation  ●   On the Windows taskbar, right-click the   Windows   icon and select  System .  ●   In the   Settings   window, under   Related Settings , click   Advanced  system settings .  ●   On the   Advanced   tab, click   Environment Variables  4   Crowd Counting : User Manual
+
+--- PAGE 5 ---
+●   Ensure that Following Environment variables are set up after the  installation as per below figure.  5   Crowd Counting : User Manual
+
+--- PAGE 6 ---
+CUDA_PATH : Ensure that it points to the cuda toolkit 11.1 path.  Multiple cuda path with specific version will be available If system  installed other cuda toolkit versions(CUDA_PATH_V10_0,  CUDA_PATH_V11_3 etc); So ensure that your   CUDA_PATH   points to  CUDA_PATH_V11_1  CUDA_VISIBLE_DEVICES : The value should be 0 you if you have  only one Nvidia GPU  ●   Open Windows   Task Manager   and click on the   Performance  tab  ●   Click on the Correct Nvidia GPU and check the Physical  Location  set the CUDA_VISIBLE_DEVICES number based on the device  number mentioned in the   Physical location   area, For example  below image it is device 0 and CUDA_VISIBLE_DEVICES  should be 0.  6   Crowd Counting : User Manual
+
+--- PAGE 7 ---
+Configure System for Best GPU Performance  Application performance depends on the System GPU acceleration.Thus  ensure that GPU acceleration is enabled and there are no restrictions based  on the power mode.  To enable hardware accelerated GPU scheduling on Windows 10, use these  steps:  ●   Open Start Menu and tap on Settings icon.  ●   In Settings, click on ‘System’ and open the ‘Display’ tab.  ●   Under the “Multiple Displays” section, select “Graphics settings”.  7   Crowd Counting : User Manual
+
+--- PAGE 8 ---
+●   Turn on “Hardware-accelerated GPU scheduling” option and Restart the  system.  Setting "Power management mode" from Adaptive to Maximum Performance  Setting Power management mode from "Adaptive" to "Maximum  Performance" can improve performance in certain applications when the GPU is  throttling the clock speeds incorrectly. To change this setting, with your mouse,  right-click over the Windows desktop and select "NVIDIA Control Panel" -> from  the NVIDIA Control Panel, select the "Manage 3D settings" from the left column  -> click on the Power management mode drop down box and select "Prefer  Maximum Performance". Click over the "Apply" button at the bottom of the panel  to apply the changes.  8   Crowd Counting : User Manual
+
+--- PAGE 9 ---
+Change the power mode to best performance for your Windows PC  To change the power mode quickly, select the Battery icon on the taskbar, and  then drag the slider to the power mode “Best Performance”.  Optional: Settings to Use Maximum CPU Power  ●   Right click the Start menu and select the Control Panel.  9   Crowd Counting : User Manual
+
+--- PAGE 10 ---
+●   Click Hardware and Sound.  ●   Select Power Options.  10   Crowd Counting : User Manual
+
+--- PAGE 11 ---
+●   Find Processor power management and open the menu for Minimum  processor state.  ●   Change the setting for the battery to 100%.  ●   Change the setting for plugged in to 100%.  11   Crowd Counting : User Manual
+
+--- PAGE 12 ---
+3. Activate License key  A.   Start the Crowd Counting Application  Shortcuts will be available either in desktop or Application Menu.  B.   Select the “Register your license” option as shown in the diagram below and  click “Next”.  12   Crowd Counting : User Manual
+
+--- PAGE 13 ---
+C.   Enter a valid License Key and Click “Next”.  D.   Check the Agreement box and Click on “Finish”.  13   Crowd Counting : User Manual
+
+--- PAGE 14 ---
+4. Application Guidelines  A.   Start the Crowd Counting Application  The application has launched successfully as shown in the image below.  B.   Configure the Video Source to the application  i.   Expand the “Video Source Setting” from the left pane of the  application user interface.  ii.   Configure the Video source with the following details  1.   “Source Name” : A unique name for identifying the video  source.  2.   “Source Type” : Currently 3 sources types are available  a.   “USB”  b.   “RTSP”  c.   “Video”  3.   “Camera Index/Address”:  Camera address will be change based on the source type for  for example  “USB” : “/dev/video0”  “RTSP”:  rtsp://user_name:password@IP_address:port_number  “Video” : /home/user/work/video/crowd_video.mp4  14   Crowd Counting : User Manual
+
+--- PAGE 15 ---
+4.   Click on the “Test” Button to test the video source.  A new Window will popup with video streaming as shown  below. An image will be displayed if the configuration is valid,  otherwise a proper error message will appear.  5.   Click on the “Add” button in order to save the configuration in  the application. Only Saved video sources can be chosen at  the time of running the crowd counting application.  C.   “Run” Crowd Counting  i.   Expand the “Application setting” from the left pane of the application  Graphical user interface.  15   Crowd Counting : User Manual
+
+--- PAGE 16 ---
+ii.   Choose the detection type which user wants to run from the list  eg: “Crowd Counting”.  iii.   Select the proper frame size  eg: 1280x720.  iv.   Choose the Video source from the list  eg: CrowdVideo , configured in the step 3.B.ii.C  v.   Click on the “Run” button to start the crowd counting.  The application will start to process the video frame and processed  frames will be displayed on the application window as shown in below  image. Besides, Crowd count will be displayed under the Notification  section of the application.  16   Crowd Counting : User Manual
+
+--- PAGE 17 ---
+vi.   Users can click on the “Pause” button from the application user  interface in order to pause the video. A “Resume” button will replace  the pause button for a paused video so that users can resume the  crowd counting process.  vii.   Crowd counting will automatically stop once it has finished processing  all the frames in the video. Use “Run” button to restart the counting  viii.   Click on the “Close” button to close the Video source Tab or stop the  video.  17   Crowd Counting : User Manual

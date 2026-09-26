@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -14,7 +15,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+node_modules/
+# lib/
 lib64/
 parts/
 sdist/
@@ -216,3 +218,25 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# macOS
+.DS_Store
+
+
+# Output hasil processing
+Backend/storage
+Backend/output
+Backend/input
+Backend/streams/
+
+# Log
+*.log
+
+Backend/weights/*.pth
+Backend/weights/*.pt
+
+__pycache__/
+*.py[cod]
+
+/Backend/deploy/
+
+/Backend/streams

@@ -1,0 +1,17 @@
+node_modules/
+.next/
+dist/
+out/
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.DS_Store
+*.log
+coverage/
+.idea/
+.vscode/*
+!.vscode/settings.json
+tools/docs-generator/node_modules/
+tools/docs-generator/out/
