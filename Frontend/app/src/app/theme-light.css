@@ -153,6 +153,17 @@
 [data-theme='light'] .toast-close:hover { background: rgba(15, 23, 42, 0.06); }
 [data-theme='light'] .toast-life { background: rgba(15, 23, 42, 0.1); }
 
+[data-theme='light'] .avatar-menu {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.8) 140px),
+    rgba(255, 255, 255, 0.98);
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow:
+    0 24px 60px -20px rgba(15, 23, 42, 0.28),
+    0 2px 8px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
 /* ---------------------------------------------------------------------
    5. Media, pembanding, dan pemutar
    --------------------------------------------------------------------- */
