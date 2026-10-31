@@ -142,10 +142,12 @@ export function VideoPlayer({
   aspect?: string;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(autoPlay);
   const [muted, setMuted] = useState(true);
   const [time, setTime] = useState(0);
   const [dur, setDur] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const toggle = () => {
     const v = ref.current;
@@ -166,10 +168,26 @@ export function VideoPlayer({
     v.currentTime = (Number(e.target.value) / 100) * dur;
   };
 
-  const full = () => ref.current?.requestFullscreen?.().catch(() => {});
+  /* Fullscreen pada container agar kontrol HUD tetap terlihat */
+  const full = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
+
+  /* Pantau perubahan state fullscreen */
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
 
   return (
-    <div className="vp" style={{ aspectRatio: aspect }}>
+    <div ref={containerRef} className={`vp${isFullscreen ? ' vp-fullscreen' : ''}`} style={{ aspectRatio: aspect }}>
       <video
         ref={ref}
         src={src}
@@ -219,7 +237,7 @@ export function VideoPlayer({
         <button type="button" onClick={() => setMuted(m => !m)} aria-label={muted ? 'Nyalakan suara' : 'Bisukan'}>
           {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
         </button>
-        <button type="button" onClick={full} aria-label="Layar penuh">
+        <button type="button" onClick={full} aria-label={isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'}>
           <Maximize2 size={13} />
         </button>
       </div>
@@ -245,8 +263,10 @@ export function VideoCompare({
   const { t } = useApp();
   const aRef = useRef<HTMLVideoElement>(null);
   const bRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(true);
   const [ready, setReady] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     const lead = bRef.current;
@@ -280,6 +300,13 @@ export function VideoCompare({
     };
   }, []);
 
+  /* Pantau perubahan state fullscreen */
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
   const toggle = () => {
     const a = aRef.current;
     const b = bRef.current;
@@ -307,14 +334,25 @@ export function VideoCompare({
     setPlaying(true);
   };
 
+  /* Fullscreen pada container vcmp agar semua elemen ikut */
+  const full = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
+
   const vid = (ref: React.RefObject<HTMLVideoElement | null>, src: string) => (
     <video ref={ref} src={src} muted loop autoPlay playsInline preload="auto" />
   );
 
   return (
-    <div className="vcmp">
-      <div style={{ position: 'relative' }}>
-        <CompareSlider labelBefore={labelBefore} labelAfter={labelAfter} aspect={aspect}>
+    <div ref={containerRef} className={`vcmp${isFullscreen ? ' vcmp-fullscreen' : ''}`}>
+      <div style={{ position: 'relative', flex: 1 }}>
+        <CompareSlider labelBefore={labelBefore} labelAfter={labelAfter} aspect={isFullscreen ? undefined : aspect}>
           {vid(aRef, before)}
           {vid(bRef, after)}
         </CompareSlider>
@@ -335,6 +373,11 @@ export function VideoCompare({
           <RotateCcw size={13} /> Ulang
         </button>
         <span className="vcmp-hint">Tarik pembagi untuk membandingkan kedua keluaran</span>
+        <button type="button" className="btn btn-ghost btn-sm vcmp-full-btn" onClick={full}
+          aria-label={isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'}>
+          <Maximize2 size={13} />
+          {isFullscreen ? 'Keluar' : 'Layar Penuh'}
+        </button>
       </div>
     </div>
   );

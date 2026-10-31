@@ -18,7 +18,7 @@ import {
   UsersRound, Play, Pause, Square, Camera, Cpu, Video, Radio,
   ScanSearch, Clapperboard, UploadCloud, Image as ImageIcon, Target,
   Crosshair, SlidersHorizontal, ListFilter, Activity, MapPin,
-  Car, PersonStanding, Save, RefreshCw, Loader2, FileVideo,
+  Car, PersonStanding, Save, RefreshCw, Loader2, FileVideo, Maximize2, X,
 } from 'lucide-react';
 
 /** Huruf pertama kapital untuk nama kelas objek ("person" → "Person"). */
@@ -337,6 +337,36 @@ export function CrowdCountingPage() {
   const stopTimerRef = useRef<number | null>(null);
   const isUdp = source === 'udp';
 
+  /* ---- Fullscreen panel Video Zona (Crowd Counting) ---- */
+  const crowdCardRef = useRef<HTMLDivElement>(null);
+  const [isCrowdFullscreen, setIsCrowdFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsCrowdFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleCrowdFullscreen = () => {
+    const el = crowdCardRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
+
+  /* Konfirmasi sebelum memulai analisa crowd counting */
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  useEffect(() => {
+    if (!showConfirm) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowConfirm(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showConfirm]);
+
   useNavGuard(
     starting || running,
     t('Sesi crowd counting sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.'),
@@ -650,6 +680,59 @@ export function CrowdCountingPage() {
     setCount(0); setPeak(0); setFrameCount(0); setHistory([]); setCountTotal({ sum: 0, frames: 0 }); setJobResult(null);
   };
 
+  const requestStart = () => {
+    if (starting || running) return;
+    if (!missionId) {
+      pushToast({ tone: 'error', title: t('Pilih flight mission dahulu'), detail: t('Flight mission wajib dipilih sebelum menjalankan analisis.') });
+      notify({
+        title: t('Pilih flight mission dahulu'),
+        detail: t('Flight mission wajib dipilih sebelum menjalankan analisis.'),
+        severity: 'peringatan',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
+      return;
+    }
+    if (source === 'udp' && !udpUrl.trim()) {
+      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.') });
+      notify({
+        title: t('Isi alamat UDP dahulu'),
+        detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.'),
+        severity: 'peringatan',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
+      return;
+    }
+    if (source === 'upload' && !file) {
+      pushToast({ tone: 'error', title: t('Unggah berkas video dahulu'), detail: t('Pilih atau seret berkas video sebelum menjalankan analisis.') });
+      notify({
+        title: t('Unggah berkas video dahulu'),
+        detail: t('Pilih atau seret berkas video sebelum menjalankan analisis.'),
+        severity: 'peringatan',
+        category: 'Ambang Batas',
+        source: 'Crowd Counting',
+        page: 'crowd',
+        silent: true,
+      });
+      return;
+    }
+    setShowConfirm(true);
+  };
+
+  const confirmStart = () => {
+    setShowConfirm(false);
+    start();
+  };
+
+  const cancelStart = () => {
+    setShowConfirm(false);
+  };
+
   const start = async () => {
     if (starting || running) return;
     if (!missionId) {
@@ -822,7 +905,7 @@ export function CrowdCountingPage() {
           icon={<UsersRound size={22} />}
           title={t('Crowd Counting')}
           code="CC-01"
-          description={t('Estimasi kepadatan massa dengan overlay density map di atas umpan video.')}
+          description={t('Crowd counting dan deteksi objek pada umpan EO/IR')}
           actions={
             <>
               <button className="btn btn-secondary" disabled={!canSave} onClick={saveMedia}>
@@ -837,7 +920,7 @@ export function CrowdCountingPage() {
                     : <><Square size={15} /> {t('Hentikan')}</>}
                 </button>
               ) : (
-                <button className="btn btn-primary sheen" onClick={start} disabled={starting || offline}>
+                <button className="btn btn-primary sheen" onClick={requestStart} disabled={starting || offline}>
                   {starting
                     ? <><Loader2 size={15} className="spin" /> {t('Memulai…')}</>
                     : <><Play size={15} /> {t('Mulai Analisis')}</>}
@@ -884,12 +967,23 @@ export function CrowdCountingPage() {
                   running ? (isUdp ? `${t('Umpan langsung dari')} ${udpUrl.trim()}` : t('Aliran langsung dari sesi berjalan'))
                     : finished ? (isUdp ? t('Sesi live selesai — hasil sesi UDP tidak disimpan') : t('Sesi selesai — simpan hasil atau mulai sesi baru'))
                       : isUdp ? udpUrl.trim()
-                        : file ? file.name : t('Rekaman gimbal Epsilon dengan keluaran density map')
+                        : file ? file.name : t('Rekaman video Epsilon dengan keluaran density map')
                 }
                 right={
-                  running
-                    ? <span className={`badge ${overThreshold ? 'badge-danger' : 'badge-success'}`}>{`${displayCount.toLocaleString('id-ID')} Orang`}</span>
-                    : finished ? <span className="badge badge-info">{t('SELESAI')}</span> : undefined
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {running
+                      ? <span className={`badge ${overThreshold ? 'badge-danger' : 'badge-success'}`}>{`${displayCount.toLocaleString('id-ID')} Orang`}</span>
+                      : finished ? <span className="badge badge-info">{t('SELESAI')}</span> : null}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm vd-fullscreen-btn"
+                      onClick={toggleCrowdFullscreen}
+                      aria-label={isCrowdFullscreen ? t('Keluar layar penuh') : t('Layar penuh')}
+                      title={isCrowdFullscreen ? t('Keluar layar penuh') : t('Layar penuh')}
+                    >
+                      <Maximize2 size={13} />
+                    </button>
+                  </div>
                 }
               />
               {offline ? (
@@ -902,7 +996,11 @@ export function CrowdCountingPage() {
                   ]}
                 />
               ) : currentFrame ? (
-                <div className="cmp" style={{ aspectRatio: '16 / 9' }}>
+                <div
+                  ref={crowdCardRef}
+                  className={`cmp vd-panel${isCrowdFullscreen ? ' vd-fullscreen' : ''}`}
+                  style={isCrowdFullscreen ? undefined : { aspectRatio: '16 / 9' }}
+                >
                   <div className="cmp-layer">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={currentFrame.image} alt="Density map crowd counting" />
@@ -1100,6 +1198,42 @@ export function CrowdCountingPage() {
             </GlassCard> */}
           </div>
         </div>
+
+        {showConfirm && (
+          <div className="modal-backdrop" onClick={cancelStart}>
+            <div
+              className="modal"
+              onClick={e => e.stopPropagation()}
+              style={{ maxWidth: 440 }}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="modal-header">
+                <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <UsersRound size={17} /> {t('Konfirmasi Analisis Crowd')}
+                </h3>
+                <button className="modal-x" onClick={cancelStart} aria-label={t('Tutup')}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="modal-body">
+                <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: 'var(--text-normal, #e2e8f0)' }}>
+                  {t('Akurasi perhitungan crowd meningkat ketika terdapat banyak orang dalam 1 frame. Lanjutkan menjalankan deteksi dan crowd?')}
+                </p>
+              </div>
+
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={cancelStart}>
+                  {t('Batal')}
+                </button>
+                <button className="btn btn-primary sheen" onClick={confirmStart} autoFocus>
+                  {t('Lanjutkan')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </LicenseGate>
   );
@@ -1645,6 +1779,36 @@ export function VideoDetectionPage() {
   const stopTimerRef = useRef<number | null>(null);
   const isUdp = source === 'udp';
 
+  /* ---- Fullscreen panel Video Deteksi ---- */
+  const videoCardRef = useRef<HTMLDivElement>(null);
+  const [isVideoFullscreen, setIsVideoFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsVideoFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleVideoFullscreen = () => {
+    const el = videoCardRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
+
+  /* Konfirmasi sebelum menjalankan deteksi video analytic */
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  useEffect(() => {
+    if (!showConfirm) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowConfirm(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showConfirm]);
+
   useNavGuard(
     starting || running,
     t('Sesi deteksi video sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.'),
@@ -1961,6 +2125,59 @@ export function VideoDetectionPage() {
     resetFrames(); setPlayIndex(0); setLiveEdge(true); setReplaying(false); setJobResult(null);
   };
 
+  const requestStartDetection = () => {
+    if (starting || running) return;
+    if (!missionId) {
+      pushToast({ tone: 'error', title: t('Pilih flight mission dahulu'), detail: t('Flight mission wajib dipilih sebelum menjalankan deteksi.') });
+      notify({
+        title: t('Pilih flight mission dahulu'),
+        detail: t('Flight mission wajib dipilih sebelum menjalankan deteksi.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
+      return;
+    }
+    if (source === 'udp' && !udpUrl.trim()) {
+      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.') });
+      notify({
+        title: t('Isi alamat UDP dahulu'),
+        detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
+      return;
+    }
+    if (source === 'upload' && !file) {
+      pushToast({ tone: 'error', title: t('Unggah berkas video dahulu'), detail: t('Pilih atau seret berkas video sebelum menjalankan deteksi.') });
+      notify({
+        title: t('Unggah berkas video dahulu'),
+        detail: t('Pilih atau seret berkas video sebelum menjalankan deteksi.'),
+        severity: 'peringatan',
+        category: 'Deteksi Objek',
+        source: 'Video Analytic',
+        page: 'detection-video',
+        silent: true,
+      });
+      return;
+    }
+    setShowConfirm(true);
+  };
+
+  const confirmStartDetection = () => {
+    setShowConfirm(false);
+    startDetection();
+  };
+
+  const cancelStartDetection = () => {
+    setShowConfirm(false);
+  };
+
   const startDetection = async () => {
     if (starting || running) return;
     if (!missionId) {
@@ -2145,7 +2362,7 @@ export function VideoDetectionPage() {
                     : <><Square size={15} /> {t('Hentikan')}</>}
                 </button>
               ) : (
-                <button className="btn btn-primary sheen" onClick={startDetection} disabled={starting}>
+                <button className="btn btn-primary sheen" onClick={requestStartDetection} disabled={starting}>
                   {starting
                     ? <><Loader2 size={15} className="spin" /> {t('Memulai…')}</>
                     : <><Play size={15} /> {t('Jalankan Deteksi')}</>}
@@ -2187,20 +2404,37 @@ export function VideoDetectionPage() {
             <GlassCard tilt={false}>
               <SectionHead
                 icon={<Video size={15} />}
-                title={finished ? t('Putar Ulang Deteksi') : t('Umpan Deteksi')}
+                title={finished ? t('Putar Ulang Deteksi') : t('Video Deteksi')}
                 sub={
                   running ? (isUdp ? `${t('Umpan langsung dari')} ${udpUrl.trim()}` : t('Aliran langsung dari job berjalan'))
                     : finished ? (isUdp ? t('Sesi live selesai — hasil sesi UDP tidak disimpan') : t('Job selesai — geser linimasa untuk meninjau ulang'))
                       : isUdp ? udpUrl.trim()
                         : file ? file.name : t('Belum ada video dimuat')
                 }
-                right={running
-                  ? <span className={`badge ${liveEdge ? 'badge-success' : 'badge-neutral'}`}>{liveEdge ? t('LIVE') : t('DIJEDA')}</span>
-                  : finished && <span className="badge badge-info">{t('SELESAI')}</span>}
+                right={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {running
+                      ? <span className={`badge ${liveEdge ? 'badge-success' : 'badge-neutral'}`}>{liveEdge ? t('LIVE') : t('DIJEDA')}</span>
+                      : finished && <span className="badge badge-info">{t('SELESAI')}</span>}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm vd-fullscreen-btn"
+                      onClick={toggleVideoFullscreen}
+                      aria-label={isVideoFullscreen ? t('Keluar layar penuh') : t('Layar penuh')}
+                      title={isVideoFullscreen ? t('Keluar layar penuh') : t('Layar penuh')}
+                    >
+                      <Maximize2 size={13} />
+                    </button>
+                  </div>
+                }
               />
 
               {currentFrame ? (
-                <div className="cmp" style={{ aspectRatio: '16 / 9' }}>
+                <div
+                  ref={videoCardRef}
+                  className={`cmp vd-panel${isVideoFullscreen ? ' vd-fullscreen' : ''}`}
+                  style={isVideoFullscreen ? undefined : { aspectRatio: '16 / 9' }}
+                >
                   <div className="cmp-layer">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={currentFrame.image} alt="Frame deteksi" />
@@ -2387,6 +2621,42 @@ export function VideoDetectionPage() {
             </GlassCard>
           </div>
         </div>
+
+        {showConfirm && (
+          <div className="modal-backdrop" onClick={cancelStartDetection}>
+            <div
+              className="modal"
+              onClick={e => e.stopPropagation()}
+              style={{ maxWidth: 440 }}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="modal-header">
+                <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Video size={17} /> {t('Konfirmasi Analisis Video')}
+                </h3>
+                <button className="modal-x" onClick={cancelStartDetection} aria-label={t('Tutup')}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="modal-body">
+                <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: 'var(--text-normal, #e2e8f0)' }}>
+                  {t('Analytic paling optimal digunakan ketika terdapat 1-2 orang dalam 1 frame. Lanjutkan menjalankan analisis?')}
+                </p>
+              </div>
+
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={cancelStartDetection}>
+                  {t('Batal')}
+                </button>
+                <button className="btn btn-primary sheen" onClick={confirmStartDetection} autoFocus>
+                  {t('Lanjutkan')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </LicenseGate>
   );

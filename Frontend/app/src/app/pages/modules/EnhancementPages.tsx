@@ -22,7 +22,7 @@ import {
   RefreshCw, Clapperboard, Palette, Camera, Thermometer,
   PlugZap, Cable, Activity, Zap, Gauge, ShieldCheck, Copy,
   KeyRound, Plus, TerminalSquare, Waves, CircuitBoard, AlertTriangle, X, Eye,
-  Loader2,
+  Loader2, Maximize2,
 } from 'lucide-react';
 
 /** "01:42:07" dari durasi milidetik — dipakai total durasi sesi live
@@ -569,6 +569,26 @@ export function VideoEnhancementPage() {
     t('Proses enhancement video sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.'),
   );
 
+  /* ---- Fullscreen panel Video Enhancement ---- */
+  const enhVideoRef = useRef<HTMLDivElement>(null);
+  const [isEnhVideoFullscreen, setIsEnhVideoFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsEnhVideoFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleEnhVideoFullscreen = () => {
+    const el = enhVideoRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
+
   /* Sama seperti ImageEnhancementPage — enhancement harus dikaitkan ke satu
      flight mission (yang mission_status.name "Flight" atau "Done"), dan
      flight-information dimuat sekalian untuk resolusi flight_information_id
@@ -853,41 +873,64 @@ export function VideoEnhancementPage() {
                 sub={file
                   ? `${file.name} · ${enhanceResult ? `${enhanceResult.processing_type} · ${enhanceResult.processing_time} ms` : 'belum diterapkan'}`
                   : 'Muat video dan terapkan peningkatan untuk melihat hasil'}
-                right={file && (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setFile(null)}>
-                    {t('Hapus Video')}
-                  </button>
-                )}
+                right={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {file && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => setFile(null)}>
+                        {t('Hapus Video')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm vd-fullscreen-btn"
+                      onClick={toggleEnhVideoFullscreen}
+                      disabled={!file}
+                      aria-label={isEnhVideoFullscreen ? t('Keluar layar penuh') : t('Layar penuh')}
+                      title={isEnhVideoFullscreen ? t('Keluar layar penuh') : t('Layar penuh')}
+                    >
+                      <Maximize2 size={13} />
+                    </button>
+                  </div>
+                }
               />
 
-              {file && enhanceResult ? (
-                <VideoCompare
-                  before={file.url}
-                  after={previewUrl}
-                  labelBefore={t('Asli')}
-                  labelAfter={t('Hasil Olahan')}
-                  aspect="16 / 9"
-                />
-              ) : previewLoading ? (
-                <EmptyState
-                  icon={<Loader2 size={22} className="spin" />}
-                  title={t('Menyiapkan pratinjau…')}
-                  description={t('Mengonversi video ke format yang bisa diputar browser.')}
-                />
-              ) : file ? (
-                <div className="cmp" style={{ aspectRatio: '16 / 9' }}>
-                  <div className="cmp-layer">
-                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                    <video src={file.url} muted loop autoPlay playsInline controls style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              {/* Wrapper fullscreen: membungkus seluruh area video agar
+                  semua state (preview, VideoCompare, EmptyState) bisa
+                  masuk layar penuh bersama-sama */}
+              <div
+                ref={enhVideoRef}
+                className={isEnhVideoFullscreen ? 'vd-fullscreen' : undefined}
+                style={isEnhVideoFullscreen ? undefined : { position: 'relative' }}
+              >
+                {file && enhanceResult ? (
+                  <VideoCompare
+                    before={file.url}
+                    after={previewUrl}
+                    labelBefore={t('Asli')}
+                    labelAfter={t('Hasil Olahan')}
+                    aspect="16 / 9"
+                  />
+                ) : previewLoading ? (
+                  <EmptyState
+                    icon={<Loader2 size={22} className="spin" />}
+                    title={t('Menyiapkan pratinjau…')}
+                    description={t('Mengonversi video ke format yang bisa diputar browser.')}
+                  />
+                ) : file ? (
+                  <div className="cmp" style={{ aspectRatio: '16 / 9' }}>
+                    <div className="cmp-layer">
+                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                      <video src={file.url} muted loop autoPlay playsInline controls style={{ width: '100%', height: '100%', objectFit: isEnhVideoFullscreen ? 'contain' : 'cover' }} />
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <EmptyState
-                  icon={<Clapperboard size={22} />}
-                  title={t('Belum ada video ditingkatkan')}
-                  description={t('Muat video, pilih flight mission, lalu terapkan peningkatan untuk melihat hasil perbandingan.')}
-                />
-              )}
+                ) : (
+                  <EmptyState
+                    icon={<Clapperboard size={22} />}
+                    title={t('Belum ada video ditingkatkan')}
+                    description={t('Muat video, pilih flight mission, lalu terapkan peningkatan untuk melihat hasil perbandingan.')}
+                  />
+                )}
+              </div>
 
               {/* Lapisan palet aktif ditumpangkan agar pilihan false color
                   terlihat langsung pada rekaman yang sedang diputar. */}

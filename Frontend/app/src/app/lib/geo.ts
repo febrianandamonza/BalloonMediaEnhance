@@ -30,7 +30,7 @@ const ESRI_HOST = 'https://server.arcgisonline.com/ArcGIS/rest/services';
 export const BASEMAPS: BasemapDef[] = [
   {
     id: 'imagery',
-    label: 'Esri World Imagery',
+    label: '   World Imagery',
     note: 'Citra satelit resolusi tinggi',
     chip: 'linear-gradient(135deg,#2f4f34,#6b7f52 55%,#8d8264)',
     url: `${ESRI_HOST}/World_Imagery/MapServer/tile/{z}/{y}/{x}`,

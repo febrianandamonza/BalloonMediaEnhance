@@ -359,7 +359,7 @@ export default function LiveStreamPage() {
       <PageHead
         icon={<Radio size={22} />}
         title={t('Live Stream')}
-        description={t('Masukkan URL sumber jaringan (UDP/RTSP/RTMP) untuk memulai umpan live.')}
+        description={t('Masukkan URL sumber jaringan UDP untuk memulai umpan live.')}
       />
 
       <GlassCard tilt={false}>

@@ -337,14 +337,14 @@ export const EN: Record<string, string> = {
   'Melebihi batas 2 GB per berkas': 'Exceeds the 2 GB per-file limit',
 
   /* ---- Analitik ---- */
-  'Estimasi kepadatan massa dengan overlay density map di atas umpan video.':
-    'Crowd density estimation with a density-map overlay on the video feed.',
+  'Crowd counting dan deteksi objek pada umpan EO/IR.':
+    'Crowd counting and object detection in EO/IR feeds.',
   'Mulai Analisis': 'Start Analysis',
   'Sesi crowd counting sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.':
     'A crowd counting session is in progress. Leaving this page will disconnect the session and any unsaved result will be lost.',
   'Umpan Zona A': 'Zone A Feed',
-  'Rekaman gimbal Epsilon dengan keluaran density map':
-    'Epsilon gimbal recording with density-map output',
+  'Rekaman video Epsilon dengan keluaran density map':
+    'Epsilon video recording with density-map output',
   'Umpan Mentah': 'Raw Feed',
   'Density Map + Hitung': 'Density Map + Count',
   'Statistik Sesi': 'Session Statistics',
