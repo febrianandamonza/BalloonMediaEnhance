@@ -1,7 +1,9 @@
 import asyncio
 import uuid
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, WebSocket, WebSocketDisconnect
 
 from api.crowd_counting import density_counter
 from schemas.network_stream_schema import (
@@ -10,6 +12,7 @@ from schemas.network_stream_schema import (
 )
 from services.density_counter_live import VideoCrowdCounterLive
 from services.network_stream_service import network_stream_service
+from services.yolo_crowd_counter_live import YoloCrowdCounterLive
 from utils.file_manager import FileManager
 from utils.video_preview import build_browser_preview, check_video_resolution
 from utils.websocket_manager import listen_for_stop, manager
@@ -19,7 +22,14 @@ router = APIRouter(
     tags=["Crowd Counting Live"]
 )
 
-live_counter = VideoCrowdCounterLive(density_counter)
+# Model yang bisa dipilih dari dropdown di halaman Crowd Counting.
+# "dmcount" (density map) tetap default supaya klien lama tidak berubah.
+CrowdModel = Literal["dmcount", "yolo"]
+
+live_counters = {
+    "dmcount": VideoCrowdCounterLive(density_counter),
+    "yolo": YoloCrowdCounterLive(),
+}
 
 video_jobs = {}
 
@@ -43,7 +53,8 @@ async def crowd_video_preview(
 
 @router.post("/video")
 async def start_video_job(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    model: CrowdModel = Query(default="dmcount")
 ):
 
     job_id = str(uuid.uuid4())
@@ -67,7 +78,8 @@ async def start_video_job(
 
     video_jobs[job_id] = {
         "input": str(input_path),
-        "output": str(output_path)
+        "output": str(output_path),
+        "model": model
     }
 
     return {
@@ -81,7 +93,8 @@ async def start_video_job(
     response_model=StreamJobResponse
 )
 async def start_stream_job(
-    payload: StreamJobRequest
+    payload: StreamJobRequest,
+    model: CrowdModel = Query(default="dmcount")
 ):
     # Sumber baru dibuka saat WebSocket tersambung, bukan di sini: membuka
     # udp://@0.0.0.0:<port> berarti bind port tersebut, dan membukanya dua
@@ -95,7 +108,8 @@ async def start_stream_job(
 
     video_jobs[job_id] = {
         "live": True,
-        "input": network_url
+        "input": network_url,
+        "model": model
     }
 
     return {
@@ -142,6 +156,8 @@ async def websocket_predict_video(
         stop_listener = asyncio.create_task(
             listen_for_stop(websocket, stop_event)
         )
+
+        live_counter = live_counters[job.get("model", "dmcount")]
 
         if job.get("live"):
 

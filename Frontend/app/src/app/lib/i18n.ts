@@ -29,15 +29,19 @@ export const LANGUAGES: { id: Lang; label: string; native: string }[] = [
   { id: 'en', label: 'English', native: 'English' },
 ];
 
-const STORAGE_KEY = 'skystar.lang';
+/* Kunci v2: pilihan lama ('skystar.lang', bawaan 'id') sengaja diabaikan
+   agar semua operator mulai dari English. Bahasa awal tidak mengikuti
+   bahasa sistem/peramban — selalu English sampai operator memilih lain. */
+const STORAGE_KEY = 'skystar.lang.v2';
+export const DEFAULT_LANG: Lang = 'en';
 
 export function loadLang(): Lang {
-  if (typeof window === 'undefined') return 'id';
+  if (typeof window === 'undefined') return DEFAULT_LANG;
   try {
     const v = window.localStorage.getItem(STORAGE_KEY);
-    return v === 'en' || v === 'id' ? v : 'id';
+    return v === 'en' || v === 'id' ? v : DEFAULT_LANG;
   } catch {
-    return 'id';
+    return DEFAULT_LANG;
   }
 }
 
@@ -161,7 +165,7 @@ export const EN: Record<string, string> = {
   'Seluruh fungsi berjalan tanpa jaringan keluar':
     'Every function runs without outbound network access',
   'Stasiun kendali darat untuk aerostat tertambat 180 m³ — kendali gimbal, pengolahan umpan EO/IR, dan penerbitan laporan misi.':
-    'Ground control station for a 180 m³ tethered aerostat — gimbal control, EO/IR feed processing, and mission report publishing.',
+    'Ground control for a 180 m³ tethered aerostat, including gimbal operation, EO/IR video processing, and mission reporting.',
 
   /* ---- Dashboard ---- */
   'Mission Dashboard': 'Mission Dashboard',
@@ -172,7 +176,7 @@ export const EN: Record<string, string> = {
   'Mulai Pengawasan': 'Start Surveillance',
   'License Manager': 'License Manager',
   'Pengawasan udara tertambat dengan pemrosesan analitik sepenuhnya lokal — seluruh umpan, model, dan arsip tetap berada di dalam stasiun.':
-    'Tethered aerial surveillance with fully local analytics — every feed, model, and archive stays inside the station.',
+    'Tethered aerial monitoring with all analytics processed locally. Video feeds, models, and archives remain on the station.',
   'Ketersediaan Sistem': 'System Availability',
   'Deteksi Hari Ini': 'Detections Today',
   'Kepadatan Zona A': 'Zone A Density',
@@ -201,24 +205,37 @@ export const EN: Record<string, string> = {
   'Sumber Jaringan': 'Network Source',
   'URL Sumber Jaringan': 'Network Source URL',
   'Wajib diisi sebelum umpan dapat dimulai': 'Required before the feed can start',
-  'Masukkan URL sumber jaringan (UDP/RTSP/RTMP) untuk memulai umpan live.':
+  'Masukkan URL sumber jaringan (UDP/RTSP/RTMP) untuk memulai live.':
     'Enter the network source URL (UDP/RTSP/RTMP) to start the live feed.',
   'Memulai...': 'Starting...',
   'Gagal memulai live stream': 'Failed to start live stream',
   'Timeout menunggu FFmpeg menyiapkan stream. Periksa URL dan pastikan sumbernya aktif.':
-    'Timed out waiting for FFmpeg to prepare the stream. Check the URL and make sure the source is active.',
+    'FFmpeg timed out while preparing the stream. Check the URL and make sure the source is online.',
   'Kembali ke Live': 'Back to Live',
   'Live stream dimulai': 'Live stream started',
   'Live stream dihentikan': 'Live stream stopped',
   'Live stream sebelumnya dihentikan otomatis': 'Previous live stream stopped automatically',
-  'Proses FFmpeg yang masih berjalan dari sesi sebelumnya sudah dibersihkan.': 'FFmpeg processes still running from a previous session have been cleaned up.',
+  'Proses FFmpeg yang masih berjalan dari sesi sebelumnya sudah dibersihkan.': 'FFmpeg processes from the previous session have been stopped.',
   'Menerima umpan dari': 'Receiving feed from',
-  'Umpan Live': 'Live Feed',
+  'Live': 'Live Feed',
   'DIJEDA': 'PAUSED',
   'Tidak bisa menyambung ke stream. Periksa URL sumber dan pastikan backend/FFmpeg berjalan.':
-    'Cannot connect to the stream. Check the source URL and make sure the backend/FFmpeg is running.',
+    'Unable to connect to the stream. Check the source URL and make sure the backend and FFmpeg are running.',
   'Live stream sedang berjalan. Tekan Stop dulu sebelum meninggalkan halaman ini, supaya proses FFmpeg di backend ikut dihentikan.':
-    'A live stream is running. Press Stop first before leaving this page, so the FFmpeg process on the backend is stopped too.',
+    'A live stream is running. Select Stop before leaving this page to stop the FFmpeg process on the server.',
+  'Live stream sedang berjalan. Tekan Stop dulu sebelum meninggalkan halaman ini.':
+    'A live stream is running. Select Stop before leaving this page.',
+  'MENGHUBUNGKAN': 'CONNECTING',
+  'Menunggu frame pertama dari sumber...': 'Waiting for the first frame from the source...',
+  'Menghentikan...': 'Stopping...',
+  'Koneksi live stream terputus': 'Live stream connection lost',
+  'WebSocket ke server live stream gagal.': 'WebSocket to the live stream server failed.',
+  'Tidak bisa menyambung ke stream. Periksa URL sumber dan pastikan backend berjalan.':
+    'Unable to connect to the stream. Check the source URL and make sure the backend is running.',
+  'Putar ulang': 'Replay',
+  'Layar penuh': 'Fullscreen',
+  'Keluar layar penuh': 'Exit fullscreen',
+  'frame': 'frames',
   'Tidak ada peringatan belum dibaca.': 'No unread alerts.',
   'Misi Selesai': 'Completed Missions',
   'Parameter Kabel Penambat': 'Tether Cable Parameters',
@@ -287,14 +304,14 @@ export const EN: Record<string, string> = {
   'Lisensi Modul Diperlukan': 'Module License Required',
   'termasuk dalam lisensi': 'is part of the license',
   'Aktifkan lisensi tersebut pada License Manager menggunakan License Number yang tercetak di sertifikat.':
-    'Activate that license in License Manager using the License Number printed on the certificate.',
+    'Open License Manager and activate the licence using the License Number on the certificate.',
   'Buka License Manager': 'Open License Manager',
 
   /* ---- Surveillance Media ---- */
   'Surveillance Media': 'Surveillance Media',
   'Surveillance Media Source': 'Surveillance Media Source',
   'Katalog rekaman dan citra pengawasan, sekaligus jalur pemasukan berkas baru.':
-    'Catalogue of surveillance recordings and imagery, and the intake path for new files.',
+    'Browse surveillance recordings and images, or upload new files.',
   'Unggah Media': 'Upload Media',
   'Ekspor Terpilih': 'Export Selected',
   'Total Berkas': 'Total Files',
@@ -322,7 +339,7 @@ export const EN: Record<string, string> = {
   'Format Citra': 'Image Formats',
   'Tidak ada media yang cocok': 'No matching media',
   'Ubah kata kunci atau kosongkan filter untuk menampilkan seluruh katalog.':
-    'Change the keyword or clear the filters to show the whole catalogue.',
+    'Change your search or clear the filters to view all files.',
   'Bersihkan Filter': 'Clear Filters',
   'Berkas dihapus': 'File deleted',
   'Berkas disalin ke folder ekspor': 'File copied to export folder',
@@ -341,7 +358,7 @@ export const EN: Record<string, string> = {
     'Crowd counting and object detection in EO/IR feeds.',
   'Mulai Analisis': 'Start Analysis',
   'Sesi crowd counting sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.':
-    'A crowd counting session is in progress. Leaving this page will disconnect the session and any unsaved result will be lost.',
+    'Crowd counting is in progress. Leaving this page will end the session and discard any unsaved results.',
   'Umpan Zona A': 'Zone A Feed',
   'Rekaman video Epsilon dengan keluaran density map':
     'Epsilon video recording with density-map output',
@@ -364,15 +381,19 @@ export const EN: Record<string, string> = {
   '40 pembacaan terakhir': 'last 40 readings',
   'Belum ada data tren': 'No trend data yet',
   'Mulai analisis untuk merekam perubahan kepadatan sepanjang sesi pengawasan.':
-    'Start the analysis to record density changes across the surveillance session.',
+    'Start the analysis to track density changes throughout the session.',
   'Sumber Video': 'Video Source',
   'Jenis Sumber': 'Source Type',
+  'DM-Count (Density Map)': 'DM-Count (Density Map)',
+  'YOLO (Deteksi Orang)': 'YOLO (Person Detection)',
+  'Model DM-Count dimuat — inferensi berjalan.': 'DM-Count model loaded — inference running.',
+  'Model YOLO dimuat — inferensi berjalan.': 'YOLO model loaded — inference running.',
   'Unggah Berkas': 'File Upload',
   'Stream UDP': 'UDP Stream',
   'Alamat UDP': 'UDP Address',
 
   'Isi alamat UDP dahulu': 'Enter a UDP address first',
-  'Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.': 'Enter the UDP source URL, e.g. udp://@244.10.10.10:15004.',
+  'Masukkan URL sumber UDP, mis. udp://@224.10.10.10:15004.': 'Enter the UDP source URL, e.g. udp://@224.10.10.10:15004.',
   'Sesi deteksi gagal': 'Detection session failed',
   'Sesi deteksi dimulai': 'Detection session started',
   'Isi alamat UDP di panel kanan, lalu tekan Jalankan Deteksi.': 'Enter the UDP address in the right panel, then press Run Detection.',
@@ -400,16 +421,16 @@ export const EN: Record<string, string> = {
   'Ubah Poligon Zona': 'Edit Zone Polygon',
   'Digital Imaging Analytic': 'Digital Imaging Analytic',
   'Deteksi objek pada citra statis dengan bounding box, label kelas, dan nilai kepercayaan.':
-    'Object detection on still imagery with bounding boxes, class labels, and confidence scores.',
+    'Detect objects in still images with bounding boxes, class labels, and confidence scores.',
   'Pilih Citra': 'Select Image',
   'Jalankan Deteksi': 'Run Detection',
   'Menganalisis…': 'Analysing…',
   'Deteksi citra sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.':
-    'Image detection is in progress. Leaving this page will cancel the process and any unsaved result will be lost.',
+    'Image detection is in progress. Leaving this page will cancel the process and discard any unsaved results.',
   'Citra Unggahan': 'Uploaded Image',
   'Hasil Deteksi — Citra Contoh': 'Detection Result — Sample Image',
   'Tarik pembagi untuk membandingkan citra asli dengan keluaran deteksi':
-    'Drag the divider to compare the original image with the detection output',
+    'Drag the divider to compare the original image with the detection result.',
   'Citra Asli': 'Original Image',
   'Bounding Box': 'Bounding Box',
   'Kembali ke Citra Contoh': 'Back to Sample Image',
@@ -435,17 +456,17 @@ export const EN: Record<string, string> = {
   'Deteksi dan pelacakan objek bergerak pada stream langsung.':
     'Detection and tracking of moving objects on the live stream.',
   'Sesi deteksi video sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.':
-    'A video detection session is in progress. Leaving this page will disconnect the session and any unsaved result will be lost.',
+    'Video detection is in progress. Leaving this page will end the session and discard any unsaved results.',
   'Format tidak didukung': 'Format not supported',
   'Gunakan berkas JPG, PNG, atau TIFF.': 'Use a JPG, PNG, or TIFF file.',
 
   /* ---- Enhancement ---- */
   'Digital Imaging Enhancement': 'Digital Imaging Enhancement',
   'Peningkatan kualitas citra statis: kontras, ketajaman, dan reduksi derau.':
-    'Still-image quality enhancement: contrast, sharpness, and noise reduction.',
+    'Improve still-image quality by adjusting contrast, sharpness, and noise.',
   'Muat Citra': 'Load Image',
   'Proses enhancement citra sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.':
-    'Image enhancement is in progress. Leaving this page will cancel the process and any unsaved result will be lost.',
+    'Image processing is in progress. Leaving this page will cancel the process and discard any unsaved results.',
   'Terapkan': 'Apply',
   'Memproses…': 'Processing…',
   'Hasil Peningkatan — Citra Contoh': 'Enhancement Result — Sample Image',
@@ -467,7 +488,7 @@ export const EN: Record<string, string> = {
     'Thermal stream enhancement with 22 false-colour palettes.',
   'Mulai Pratinjau': 'Start Preview',
   'Proses enhancement video sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.':
-    'Video enhancement is in progress. Leaving this page will cancel the process and any unsaved result will be lost.',
+    'Video processing is in progress. Leaving this page will cancel the process and discard any unsaved results.',
   'Rekaman Sebelum dan Sesudah': 'Before and After Recording',
   'Keluaran rantai peningkatan pada umpan gimbal Epsilon':
     'Enhancement chain output on the Epsilon gimbal feed',
@@ -486,11 +507,11 @@ export const EN: Record<string, string> = {
   'Latensi Pemrosesan': 'Processing Latency',
   'Frame Rate Keluaran': 'Output Frame Rate',
   'Antarmuka REST dan WebSocket untuk data daya dan tautan kabel penambat.':
-    'REST and WebSocket interfaces for power and tether-cable link data.',
+    'REST and WebSocket APIs for power and tether-cable connection data.',
   'Kunci Akses API': 'API Access Keys',
   'Terbitkan': 'Issue',
   'Kesehatan kabel penambat: daya, isolasi, kontinuitas, dan SNR optik.':
-    'Tether cable health: power, insulation, continuity, and optical SNR.',
+    'Monitor tether-cable condition, including power, insulation, continuity, and optical SNR.',
   'Jalankan Diagnostik': 'Run Diagnostics',
   'Tambah Data': 'Add Data',
   'Menyimpan...': 'Saving...',
@@ -507,7 +528,7 @@ export const EN: Record<string, string> = {
   'Parameter': 'Parameters',
   'Memuat riwayat…': 'Loading history…',
   'Belum ada data pemeriksaan': 'No inspection data yet',
-  'Tambahkan data lewat tombol "Tambah Data" untuk mengisi riwayat ini.': 'Add data via the "Add Data" button to populate this history.',
+  'Tambahkan data lewat tombol "Tambah Data" untuk mengisi riwayat ini.': 'Select "Add Data" to add an inspection record.',
   'Detail Pemeriksaan': 'Inspection Detail',
   'Memuat detail…': 'Loading detail…',
   'Gagal memuat detail': 'Failed to load detail',
@@ -516,7 +537,7 @@ export const EN: Record<string, string> = {
   /* ---- Information & Reporting ---- */
   'Digital Reporting': 'Digital Reporting',
   'Laporan misi otomatis dalam format PDF dan Excel berwatermark klasifikasi.':
-    'Automated mission reports in PDF and Excel, watermarked by classification.',
+    'Generate mission reports in PDF or Excel with classification watermarks.',
   'Buat Laporan': 'Generate Report',
   'Menyusun…': 'Composing…',
   'Templat Tersedia': 'Templates Available',
@@ -571,7 +592,7 @@ export const EN: Record<string, string> = {
   'sensor 1920 px': '1920 px sensor',
   'Pilih titik pada peta': 'Select a point on the map',
   'Klik penanda target atau salah satu entri Target Bank untuk menghitung solusi geolokasi.':
-    'Click a target marker or a Target Bank entry to compute the geolocation solution.',
+    'Select a map marker or a Target Bank entry to calculate the target coordinates.',
   'Basemap': 'Basemap',
   'Sumber ubin peta': 'Map tile source',
   'Citra satelit resolusi tinggi': 'High-resolution satellite imagery',
@@ -581,7 +602,7 @@ export const EN: Record<string, string> = {
   'Grid Referensi Lokal': 'Local Reference Grid',
   'Graticule luring — tanpa sambungan keluar': 'Offline graticule — no outbound connection',
   'Bila jaringan keluar ditutup, peta berpindah sendiri ke Grid Referensi Lokal tanpa kehilangan lapisan taktis.':
-    'If outbound networking is closed, the map switches itself to the Local Reference Grid without losing tactical layers.',
+    'When external network access is unavailable, the map automatically switches to the Local Reference Grid. Tactical layers remain visible.',
   'Lapisan Taktis': 'Tactical Layers',
   'Kerucut pandang kamera': 'Camera field-of-view cone',
   'Proyeksi FOV menuju target terkunci': 'FOV projection toward the locked target',
@@ -630,21 +651,21 @@ export const EN: Record<string, string> = {
   'tinggi': 'high',
   'Smart Notification': 'Smart Notification',
   'Aturan peringatan berbasis geofence, ambang sensor, dan deteksi intrusi.':
-    'Alert rules based on geofence, sensor thresholds, and intrusion detection.',
+    'Set alerts for geofence events, sensor thresholds, and intrusion detection.',
   'Buat Aturan': 'Create Rule',
   'Flight Information': 'Flight Information',
   'Logbook penerbangan, checklist pra-terbang, dan roster tim operator.':
-    'Flight logbook, pre-flight checklist, and operator team roster.',
+    'Manage flight logs, pre-flight checklists, and the operator roster.',
   'Mooring Availability': 'Mooring Availability',
   'Instrumen stasiun penambat: angin, tarikan winch, helium, dan daya cadangan.':
-    'Mooring station instruments: wind, winch tension, helium, and backup power.',
+    'Monitor mooring-station conditions, including wind, winch tension, helium, and backup power.',
   'Flight Simulation': 'Flight Simulation',
   'Kelayakan terbang dari cuaca, helium, bobot payload, dan durasi misi.':
-    'Flight feasibility from weather, helium, payload weight, and mission duration.',
+    'Assess flight feasibility based on weather, helium, payload weight, and mission duration.',
   'Jalankan Simulasi': 'Run Simulation',
   'Menghitung…': 'Calculating…',
   'Isi parameter skenario, lalu jalankan simulasi untuk memperoleh keputusan.':
-    'Fill in the scenario parameters, then run the simulation to obtain a decision.',
+    'Enter the scenario parameters and run the simulation to view the result.',
   'Platform Balon': 'Balloon Platform',
 
   /* ---- Administrasi ---- */
@@ -657,12 +678,12 @@ export const EN: Record<string, string> = {
   /* ---- Balloon Management ---- */
   'Balloon Management': 'Balloon Management',
   'Manajemen data platform balon — nomor seri, kapasitas, dan ketinggian maksimum operasional.':
-    'Manage balloon platform data — serial number, capacity, and maximum operating altitude.',
+    'Manage balloon details, including serial number, capacity, and maximum operating altitude.',
   'Tambah Balon': 'Add Balloon',
   'Total Balon': 'Total Balloons',
   'Balon Available': 'Available Balloons',
   'Balon ini sedang dalam penerbangan aktif — status tidak bisa diubah dari sini sampai misinya diakhiri (End Flight). Field lain masih bisa disimpan.':
-    'This balloon is currently on an active flight — its status cannot be changed here until the mission ends (End Flight). Other fields can still be saved.',
+    'This balloon is currently in flight. Its status cannot be changed until the mission ends (End Flight), but other changes can still be saved.',
   'Balon Unavailable': 'Unavailable Balloons',
   'Cari nama, nomor seri, atau status…': 'Search name, serial number, or status…',
   'Daftar Balon': 'Balloon List',
@@ -681,7 +702,7 @@ export const EN: Record<string, string> = {
   'Tidak bisa terhubung ke server. Pastikan data valid.': 'Could not connect to the server. Make sure the data is valid.',
   'Ubah Data Balon': 'Edit Balloon Data',
   'Perubahan tersimpan langsung ke katalog platform balon.': 'Changes are saved directly to the balloon platform catalogue.',
-  'Balon baru langsung tersedia sebagai opsi pada formulir Misi Baru.': 'New balloons are immediately available as an option on the New Mission form.',
+  'Balon baru langsung tersedia sebagai opsi pada formulir Misi Baru.': 'New balloons are immediately available in the New Mission form.',
   'mis. Epsilon-1': 'e.g. Epsilon-1',
   'mis. SN-2026-001': 'e.g. SN-2026-001',
   'mis. 4 kg': 'e.g. 4 kg',
@@ -690,7 +711,7 @@ export const EN: Record<string, string> = {
   'Unavailable': 'Unavailable',
   'Cari aktor, aksi, atau objek…': 'Search actor, action, or object…',
   'Konfigurasi perangkat, jaringan, mesin inferensi, dan kebijakan data untuk stasiun':
-    'Device, network, inference engine, and data policy configuration for station',
+    'Configure the station’s devices, network, inference engine, and data policies.',
   'Nilai Bawaan': 'Restore Defaults',
   'Simpan Konfigurasi': 'Save Configuration',
   'Ada perubahan yang belum disimpan.': 'There are unsaved changes.',
@@ -713,7 +734,7 @@ export const EN: Record<string, string> = {
   'Bahasa': 'Language',
   'Bahasa Antarmuka': 'Interface Language',
   'Seluruh teks antarmuka mengikuti pilihan ini. Terjemahan tersimpan di dalam aplikasi, jadi tetap tersedia tanpa jaringan.':
-    'All interface text follows this choice. Translations ship inside the application, so they remain available without a network.',
+    'This setting changes the language across the interface. Translations are built into the app and remain available offline.',
   'Payload Gimbal': 'Gimbal Payload',
   'Model Gimbal': 'Gimbal Model',
   'Jalur Kendali': 'Control Path',
@@ -727,7 +748,7 @@ export const EN: Record<string, string> = {
     'STAB mode engages as soon as the balloon leaves the mooring',
   'Batas Operasi & Keselamatan': 'Operating & Safety Limits',
   'Nilai berikut mengikuti batas rancangan platform dan tidak dapat diubah dari antarmuka operator.':
-    'These values follow the platform design limits and cannot be changed from the operator interface.',
+    'These values are set by the platform’s design limits and cannot be changed by operators.',
   'Ketinggian Maksimum': 'Maximum Altitude',
   'Kecepatan Angin Maksimum': 'Maximum Wind Speed',
   'Tarikan Kabel Maksimum': 'Maximum Cable Tension',
@@ -741,7 +762,7 @@ export const EN: Record<string, string> = {
   'Endpoint Modbus TCP (Ground Winch)': 'Modbus TCP Endpoint (Ground Winch)',
   'Kebijakan Isolasi Jaringan': 'Network Isolation Policy',
   'Stasiun beroperasi pada jaringan tertutup. Lalu lintas dibatasi pada segmen lokal dan tidak ada rute keluar yang dikonfigurasi.':
-    'The station operates on a closed network. Traffic is confined to the local segment and no outbound route is configured.',
+    'The station runs on a closed network. Traffic is limited to the local network, with no route to external networks.',
   'Mode Operasi': 'Operating Mode',
   'Rute Keluar': 'Outbound Route',
   'DNS Eksternal': 'External DNS',
@@ -761,7 +782,7 @@ export const EN: Record<string, string> = {
   'Muat model ke VRAM saat aplikasi dijalankan': 'Preload models into VRAM on application start',
   'Target Performa': 'Performance Targets',
   'Angka acuan pada perangkat keras yang terpasang di stasiun. Bila target tidak tercapai, resolusi inferensi diturunkan lebih dulu sebelum laju bingkai.':
-    'Reference figures for the hardware installed at the station. If a target is missed, inference resolution is reduced before frame rate.',
+    'These are reference figures for the station hardware. If performance targets are not met, inference resolution is reduced before the frame rate.',
   'Deteksi Objek 1080p': '1080p Object Detection',
   'Estimasi Kepadatan': 'Density Estimation',
   'Peningkatan Citra': 'Image Enhancement',
@@ -769,13 +790,13 @@ export const EN: Record<string, string> = {
   'Utilisasi VRAM Puncak': 'Peak VRAM Utilisation',
   'Tema Antarmuka': 'Interface Theme',
   'Tema gelap dirancang untuk ruang kendali redup; tema terang menaikkan kontras di bawah cahaya matahari langsung. Pilihan tema berlaku seketika dan tersimpan terpisah dari konfigurasi stasiun.':
-    'The dark theme is designed for dim control rooms; the light theme raises contrast under direct sunlight. The theme applies immediately and is stored separately from the station configuration.',
+    'Use the dark theme in dim control rooms and the light theme in bright conditions. The change applies immediately and is saved separately from station settings.',
   'Zona Waktu Tampilan': 'Display Time Zone',
   'Format Koordinat': 'Coordinate Format',
   'Satuan Jarak': 'Distance Unit',
   'Profil Operator': 'Operator Profile',
   'Perubahan data operator dilakukan pada halaman User Management oleh pemegang peran Administrator.':
-    'Operator data is changed on the User Management page by a holder of the Administrator role.',
+    'Administrators can update operator details from the User Management page.',
   'Kebijakan Retensi': 'Retention Policy',
   'Rekaman Video (hari)': 'Video Recordings (days)',
   'Snapshot Citra (hari)': 'Image Snapshots (days)',
@@ -786,13 +807,13 @@ export const EN: Record<string, string> = {
   'Hapus otomatis saat kapasitas tersisa di bawah 10%':
     'Purge automatically when free capacity falls below 10%',
   'Berkas terlama dihapus lebih dulu, kecuali yang ditandai sebagai bukti':
-    'Oldest files are removed first, except those marked as evidence',
+    'The oldest files are deleted first, except those marked as evidence.',
   'Pemeliharaan Sistem': 'System Maintenance',
   'Susun Ulang Indeks Media': 'Rebuild Media Index',
   'Bersihkan Berkas Sementara': 'Clear Temporary Files',
   'Buat Cadangan Konfigurasi': 'Back Up Configuration',
   'Seluruh tindakan pemeliharaan tercatat pada Audit Trail beserta identitas operator yang menjalankannya.':
-    'Every maintenance action is recorded in the Audit Trail together with the identity of the operator who ran it.',
+    'All maintenance actions are logged with the operator’s identity.',
 
   /* ---- Emergency shutdown ---- */
   'Emergency Shutdown': 'Emergency Shutdown',
@@ -805,7 +826,7 @@ export const EN: Record<string, string> = {
     'Disable analytics modules that depend on the live feed',
   'Mencatat kejadian pada Audit Trail': 'Record the event in the Audit Trail',
   'Pemulihan hanya dapat dilakukan melalui prosedur reset oleh teknisi.':
-    'Recovery is only possible through the technician reset procedure.',
+    'Only a technician can restore the system using the reset procedure.',
   'Ketik': 'Type',
   'untuk mengonfirmasi': 'to confirm',
   'Konfirmasi Pemutusan Daya': 'Confirm Power Cut',
@@ -817,14 +838,14 @@ export const EN: Record<string, string> = {
   'Reset Sistem': 'System Reset',
   'Prosedur Reset Teknisi': 'Technician Reset Procedure',
   'Pastikan penyebab pemutusan telah ditangani dan kabel penambat aman sebelum daya dipulihkan.':
-    'Make sure the cause of the shutdown has been addressed and the tether cable is safe before restoring power.',
+    'Before restoring power, make sure the cause of the shutdown has been addressed and the tether cable is safe.',
   'Pulihkan Daya Platform': 'Restore Platform Power',
   'Daya platform dipulihkan': 'Platform power restored',
   'Seluruh modul kembali menerima umpan langsung.': 'All modules are receiving the live feed again.',
   'Modul ini memerlukan umpan langsung dari platform.':
     'This module requires a live feed from the platform.',
   'Daya platform sedang diputus. Pulihkan daya melalui prosedur reset teknisi untuk melanjutkan.':
-    'Platform power is cut. Restore power through the technician reset procedure to continue.',
+    'Platform power is off. Ask a technician to run the reset procedure before continuing.',
   'Data terakhir sebelum pemutusan': 'Last data before shutdown',
   'OFFLINE': 'OFFLINE',
   'OPERATIONAL': 'OPERATIONAL',
@@ -856,6 +877,7 @@ export const EN: Record<string, string> = {
   'Personel': 'Personnel',
   'Pimpinan': 'Lead',
   'Nama Misi': 'Mission Name',
+  'ID Misi': 'Mission ID',
   'Deskripsi': 'Description',
   'Balon': 'Balloon',
   'Take Off': 'Take Off',
@@ -893,11 +915,11 @@ export const EN: Record<string, string> = {
   'Ubah kata kunci pencarian atau pilih filter peran yang berbeda.':
     'Change the search keyword or pick a different role filter.',
   'Ubah kata kunci pencarian atau pilih kategori aktivitas yang berbeda.':
-    'Change the search keyword or pick a different activity category.',
+    'Change your search or select a different activity category.',
   'Turunkan ambang kepercayaan pada panel kanan untuk menampilkan deteksi berkeyakinan rendah.':
-    'Lower the confidence threshold in the right panel to show low-confidence detections.',
+    'Lower the confidence threshold in the right panel to show more detections.',
   'Muat citra dan terapkan algoritma penajaman untuk melihat perbandingan metrik kualitas.':
-    'Load an image and apply a sharpening algorithm to compare quality metrics.',
+    'Load an image and apply sharpening to compare image quality.',
   'Mulai deteksi untuk merekam objek yang memasuki area pengawasan.':
     'Start detection to record objects entering the surveillance area.',
   'Isi berdasarkan perkiraan cuaca dan rencana misi':
@@ -910,7 +932,7 @@ export const EN: Record<string, string> = {
   'Asli · 658×375': 'Original · 658×375',
   'Ditingkatkan · 2632×1500': 'Enhanced · 2632×1500',
   'Alert dikirim ke modul Smart Notification bila estimasi melewati nilai ini.':
-    'An alert is sent to Smart Notification when the estimate exceeds this value.',
+    'Smart Notification sends an alert when the estimate exceeds this value.',
   'Semakin tinggi, semakin tegas kontur': 'The higher the value, the crisper the contours',
   'Mulai Deteksi': 'Start Detection',
   'Objek Terlacak': 'Objects Tracked',
@@ -945,7 +967,7 @@ export const EN: Record<string, string> = {
   'Seluruh endpoint hanya dapat diakses dari segmen jaringan lokal':
     'All endpoints are reachable only from the local network segment',
   'Kunci hanya ditampilkan sekali saat diterbitkan dan disimpan dalam bentuk hash.':
-    'Keys are shown only once at issue time and stored as a hash.',
+    'The key is shown only once when issued. Only its hash is stored.',
   'Status Layanan': 'Service Status',
   'Interval Polling': 'Polling Interval',
   'Rate Limit': 'Rate Limit',
@@ -1093,11 +1115,11 @@ export const EN: Record<string, string> = {
   'Bila kecepatan angin melewati 35 km/h, sistem menerbitkan peringatan kritis dan merekomendasikan penurunan balon melalui modul Smart Notification.':
     'If wind speed exceeds 35 km/h, the system raises a critical alert and recommends lowering the balloon through the Smart Notification module.',
   'Catatan aktivitas sistem yang bersifat append-only — tidak dapat diubah maupun dihapus dari antarmuka operator.':
-    'An append-only record of system activity — it cannot be edited or deleted from the operator interface.',
+    'An append-only record of system activity. Operators cannot edit or delete these entries.',
   'Deteksi hanya dihitung bila titik pusat objek berada di dalam poligon geofence yang digambar pada modul GeoInt Visualisation.':
     'A detection counts only when the object centre falls inside the geofence polygon drawn in the GeoInt Visualisation module.',
   'Manajemen akun operator dan kontrol akses berbasis peran (RBAC) untuk kedua stasiun GCS.':
-    'Operator account management and role-based access control (RBAC) for both GCS stations.',
+    'Manage operator accounts and role-based access control (RBAC) across both GCS stations.',
   'Kondisi Meteorologi': 'Meteorological Conditions',
   'Rencana Penerbangan': 'Flight Plan',
   'Misi Berjalan — #25': 'Mission in Progress — #25',
@@ -1133,12 +1155,12 @@ export const EN: Record<string, string> = {
   'Ya, Tandai Semua': 'Yes, Mark All',
   'Pemantauan Cuaca Misi': 'Mission Weather Monitoring',
   'Setiap misi berstatus Flight dicek cuacanya secara berkala; hasilnya masuk ke Pusat Notifikasi dan, bila cukup penting, muncul sebagai toast.':
-    'Every mission in Flight status has its weather checked periodically; results land in the Notification Centre and, if severe enough, also appear as a toast.',
+    'Weather is checked periodically for every mission in Flight status. Results appear in the Notification Centre, with important alerts shown as pop-ups.',
   'Aktifkan pemantauan cuaca misi': 'Enable mission weather monitoring',
   'Frekuensi Cek Cuaca (menit)': 'Weather Check Frequency (minutes)',
   'Tingkat Minimum Notifikasi Cuaca': 'Minimum Weather Notification Level',
   'Selang waktu aplikasi menyinkronkan lonceng notifikasi dengan server.':
-    'How often the app syncs the notification bell with the server.',
+    'How often the app syncs notifications with the server.',
   'Frekuensi Sinkronisasi (detik)': 'Sync Frequency (seconds)',
   'Atur aturan peringatan': 'Configure alert rules',
   'Saring notifikasi': 'Filter notifications',
@@ -1163,7 +1185,7 @@ export const EN: Record<string, string> = {
   'Tidak ada peringatan kritis': 'No critical alerts',
   'Tidak ada yang menunggu tindakan': 'Nothing is awaiting action',
   'Belum ada notifikasi': 'No notifications yet',
-  'Peringatan dari sensor, geofence, dan analitik akan muncul di sini.': 'Alerts from sensors, geofences, and analytics will appear here.',
+  'Peringatan dari sensor, geofence, dan analitik akan muncul di sini.': 'Alerts from sensors, geofences, and analytics appear here.',
   'Ubah saringan untuk melihat entri lain.': 'Change the filter to see other entries.',
   'Tandai ditangani': 'Mark as acknowledged',
   'Tutup peringatan': 'Close alert',
@@ -1203,8 +1225,8 @@ export const EN: Record<string, string> = {
   'entri': 'entries',
   'Sumber': 'Source',
   'Umpan peringatan dihentikan': 'Alert feed suspended',
-  'Platform padam. Riwayat tetap dapat ditinjau, namun tidak ada peringatan baru sampai daya dipulihkan.': 'The platform is down. History remains available for review, but no new alerts will arrive until power is restored.',
-  'Riwayat kosong. Peringatan baru akan muncul begitu ambang aturan terlampaui.': 'History is empty. New alerts will appear as soon as a rule threshold is crossed.',
+  'Platform padam. Riwayat tetap dapat ditinjau, namun tidak ada peringatan baru sampai daya dipulihkan.': 'The platform is offline. You can still review alert history, but no new alerts will arrive until power is restored.',
+  'Riwayat kosong. Peringatan baru akan muncul begitu ambang aturan terlampaui.': 'No alert history yet. New alerts will appear when a rule threshold is exceeded.',
   'Muat Riwayat Contoh': 'Load Sample History',
   'Aturan Peringatan': 'Alert Rules',
   'Ubah Aturan': 'Edit Rule',
@@ -1229,7 +1251,7 @@ export const EN: Record<string, string> = {
   'mis. Kecepatan angin': 'e.g. Wind speed',
   'mis. 35 km/h': 'e.g. 35 km/h',
   'Aktifkan aturan ini segera setelah disimpan': 'Enable this rule as soon as it is saved',
-  'Nama, besaran, dan ambang wajib diisi sebelum aturan dapat disimpan.': 'Name, quantity, and threshold are required before the rule can be saved.',
+  'Nama, besaran, dan ambang wajib diisi sebelum aturan dapat disimpan.': 'Enter a rule name, monitored value, and threshold before saving.',
   'Belum ada aturan. Tanpa aturan, tidak ada ambang yang diawasi.': 'No rules yet. Without rules, no threshold is being monitored.',
   'Notifikasi dalam aplikasi': 'In-app notifications',
   'Catat ke Audit Trail': 'Record to Audit Trail',
@@ -1246,39 +1268,39 @@ export const EN: Record<string, string> = {
   'Tindakan Otomatis': 'Automatic Action',
   'Rekam video 60 detik': 'Record 60 seconds of video',
   'Hembusan angin mendekati batas aman': 'Wind gusts approaching the safe limit',
-  'Anemometer mencatat hembusan 31 km/h pada ketinggian tambat. Pantau tren sepuluh menit ke depan.': 'The anemometer recorded a 31 km/h gust at tether altitude. Watch the trend over the next ten minutes.',
-  'Satu objek bergerak melintasi batas perimeter dan bertahan lebih dari 20 detik di dalam zona.': 'A single moving object crossed the perimeter and remained inside the zone for over 20 seconds.',
+  'Anemometer mencatat hembusan 31 km/h pada ketinggian tambat. Pantau tren sepuluh menit ke depan.': 'The anemometer recorded a 31 km/h gust at tether altitude. Monitor conditions over the next 10 minutes.',
+  'Satu objek bergerak melintasi batas perimeter dan bertahan lebih dari 20 detik di dalam zona.': 'A moving object crossed the perimeter and remained inside the zone for more than 20 seconds.',
   'Kepadatan Zona A melewati ambang': 'Zone A density crossed the threshold',
-  'Perhitungan kerumunan menembus 500 jiwa pada petak pengamatan utama.': 'The crowd count passed 500 people in the primary observation cell.',
+  'Perhitungan kerumunan menembus 500 jiwa pada petak pengamatan utama.': 'The crowd count exceeded 500 people in the main observation area.',
   'Resistansi isolasi kabel menurun': 'Cable insulation resistance is falling',
-  'Pengukuran isolasi turun ke 112 MΩ. Masih di atas ambang henti, namun tren perlu diawasi.': 'Insulation measured 112 MΩ. Still above the stop threshold, but the trend needs watching.',
+  'Pengukuran isolasi turun ke 112 MΩ. Masih di atas ambang henti, namun tren perlu diawasi.': 'Insulation measured 112 MΩ. It remains above the shutdown threshold, but should be monitored.',
   'Tekanan helium turun di bawah rentang nominal': 'Helium pressure dropped below the nominal range',
-  'Tekanan envelope tercatat 155 bar setelah penyesuaian ketinggian pagi.': 'Envelope pressure read 155 bar after the morning altitude adjustment.',
+  'Tekanan envelope tercatat 155 bar setelah penyesuaian ketinggian pagi.': 'Envelope pressure was recorded at 155 bar after this morning’s altitude adjustment.',
   'Klasifikasi truk dengan kepercayaan 0,82 pada jalur akses timur.': 'Truck classification at 0.82 confidence on the eastern access lane.',
   'Tautan data balon terputus sesaat': 'Balloon data link dropped briefly',
-  'Sambungan turun selama 4 detik lalu pulih otomatis. Tidak ada bingkai video yang hilang.': 'The link was down for 4 seconds and recovered on its own. No video frames were lost.',
+  'Sambungan turun selama 4 detik lalu pulih otomatis. Tidak ada bingkai video yang hilang.': 'The connection dropped for 4 seconds and recovered automatically. No video frames were lost.',
   'Percobaan masuk gagal tiga kali berturut-turut': 'Three consecutive failed sign-in attempts',
-  'Tiga kegagalan otentikasi dari terminal yang sama. Akun dikunci sementara selama 15 menit.': 'Three authentication failures from the same terminal. The account is locked for 15 minutes.',
+  'Tiga kegagalan otentikasi dari terminal yang sama. Akun dikunci sementara selama 15 menit.': 'Three failed sign-in attempts came from the same terminal. The account was temporarily locked for 15 minutes.',
   'Kalibrasi gimbal Epsilon selesai': 'Epsilon gimbal calibration complete',
-  'Prosedur kalibrasi rutin tuntas tanpa galat. Penyimpangan sumbu di bawah 0,02°.': 'The routine calibration finished without error. Axis deviation is below 0.02°.',
+  'Prosedur kalibrasi rutin tuntas tanpa galat. Penyimpangan sumbu di bawah 0,02°.': 'Routine calibration completed without errors. Axis deviation is below 0.02°.',
   'Arah angin berubah 40° dalam lima menit': 'Wind direction shifted 40° in five minutes',
-  'Perubahan mendadak pada ketinggian 120 m. Sudut tambat disesuaikan otomatis.': 'A sudden shift at 120 m altitude. The tether angle was adjusted automatically.',
+  'Perubahan mendadak pada ketinggian 120 m. Sudut tambat disesuaikan otomatis.': 'A sudden wind shift was detected at 120 m. The tether angle was adjusted automatically.',
   'Kepadatan petak barat naik cepat': 'Western cell density is rising quickly',
-  'Kenaikan 18% dalam dua menit terakhir pada petak pengamatan barat.': 'An 18% rise over the last two minutes in the western observation cell.',
+  'Kenaikan 18% dalam dua menit terakhir pada petak pengamatan barat.': 'Density in the western observation area rose by 18% over the last two minutes.',
   'Bidikan gimbal dikunci pada target baru': 'Gimbal locked onto a new target',
   'Payload Epsilon mengunci koordinat yang dikirim dari Target Bank.': 'The Epsilon payload locked onto coordinates sent from the Target Bank.',
   'Tegangan baterai cadangan turun': 'Backup battery voltage is dropping',
-  'Bank baterai kedua berada di 24,3 V setelah 40 menit tanpa pengisian.': 'The second battery bank reads 24.3 V after 40 minutes without charging.',
+  'Bank baterai kedua berada di 24,3 V setelah 40 menit tanpa pengisian.': 'The second battery bank is at 24.3 V after 40 minutes without charging.',
   'Gerakan terdeteksi di sektor tambat selatan': 'Movement detected in the southern mooring sector',
   'Dua objek berjalan melintas 8 m dari titik jangkar selatan.': 'Two objects walked past 8 m from the southern anchor point.',
   'Latensi tautan optik naik': 'Optical link latency has risen',
   'Waktu tempuh pulang-pergi menyentuh 42 ms pada segmen EOP.': 'Round-trip time reached 42 ms on the EOP segment.',
   'Suhu penggerak derek melampaui nominal': 'Winch drive temperature above nominal',
-  'Motor derek tambat mencapai 68 °C setelah siklus penurunan terakhir.': 'The tether winch motor reached 68 °C after the last descent cycle.',
+  'Motor derek tambat mencapai 68 °C setelah siklus penurunan terakhir.': 'The tether winch motor reached 68 °C after the last lowering cycle.',
   'Sesi operator baru dibuka': 'A new operator session was opened',
   'Terminal supervisor masuk dari jaringan stasiun yang sama.': 'A supervisor terminal signed in from the same station network.',
-  'Reset teknisi selesai. Umpan telemetri dan analitik kembali berjalan.': 'The technician reset is complete. Telemetry and analytics feeds are running again.',
-  'Pemutusan darurat dijalankan. Seluruh umpan langsung berhenti sampai reset teknisi.': 'Emergency disconnect executed. All live feeds are stopped until a technician reset.',
+  'Reset teknisi selesai. Umpan telemetri dan analitik kembali berjalan.': 'Technician reset complete. Telemetry and analytics are back online.',
+  'Pemutusan darurat dijalankan. Seluruh umpan langsung berhenti sampai reset teknisi.': 'Emergency shutdown initiated. All live feeds will remain offline until a technician reset.',
   'Tinjau': 'Review',
   '531 jiwa': '531 people',
   '500 jiwa': '500 people',
@@ -1310,8 +1332,8 @@ export const EN: Record<string, string> = {
   'Hapus Akun': 'Delete Account',
   'Hapus Akun Operator': 'Delete Operator Account',
   'Akun dihapus': 'Account deleted',
-  'Akun berikut akan dilepas dari stasiun ini beserta kursi lisensinya:': 'The following account will be removed from this station along with its licence seat:',
-  'Bila hanya ingin menahan akses sementara, gunakan Nonaktifkan akun — jejak operator tetap tersimpan.': 'To suspend access temporarily, use Deactivate account instead — the operator record is kept.',
+  'Akun berikut akan dilepas dari stasiun ini beserta kursi lisensinya:': 'The following account will be removed from this station and its licence seat released:',
+  'Bila hanya ingin menahan akses sementara, gunakan Nonaktifkan akun — jejak operator tetap tersimpan.': 'To suspend access temporarily, select Deactivate account. The operator record will be retained.',
   'Nonaktifkan akun': 'Deactivate account',
   'Aktifkan akun': 'Activate account',
   'Contoh respons disalin': 'Sample response copied',
@@ -1320,10 +1342,93 @@ export const EN: Record<string, string> = {
   'terkunci': 'locked',
 };
 
+
+/* Copy Bahasa Indonesia yang ditampilkan di antarmuka.
+   Kunci sumber dipertahankan agar kompatibel dengan komponen yang sudah ada. */
+const ID: Record<string, string> = {
+  'Stasiun kendali darat untuk aerostat tertambat 180 m³ — kendali gimbal, pengolahan umpan EO/IR, dan penerbitan laporan misi.': 'Stasiun kendali darat untuk aerostat tertambat 180 m³, dengan kendali gimbal, pemrosesan video EO/IR, dan pembuatan laporan misi.',
+  'Pengawasan udara tertambat dengan pemrosesan analitik sepenuhnya lokal — seluruh umpan, model, dan arsip tetap berada di dalam stasiun.': 'Pemantauan udara dari aerostat tertambat dengan seluruh pemrosesan dilakukan secara lokal. Umpan video, model, dan arsip tetap tersimpan di stasiun.',
+  'Timeout menunggu FFmpeg menyiapkan stream. Periksa URL dan pastikan sumbernya aktif.': 'FFmpeg tidak berhasil menyiapkan stream tepat waktu. Periksa URL dan pastikan sumber video aktif.',
+  'Proses FFmpeg yang masih berjalan dari sesi sebelumnya sudah dibersihkan.': 'Proses FFmpeg dari sesi sebelumnya telah dihentikan.',
+  'Tidak bisa menyambung ke stream. Periksa URL sumber dan pastikan backend/FFmpeg berjalan.': 'Tidak dapat terhubung ke stream. Periksa URL sumber dan pastikan backend serta FFmpeg berjalan.',
+  'Live stream sedang berjalan. Tekan Stop dulu sebelum meninggalkan halaman ini, supaya proses FFmpeg di backend ikut dihentikan.': 'Live stream masih berjalan. Tekan Stop sebelum meninggalkan halaman agar proses FFmpeg di server ikut dihentikan.',
+  'Live stream sedang berjalan. Tekan Stop dulu sebelum meninggalkan halaman ini.': 'Live stream masih berjalan. Tekan Stop sebelum meninggalkan halaman ini.',
+  'Tidak bisa menyambung ke stream. Periksa URL sumber dan pastikan backend berjalan.': 'Tidak dapat terhubung ke stream. Periksa URL sumber dan pastikan backend berjalan.',
+  'Aktifkan lisensi tersebut pada License Manager menggunakan License Number yang tercetak di sertifikat.': 'Buka License Manager, lalu aktifkan lisensi menggunakan License Number pada sertifikat.',
+  'Katalog rekaman dan citra pengawasan, sekaligus jalur pemasukan berkas baru.': 'Kelola rekaman dan gambar pengawasan, serta unggah berkas baru.',
+  'Ubah kata kunci atau kosongkan filter untuk menampilkan seluruh katalog.': 'Ubah kata kunci atau hapus filter untuk melihat semua berkas.',
+  'Sesi crowd counting sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.': 'Crowd counting sedang berjalan. Jika Anda meninggalkan halaman ini, sesi akan terputus dan hasil yang belum disimpan akan hilang.',
+  'Mulai analisis untuk merekam perubahan kepadatan sepanjang sesi pengawasan.': 'Mulai analisis untuk melihat perubahan kepadatan selama sesi berlangsung.',
+  'Deteksi objek pada citra statis dengan bounding box, label kelas, dan nilai kepercayaan.': 'Deteksi objek pada gambar menggunakan bounding box, label kelas, dan skor confidence.',
+  'Deteksi citra sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.': 'Deteksi gambar sedang berjalan. Jika Anda meninggalkan halaman ini, proses akan dibatalkan dan hasil yang belum disimpan akan hilang.',
+  'Tarik pembagi untuk membandingkan citra asli dengan keluaran deteksi': 'Geser pembatas untuk membandingkan gambar asli dan hasil deteksi.',
+  'Sesi deteksi video sedang berjalan. Meninggalkan halaman ini akan memutus sesi dan hasil yang belum disimpan akan hilang.': 'Deteksi video sedang berjalan. Jika Anda meninggalkan halaman ini, sesi akan terputus dan hasil yang belum disimpan akan hilang.',
+  'Peningkatan kualitas citra statis: kontras, ketajaman, dan reduksi derau.': 'Tingkatkan kualitas gambar dengan mengatur kontras, ketajaman, dan noise.',
+  'Proses enhancement citra sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.': 'Pemrosesan gambar sedang berlangsung. Jika Anda meninggalkan halaman ini, proses akan dibatalkan dan hasil yang belum disimpan akan hilang.',
+  'Proses enhancement video sedang berjalan. Meninggalkan halaman ini akan membatalkan proses dan hasil yang belum disimpan akan hilang.': 'Pemrosesan video sedang berlangsung. Jika Anda meninggalkan halaman ini, proses akan dibatalkan dan hasil yang belum disimpan akan hilang.',
+  'Antarmuka REST dan WebSocket untuk data daya dan tautan kabel penambat.': 'API REST dan WebSocket untuk memantau daya serta koneksi kabel penambat.',
+  'Kesehatan kabel penambat: daya, isolasi, kontinuitas, dan SNR optik.': 'Pantau kondisi kabel penambat, termasuk daya, isolasi, kontinuitas, dan SNR optik.',
+  'Tambahkan data lewat tombol "Tambah Data" untuk mengisi riwayat ini.': 'Pilih "Tambah Data" untuk menambahkan catatan pemeriksaan.',
+  'Laporan misi otomatis dalam format PDF dan Excel berwatermark klasifikasi.': 'Buat laporan misi dalam format PDF atau Excel dengan watermark klasifikasi.',
+  'Klik penanda target atau salah satu entri Target Bank untuk menghitung solusi geolokasi.': 'Pilih penanda di peta atau entri di Target Bank untuk menghitung koordinat target.',
+  'Bila jaringan keluar ditutup, peta berpindah sendiri ke Grid Referensi Lokal tanpa kehilangan lapisan taktis.': 'Saat koneksi keluar tidak tersedia, peta otomatis beralih ke Grid Referensi Lokal. Lapisan taktis tetap ditampilkan.',
+  'Aturan peringatan berbasis geofence, ambang sensor, dan deteksi intrusi.': 'Atur peringatan berdasarkan geofence, ambang sensor, atau deteksi intrusi.',
+  'Logbook penerbangan, checklist pra-terbang, dan roster tim operator.': 'Kelola log penerbangan, checklist pra-terbang, dan daftar operator.',
+  'Instrumen stasiun penambat: angin, tarikan winch, helium, dan daya cadangan.': 'Pantau kondisi stasiun penambat, termasuk angin, tarikan winch, helium, dan daya cadangan.',
+  'Kelayakan terbang dari cuaca, helium, bobot payload, dan durasi misi.': 'Periksa kelayakan penerbangan berdasarkan cuaca, helium, bobot payload, dan durasi misi.',
+  'Isi parameter skenario, lalu jalankan simulasi untuk memperoleh keputusan.': 'Masukkan parameter skenario, lalu jalankan simulasi untuk melihat hasilnya.',
+  'Manajemen data platform balon — nomor seri, kapasitas, dan ketinggian maksimum operasional.': 'Kelola data balon, termasuk nomor seri, kapasitas, dan batas ketinggian operasional.',
+  'Balon ini sedang dalam penerbangan aktif — status tidak bisa diubah dari sini sampai misinya diakhiri (End Flight). Field lain masih bisa disimpan.': 'Balon sedang digunakan dalam penerbangan. Statusnya tidak dapat diubah sampai misi diakhiri (End Flight), tetapi perubahan pada kolom lain tetap bisa disimpan.',
+  'Balon baru langsung tersedia sebagai opsi pada formulir Misi Baru.': 'Balon baru akan langsung tersedia di formulir Misi Baru.',
+  'Konfigurasi perangkat, jaringan, mesin inferensi, dan kebijakan data untuk stasiun': 'Atur perangkat, jaringan, mesin inferensi, dan kebijakan data stasiun.',
+  'Seluruh teks antarmuka mengikuti pilihan ini. Terjemahan tersimpan di dalam aplikasi, jadi tetap tersedia tanpa jaringan.': 'Bahasa ini digunakan di seluruh antarmuka. Terjemahan tersedia langsung di aplikasi, termasuk saat offline.',
+  'Nilai berikut mengikuti batas rancangan platform dan tidak dapat diubah dari antarmuka operator.': 'Nilai berikut mengikuti batas desain platform dan tidak dapat diubah oleh operator.',
+  'Stasiun beroperasi pada jaringan tertutup. Lalu lintas dibatasi pada segmen lokal dan tidak ada rute keluar yang dikonfigurasi.': 'Stasiun menggunakan jaringan tertutup. Lalu lintas hanya melalui jaringan lokal tanpa akses ke jaringan luar.',
+  'Angka acuan pada perangkat keras yang terpasang di stasiun. Bila target tidak tercapai, resolusi inferensi diturunkan lebih dulu sebelum laju bingkai.': 'Angka berikut merupakan acuan untuk perangkat keras di stasiun. Jika target performa tidak tercapai, resolusi inferensi akan diturunkan sebelum frame rate.',
+  'Tema gelap dirancang untuk ruang kendali redup; tema terang menaikkan kontras di bawah cahaya matahari langsung. Pilihan tema berlaku seketika dan tersimpan terpisah dari konfigurasi stasiun.': 'Gunakan tema gelap di ruang kendali dengan pencahayaan redup, atau tema terang di area dengan cahaya kuat. Perubahan langsung diterapkan dan disimpan terpisah dari konfigurasi stasiun.',
+  'Perubahan data operator dilakukan pada halaman User Management oleh pemegang peran Administrator.': 'Administrator dapat mengubah data operator melalui halaman User Management.',
+  'Berkas terlama dihapus lebih dulu, kecuali yang ditandai sebagai bukti': 'Berkas terlama akan dihapus lebih dulu, kecuali berkas yang ditandai sebagai bukti.',
+  'Seluruh tindakan pemeliharaan tercatat pada Audit Trail beserta identitas operator yang menjalankannya.': 'Setiap tindakan pemeliharaan dicatat di Audit Trail beserta identitas operator.',
+  'Pemulihan hanya dapat dilakukan melalui prosedur reset oleh teknisi.': 'Hanya teknisi yang dapat memulihkan sistem melalui prosedur reset.',
+  'Pastikan penyebab pemutusan telah ditangani dan kabel penambat aman sebelum daya dipulihkan.': 'Sebelum memulihkan daya, pastikan penyebab pemutusan sudah ditangani dan kabel penambat dalam kondisi aman.',
+  'Daya platform sedang diputus. Pulihkan daya melalui prosedur reset teknisi untuk melanjutkan.': 'Daya platform terputus. Minta teknisi menjalankan prosedur reset untuk memulihkan daya.',
+  'Ubah kata kunci pencarian atau pilih kategori aktivitas yang berbeda.': 'Ubah kata kunci atau pilih kategori aktivitas lain.',
+  'Turunkan ambang kepercayaan pada panel kanan untuk menampilkan deteksi berkeyakinan rendah.': 'Turunkan nilai confidence di panel kanan untuk menampilkan lebih banyak hasil deteksi.',
+  'Muat citra dan terapkan algoritma penajaman untuk melihat perbandingan metrik kualitas.': 'Muat gambar, lalu terapkan penajaman untuk membandingkan kualitasnya.',
+  'Alert dikirim ke modul Smart Notification bila estimasi melewati nilai ini.': 'Smart Notification akan mengirim peringatan jika estimasi melebihi nilai ini.',
+  'Kunci hanya ditampilkan sekali saat diterbitkan dan disimpan dalam bentuk hash.': 'Kunci hanya ditampilkan saat pertama kali dibuat. Sistem menyimpan hash-nya.',
+  'Menjalankan kalibrasi ulang sensor arus dan tegangan ground winch.': 'Kalibrasi ulang sensor arus dan tegangan pada ground winch.',
+  'Catatan aktivitas sistem yang bersifat append-only — tidak dapat diubah maupun dihapus dari antarmuka operator.': 'Catatan aktivitas sistem yang hanya dapat ditambahkan. Operator tidak dapat mengubah atau menghapusnya.',
+  'Manajemen akun operator dan kontrol akses berbasis peran (RBAC) untuk kedua stasiun GCS.': 'Kelola akun operator dan hak akses berbasis peran (RBAC) di kedua stasiun GCS.',
+  'Semua notifikasi yang belum dibaca akan ditandai sebagai sudah dibaca. Lanjutkan?': 'Semua notifikasi yang belum dibaca akan ditandai sudah dibaca. Lanjutkan?',
+  'Setiap misi berstatus Flight dicek cuacanya secara berkala; hasilnya masuk ke Pusat Notifikasi dan, bila cukup penting, muncul sebagai toast.': 'Cuaca untuk setiap misi berstatus Flight diperiksa secara berkala. Hasilnya muncul di Pusat Notifikasi dan, untuk kondisi penting, sebagai notifikasi pop-up.',
+  'Selang waktu aplikasi menyinkronkan lonceng notifikasi dengan server.': 'Atur seberapa sering aplikasi menyinkronkan notifikasi dengan server.',
+  'Peringatan dari sensor, geofence, dan analitik akan muncul di sini.': 'Peringatan dari sensor, geofence, dan analitik akan ditampilkan di sini.',
+  'Platform padam. Riwayat tetap dapat ditinjau, namun tidak ada peringatan baru sampai daya dipulihkan.': 'Platform sedang mati. Riwayat peringatan tetap dapat dilihat, tetapi peringatan baru tidak akan masuk sampai daya dipulihkan.',
+  'Riwayat kosong. Peringatan baru akan muncul begitu ambang aturan terlampaui.': 'Belum ada riwayat. Peringatan akan muncul saat nilai melewati ambang yang ditetapkan.',
+  'Nama, besaran, dan ambang wajib diisi sebelum aturan dapat disimpan.': 'Isi nama aturan, parameter, dan nilai ambang sebelum menyimpan.',
+  'Anemometer mencatat hembusan 31 km/h pada ketinggian tambat. Pantau tren sepuluh menit ke depan.': 'Anemometer mencatat hembusan angin 31 km/jam di ketinggian tambat. Pantau perubahannya selama 10 menit ke depan.',
+  'Satu objek bergerak melintasi batas perimeter dan bertahan lebih dari 20 detik di dalam zona.': 'Satu objek terdeteksi melewati batas perimeter dan berada di dalam zona selama lebih dari 20 detik.',
+  'Perhitungan kerumunan menembus 500 jiwa pada petak pengamatan utama.': 'Jumlah orang di area pengamatan utama telah melebihi 500.',
+  'Pengukuran isolasi turun ke 112 MΩ. Masih di atas ambang henti, namun tren perlu diawasi.': 'Nilai isolasi turun menjadi 112 MΩ. Angka ini masih di atas batas penghentian, tetapi perlu dipantau.',
+  'Tekanan envelope tercatat 155 bar setelah penyesuaian ketinggian pagi.': 'Tekanan envelope tercatat 155 bar setelah penyesuaian ketinggian pagi ini.',
+  'Sambungan turun selama 4 detik lalu pulih otomatis. Tidak ada bingkai video yang hilang.': 'Koneksi terputus selama 4 detik, lalu pulih otomatis. Tidak ada frame video yang hilang.',
+  'Tiga kegagalan otentikasi dari terminal yang sama. Akun dikunci sementara selama 15 menit.': 'Tiga kali gagal login dari terminal yang sama. Akun dikunci selama 15 menit.',
+  'Prosedur kalibrasi rutin tuntas tanpa galat. Penyimpangan sumbu di bawah 0,02°.': 'Kalibrasi rutin selesai tanpa error. Penyimpangan sumbu kurang dari 0,02°.',
+  'Perubahan mendadak pada ketinggian 120 m. Sudut tambat disesuaikan otomatis.': 'Arah angin berubah mendadak pada ketinggian 120 m. Sudut kabel tambat disesuaikan otomatis.',
+  'Kenaikan 18% dalam dua menit terakhir pada petak pengamatan barat.': 'Kepadatan di area pengamatan barat naik 18% dalam dua menit terakhir.',
+  'Bank baterai kedua berada di 24,3 V setelah 40 menit tanpa pengisian.': 'Tegangan baterai kedua tercatat 24,3 V setelah 40 menit tanpa pengisian.',
+  'Motor derek tambat mencapai 68 °C setelah siklus penurunan terakhir.': 'Suhu motor winch mencapai 68 °C setelah proses penurunan terakhir.',
+  'Reset teknisi selesai. Umpan telemetri dan analitik kembali berjalan.': 'Reset teknisi selesai. Telemetri dan analitik kembali aktif.',
+  'Pemutusan darurat dijalankan. Seluruh umpan langsung berhenti sampai reset teknisi.': 'Pemutusan darurat telah dilakukan. Semua live feed akan berhenti sampai teknisi melakukan reset.',
+  'Akun berikut akan dilepas dari stasiun ini beserta kursi lisensinya:': 'Akun berikut akan dihapus dari stasiun ini dan slot lisensinya akan dilepas:',
+  'Bila hanya ingin menahan akses sementara, gunakan Nonaktifkan akun — jejak operator tetap tersimpan.': 'Untuk menangguhkan akses sementara, pilih Nonaktifkan akun. Data operator tetap tersimpan.',
+};
+
 /** Menerjemahkan satu kalimat. Teks yang tidak ada di kamus dikembalikan
     apa adanya — itu perilaku yang benar untuk nama produk dan istilah
     teknis yang memang sama pada kedua bahasa. */
 export function translate(text: string, lang: Lang): string {
-  if (lang === 'id') return text;
+  if (lang === 'id') return ID[text] ?? text;
   return EN[text] ?? text;
 }

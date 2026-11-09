@@ -7,7 +7,7 @@ import {
   validateActivationKey, refreshLicenseCatalog, type LicenseId, type ActivationResult,
 } from './lib/licensing';
 import { type OperatorAccount } from './lib/auth';
-import { loadLang, saveLang, translate, type Lang } from './lib/i18n';
+import { DEFAULT_LANG, loadLang, saveLang, translate, type Lang } from './lib/i18n';
 import {
   seedNotifications, notificationFromRecord,
   CATEGORY_PAGE, SEVERITY_RANK, MAX_STORED,
@@ -197,7 +197,7 @@ function missionStatusName(m: FlightMissionRecord): string {
 /* ===== Provider ===== */
 export function AppProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>('dark');
-  const [lang, setLangState] = useState<Lang>('id');
+  const [lang, setLangState] = useState<Lang>(DEFAULT_LANG);
   const [platformState, setPlatformState] = useState<PlatformState>('operational');
   const [shutdownAt, setShutdownAt] = useState<string | null>(null);
   const [currentPage, setCurrentPageRaw] = useState('dashboard');

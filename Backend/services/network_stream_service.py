@@ -26,48 +26,6 @@ class NetworkStreamService:
 
         return shutil.which("ffmpeg") is not None
 
-    # def start_stream(self, network_url: str) -> tuple[str, str]:
-
-        stream_id = uuid.uuid4().hex[:8]
-
-        stream_folder = self.streams_dir / stream_id
-
-        os.makedirs(stream_folder, exist_ok=True)
-
-        output_playlist = stream_folder / "output.m3u8"
-
-        cmd = ["ffmpeg", "-fflags", "nobuffer"]
-
-        if network_url.startswith("rtsp://"):
-
-            cmd += ["-rtsp_transport", "tcp"]
-
-        cmd += [
-            "-i", network_url,
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-tune", "zerolatency",
-            "-c:a", "aac",
-            "-f", "hls",
-            "-hls_time", "2",
-            "-hls_list_size", "5",
-            "-hls_flags", "delete_segments+append_list",
-            str(output_playlist),
-        ]
-
-        with open(stream_folder / "ffmpeg.log", "wb") as log_file:
-
-            process = subprocess.Popen(
-                cmd,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-            )
-
-        self.running_processes[stream_id] = process
-
-        return stream_id, f"/stream/{stream_id}/output.m3u8"
-
-
     def start_stream(self, network_url: str) -> tuple[str, str]:
 
         stream_id = uuid.uuid4().hex[:8]
@@ -77,35 +35,35 @@ class NetworkStreamService:
 
         output_playlist = stream_folder / "output.m3u8"
 
-        # cmd = [
-        #     "ffmpeg",
-        #     "-fflags", "nobuffer",
-        #     "-i", network_url,
-
-        #     "-c:v", "libx264",
-        #     "-preset", "veryfast",
-        #     "-tune", "zerolatency",
-
-        #     "-c:a", "aac",
-
-        #     "-f", "hls",
-        #     "-hls_time", "2",
-        #     "-hls_list_size", "5",
-        #     "-hls_flags", "delete_segments+append_list",
-        #     str(output_playlist),
-        # ]
-
+        # Disetel untuk latensi rendah. Delay HLS ≈ (jumlah segmen yang
+        # ditahan player × panjang segmen) + waktu probe input + buffer
+        # encoder. Sebelumnya segmen 2 s (praktis 2,4 s karena GOP 60
+        # frame pada 25 fps) × 3 segmen default hls.js + probe 5 s
+        # → delay ±8–12 s. Sekarang:
+        # - Input: tanpa buffer & probe dipersingkat (default FFmpeg
+        #   menganalisis ±5 s stream sebelum mulai encode).
+        # - Keyframe dipaksa tiap 1 s berbasis waktu (bukan jumlah frame),
+        #   jadi segmen benar-benar 1 s berapa pun fps sumbernya.
+        # - ultrafast + zerolatency: encoder tidak menahan frame lookahead.
+        # - hls_list_size 60: segmen 1 s → ±60 s riwayat untuk Jeda /
+        #   Putar-Ulang; panjang playlist tidak menambah delay karena
+        #   player tetap mulai dari ujung live.
         cmd = [
             "ffmpeg",
+            "-hide_banner",
+
+            "-fflags", "nobuffer+discardcorrupt",
+            "-flags", "low_delay",
+            "-probesize", "1000000",
+            "-analyzeduration", "1000000",
 
             "-i", network_url,
 
             "-c:v", "libx264",
-            "-preset", "veryfast",
+            "-preset", "ultrafast",
             "-tune", "zerolatency",
 
-            "-g", "60",
-            "-keyint_min", "60",
+            "-force_key_frames", "expr:gte(t,n_forced*1)",
             "-sc_threshold", "0",
 
             "-pix_fmt", "yuv420p",
@@ -113,9 +71,9 @@ class NetworkStreamService:
             "-c:a", "aac",
 
             "-f", "hls",
-            "-hls_time", "2",
-            "-hls_list_size", "5",
-            "-hls_flags", "delete_segments+append_list+independent_segments",
+            "-hls_time", "1",
+            "-hls_list_size", "60",
+            "-hls_flags", "delete_segments+independent_segments+omit_endlist",
 
             str(output_playlist),
         ]

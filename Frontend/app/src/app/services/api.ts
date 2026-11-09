@@ -368,6 +368,10 @@ export interface DetectVideoFrameMessage {
 /** Respons POST /api/v1/crowd/video — proses berjalan asinkron di
     backend; hasil per-frame diikuti lewat WebSocket /crowd/ws/{job_id}
     (lihat WS_BASE), bukan lewat respons HTTP ini. */
+/** Model crowd counting yang bisa dipilih: DM-Count (density map) atau
+    YOLO (deteksi kotak, hanya kelas orang). */
+export type CrowdModel = 'dmcount' | 'yolo';
+
 export interface CrowdVideoJobResult {
   success: boolean;
   job_id: string;
@@ -409,6 +413,27 @@ export interface CrowdVideoFrameMessage {
   processing_time?: number;
   summary?: CrowdVideoSummary;
   [key: string]: unknown;
+}
+
+/** Satu pesan dari WebSocket /network-stream/ws/{job_id} (Live Stream
+    tanpa AI) — frame JPEG berbasis64 apa adanya dari sumber UDP. */
+export interface LiveStreamFrameMessage {
+  frame?: string;
+  frame_number?: number;
+  width?: number;
+  height?: number;
+  live?: boolean;
+  elapsed_seconds?: number;
+  timestamp?: string;
+  error?: string;
+  finished?: boolean;
+  reason?: 'stopped' | 'source_lost';
+  summary?: {
+    received_frames: number;
+    sent_frames: number;
+    duration_seconds: number;
+    fps: number;
+  };
 }
 
 /** Payload POST /api/v1/media — menyimpan hasil /enhance/image atau
@@ -846,8 +871,21 @@ class ApiService {
   }
 
   // ==========================================
-  // NETWORK STREAM (Live Stream — UDP/RTSP/RTMP via FFmpeg → HLS)
+  // NETWORK STREAM
   // ==========================================
+  /** Memulai sesi Live Stream realtime (UDP). Sama seperti startCrowdStream
+      tanpa AI: backend baru membuka sumbernya saat WebSocket ke WS_BASE +
+      /network-stream/ws/{job_id} tersambung; sesi diakhiri dengan mengirim
+      {"action":"stop"} lewat socket itu. */
+  async startLiveStream(networkUrl: string) {
+    return this.request<{ success: boolean; job_id: string }>('/network-stream/live', {
+      method: 'POST',
+      body: JSON.stringify({ network_url: networkUrl }),
+    });
+  }
+
+  /* Jalur lama FFmpeg → HLS (delay beberapa detik). Tidak lagi dipakai
+     LiveStreamPage. */
   async startNetworkStream(networkUrl: string) {
     return this.request<{ stream_id: string; playlist_url: string }>('/network-stream/start', {
       method: 'POST',
@@ -1013,10 +1051,10 @@ class ApiService {
   /** Memulai sesi crowd counting video (berkas unggahan). Hasilnya cuma
       job_id — hitungan per-frame diikuti lewat WebSocket ke WS_BASE +
       /crowd/ws/{job_id}. */
-  async detectCrowdVideo(file: File) {
+  async detectCrowdVideo(file: File, model: CrowdModel = 'dmcount') {
     const formData = new FormData();
     formData.append('file', file);
-    return this.request<CrowdVideoJobResult>('/crowd/video', {
+    return this.request<CrowdVideoJobResult>(`/crowd/video?model=${model}`, {
       method: 'POST',
       body: formData,
     });
@@ -1026,8 +1064,8 @@ class ApiService {
       sumbernya saat WebSocket /crowd/ws/{job_id} tersambung; sesi diakhiri
       dengan mengirim {"action":"stop"} lewat socket itu. Hasil sesi live
       tidak ditulis ke disk, jadi pesan `finished`-nya tanpa temp_path. */
-  async startCrowdStream(networkUrl: string) {
-    return this.request<CrowdVideoJobResult>('/crowd/stream', {
+  async startCrowdStream(networkUrl: string, model: CrowdModel = 'dmcount') {
+    return this.request<CrowdVideoJobResult>(`/crowd/stream?model=${model}`, {
       method: 'POST',
       body: JSON.stringify({ network_url: networkUrl }),
     });

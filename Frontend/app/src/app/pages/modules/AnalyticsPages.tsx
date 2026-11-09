@@ -12,7 +12,7 @@ import { CompareSlider, VideoPlayer } from '../../components/media';
 import api, {
   API_BASE_MEDIA, WS_BASE, type FlightMissionRecord, type FlightInformationRecord,
   type DetectImageResult, type DetectedObject, type DetectVideoFrameMessage,
-  type CrowdVideoFrameMessage,
+  type CrowdVideoFrameMessage, type CrowdModel,
 } from '../../services/api';
 import {
   UsersRound, Play, Pause, Square, Camera, Cpu, Video, Radio,
@@ -290,7 +290,11 @@ function DensityTrendChart({ data, color, height = 130 }: { data: number[]; colo
 export function CrowdCountingPage() {
   const { pushToast, notify, offline, t } = useApp();
   const [source, setSource] = useState<VideoSourceKind>('upload');
-  const [udpUrl, setUdpUrl] = useState('udp://@244.10.10.10:15004');
+  /* Model penghitung: DM-Count (density map, cocok untuk kerumunan padat)
+     atau YOLO (kotak deteksi per orang — sama seperti Video Analytic,
+     tapi hanya kelas orang). */
+  const [crowdModel, setCrowdModel] = useState<CrowdModel>('dmcount');
+  const [udpUrl, setUdpUrl] = useState('udp://@224.10.10.10:15004');
   const [file, setFile] = useState<{ name: string; url: string; raw: File } | null>(null);
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -351,9 +355,9 @@ export function CrowdCountingPage() {
     const el = crowdCardRef.current;
     if (!el) return;
     if (!document.fullscreenElement) {
-      el.requestFullscreen?.().catch(() => {});
+      el.requestFullscreen?.().catch(() => { });
     } else {
-      document.exitFullscreen?.().catch(() => {});
+      document.exitFullscreen?.().catch(() => { });
     }
   };
 
@@ -696,10 +700,10 @@ export function CrowdCountingPage() {
       return;
     }
     if (source === 'udp' && !udpUrl.trim()) {
-      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.') });
+      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@224.10.10.10:15004.') });
       notify({
         title: t('Isi alamat UDP dahulu'),
-        detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.'),
+        detail: t('Masukkan URL sumber UDP, mis. udp://@224.10.10.10:15004.'),
         severity: 'peringatan',
         category: 'Ambang Batas',
         source: 'Crowd Counting',
@@ -749,10 +753,10 @@ export function CrowdCountingPage() {
       return;
     }
     if (source === 'udp' && !udpUrl.trim()) {
-      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.') });
+      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@224.10.10.10:15004.') });
       notify({
         title: t('Isi alamat UDP dahulu'),
-        detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.'),
+        detail: t('Masukkan URL sumber UDP, mis. udp://@224.10.10.10:15004.'),
         severity: 'peringatan',
         category: 'Ambang Batas',
         source: 'Crowd Counting',
@@ -781,12 +785,14 @@ export function CrowdCountingPage() {
       /* Sumber upload tanpa berkas sudah ditolak di atas, jadi cabang kedua
          hanya tercapai untuk sumber UDP. */
       const job = source === 'upload' && file
-        ? await api.detectCrowdVideo(file.raw)
-        : await api.startCrowdStream(udpUrl.trim());
+        ? await api.detectCrowdVideo(file.raw, crowdModel)
+        : await api.startCrowdStream(udpUrl.trim(), crowdModel);
       openSocket(job.job_id);
       const startedDetail = source === 'udp'
         ? `${t('Menghubungkan ke')} ${udpUrl.trim()}.`
-        : t('Model DM-Count dimuat — inferensi berjalan.');
+        : crowdModel === 'yolo'
+          ? t('Model YOLO dimuat — inferensi berjalan.')
+          : t('Model DM-Count dimuat — inferensi berjalan.');
       pushToast({ tone: 'info', title: t('Sesi crowd counting dimulai'), detail: startedDetail });
       notify({
         title: t('Sesi crowd counting dimulai'),
@@ -964,8 +970,8 @@ export function CrowdCountingPage() {
                 icon={<Video size={15} />}
                 title={finished ? t('Sesi Selesai') : t('Video Zona')}
                 sub={
-                  running ? (isUdp ? `${t('Umpan langsung dari')} ${udpUrl.trim()}` : t('Aliran langsung dari sesi berjalan'))
-                    : finished ? (isUdp ? t('Sesi live selesai — hasil sesi UDP tidak disimpan') : t('Sesi selesai — simpan hasil atau mulai sesi baru'))
+                  running ? (isUdp ? `${t('Live Crowd Counting sedang berjalan')} ${udpUrl.trim()}` : t('Proses Analisa Sedang Berjalan'))
+                    : finished ? (isUdp ? t('Sesi live selesai — hasil sesi UDP tidak disimpan') : t('Simpan hasil'))
                       : isUdp ? udpUrl.trim()
                         : file ? file.name : t('Rekaman video Epsilon dengan keluaran density map')
                 }
@@ -1003,7 +1009,7 @@ export function CrowdCountingPage() {
                 >
                   <div className="cmp-layer">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={currentFrame.image} alt="Density map crowd counting" />
+                    <img src={currentFrame.image} alt={crowdModel === 'yolo' ? 'YOLO crowd counting' : 'Density map crowd counting'} />
                   </div>
                 </div>
               ) : isUdp && (starting || running) ? (
@@ -1082,6 +1088,19 @@ export function CrowdCountingPage() {
             <GlassCard>
               <SectionHead icon={<Radio size={15} />} title={t('Sumber Video')} />
               <div className="form-group">
+                <label className="form-label" htmlFor="crowd-model">{t('Model')}</label>
+                <select
+                  id="crowd-model"
+                  className="form-input"
+                  value={crowdModel}
+                  onChange={e => setCrowdModel(e.target.value as CrowdModel)}
+                  disabled={starting || running}
+                >
+                  <option value="dmcount">{t('DM-Count (Density Map)')}</option>
+                  <option value="yolo">{t('YOLO (Deteksi Orang)')}</option>
+                </select>
+              </div>
+              <div className="form-group">
                 <label className="form-label" htmlFor="crowd-source">{t('Jenis Sumber')}</label>
                 <select
                   id="crowd-source"
@@ -1103,7 +1122,7 @@ export function CrowdCountingPage() {
                     className="form-input font-mono"
                     value={udpUrl}
                     onChange={e => setUdpUrl(e.target.value)}
-                    placeholder="udp://@244.10.10.10:15004"
+                    placeholder="udp://@224.10.10.10:15004"
                     spellCheck={false}
                     disabled={starting || running}
                   />
@@ -1210,7 +1229,8 @@ export function CrowdCountingPage() {
             >
               <div className="modal-header">
                 <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <UsersRound size={17} /> {t('Konfirmasi Analisis Crowd')}
+                  <UsersRound size={17} />{' '}
+                  {crowdModel === 'yolo' ? t('Gunakan Model YOLO?') : t('Gunakan Model DM-Count?')}
                 </h3>
                 <button className="modal-x" onClick={cancelStart} aria-label={t('Tutup')}>
                   <X size={16} />
@@ -1218,17 +1238,25 @@ export function CrowdCountingPage() {
               </div>
 
               <div className="modal-body">
-                <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: 'var(--text-normal, #e2e8f0)' }}>
-                  {t('Akurasi perhitungan crowd meningkat ketika terdapat banyak orang dalam 1 frame. Lanjutkan menjalankan deteksi dan crowd?')}
+                <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: 'var(--text-primary)' }}>
+                  {crowdModel === 'yolo'
+                    ? t('YOLO cocok untuk menghitung orang yang terlihat jelas secara langsung. Model ini mendeteksi setiap individu dan menandai posisinya dengan bounding box.')
+                    : t('DM-Count cocok untuk menghitung kerumunan yang padat, terutama ketika banyak orang saling berhimpitan atau tertutup satu sama lain.')}
+                </p>
+                <p style={{ fontSize: 13, lineHeight: 1.6, margin: '10px 0 0', color: 'var(--text-primary)' }}>
+                  <strong>{t('Disarankan untuk:')}</strong>{' '}
+                  {crowdModel === 'yolo'
+                    ? t('Area dengan jumlah orang sedikit hingga sedang, di mana objek orang masih terlihat dengan jelas dan tidak terlalu berhimpitan.')
+                    : t('konser, stadion, dan area dengan kepadatan tinggi.')}
                 </p>
               </div>
 
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={cancelStart}>
-                  {t('Batal')}
+                  {t('Kembali')}
                 </button>
                 <button className="btn btn-primary sheen" onClick={confirmStart} autoFocus>
-                  {t('Lanjutkan')}
+                  {crowdModel === 'yolo' ? t('Gunakan YOLO') : t('Gunakan DM-Count')}
                 </button>
               </div>
             </div>
@@ -1533,7 +1561,7 @@ export function ImageDetectionPage() {
         />
 
         <GlassCard tilt={false} style={{ marginBottom: 14 }}>
-          <SectionHead icon={<ScanSearch size={15} />} title={t('Flight Mission')} sub={t('Wajib dipilih sebelum deteksi dapat dijalankan')} />
+          <SectionHead icon={<ScanSearch size={15} />} title={t('Flight Mission')} sub={t('Wajib dipilih')} />
           <div className="form-group" style={{ marginBottom: 0 }}>
             <select
               className="form-input"
@@ -1631,7 +1659,7 @@ export function ImageDetectionPage() {
                 <EmptyState
                   icon={<Crosshair size={22} />}
                   title={t('Tidak ada objek di atas ambang')}
-                  description={t('Jalankan deteksi, atau turunkan ambang kepercayaan untuk menampilkan hasil berkeyakinan lebih rendah.')}
+                  description={t('Object Detection Belum Dijalankan')}
                 />
               ) : (
                 <div className="table-container">
@@ -1729,7 +1757,7 @@ const MAX_VIDEO_HEIGHT = 1080;
 export function VideoDetectionPage() {
   const { pushToast, notify, t } = useApp();
   const [source, setSource] = useState<VideoSourceKind>('upload');
-  const [udpUrl, setUdpUrl] = useState('udp://@244.10.10.10:15004');
+  const [udpUrl, setUdpUrl] = useState('udp://@224.10.10.10:15004');
   const [file, setFile] = useState<{ name: string; url: string; raw: File } | null>(null);
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1793,9 +1821,9 @@ export function VideoDetectionPage() {
     const el = videoCardRef.current;
     if (!el) return;
     if (!document.fullscreenElement) {
-      el.requestFullscreen?.().catch(() => {});
+      el.requestFullscreen?.().catch(() => { });
     } else {
-      document.exitFullscreen?.().catch(() => {});
+      document.exitFullscreen?.().catch(() => { });
     }
   };
 
@@ -2141,10 +2169,10 @@ export function VideoDetectionPage() {
       return;
     }
     if (source === 'udp' && !udpUrl.trim()) {
-      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.') });
+      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@224.10.10.10:15004.') });
       notify({
         title: t('Isi alamat UDP dahulu'),
-        detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.'),
+        detail: t('Masukkan URL sumber UDP, mis. udp://@224.10.10.10:15004.'),
         severity: 'peringatan',
         category: 'Deteksi Objek',
         source: 'Video Analytic',
@@ -2166,7 +2194,9 @@ export function VideoDetectionPage() {
       });
       return;
     }
-    setShowConfirm(true);
+    // Pop up konfirmasi dinonaktifkan sementara — langsung jalankan deteksi.
+    // setShowConfirm(true);
+    startDetection();
   };
 
   const confirmStartDetection = () => {
@@ -2194,10 +2224,10 @@ export function VideoDetectionPage() {
       return;
     }
     if (source === 'udp' && !udpUrl.trim()) {
-      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.') });
+      pushToast({ tone: 'error', title: t('Isi alamat UDP dahulu'), detail: t('Masukkan URL sumber UDP, mis. udp://@224.10.10.10:15004.') });
       notify({
         title: t('Isi alamat UDP dahulu'),
-        detail: t('Masukkan URL sumber UDP, mis. udp://@244.10.10.10:15004.'),
+        detail: t('Masukkan URL sumber UDP, mis. udp://@224.10.10.10:15004.'),
         severity: 'peringatan',
         category: 'Deteksi Objek',
         source: 'Video Analytic',
@@ -2347,7 +2377,7 @@ export function VideoDetectionPage() {
           icon={<Clapperboard size={22} />}
           title={t('Digital Video Analytic')}
           code="1.1b"
-          description={t('Deteksi dan pelacakan objek bergerak pada video misi.')}
+          description={t('Object Detection')}
           actions={
             <>
               <button className="btn btn-secondary" disabled={!canSave} onClick={saveMedia}>
@@ -2381,7 +2411,7 @@ export function VideoDetectionPage() {
         />
 
         <GlassCard tilt={false} style={{ marginBottom: 14 }}>
-          <SectionHead icon={<Clapperboard size={15} />} title={t('Flight Mission')} sub={t('Wajib dipilih sebelum deteksi dapat dijalankan')} />
+          <SectionHead icon={<Clapperboard size={15} />} title={t('Flight Mission')} sub={t('Wajib dipilih')} />
           <div className="form-group" style={{ marginBottom: 0 }}>
             <select
               className="form-input"
@@ -2469,7 +2499,7 @@ export function VideoDetectionPage() {
                 <EmptyState
                   icon={<FileVideo size={22} />}
                   title={t('Belum ada video dimuat')}
-                  description={t('Pilih sumber video di panel kanan, lalu jalankan deteksi untuk melihat umpan langsung.')}
+                  description={t('Pilih sumber video di panel kanan')}
                 />
               )}
 
@@ -2536,7 +2566,7 @@ export function VideoDetectionPage() {
                     className="form-input font-mono"
                     value={udpUrl}
                     onChange={e => setUdpUrl(e.target.value)}
-                    placeholder="udp://@244.10.10.10:15004"
+                    placeholder="udp://@224.10.10.10:15004"
                     spellCheck={false}
                     disabled={starting || running}
                   />
@@ -2584,7 +2614,7 @@ export function VideoDetectionPage() {
                   description={t('Jalankan deteksi untuk melihat rekap jumlah objek per kelas.')}
                 />
               ) : (
-                <div className="table-container" style={{ maxHeight: 260, overflowY: 'auto' }}>
+                <div className="table-container detect-result-table" style={{ maxHeight: 260, overflowY: 'auto' }}>
                   <table>
                     <thead>
                       <tr><th>{t('Kelas Objek')}</th><th>{t('Jumlah')}</th></tr>
@@ -2604,11 +2634,11 @@ export function VideoDetectionPage() {
                               </span>
                             </td>
                             <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ flex: 1, height: 4, borderRadius: 999, background: 'rgba(148,163,184,0.12)', overflow: 'hidden', minWidth: 90 }}>
-                                  <div style={{ width: `${pct}%`, height: '100%', background: color }} />
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, ['--cls-color' as string]: color } as React.CSSProperties}>
+                                <div className="class-count-track" style={{ flex: 1, height: 4, borderRadius: 999, background: 'rgba(148,163,184,0.12)', overflow: 'hidden', minWidth: 90 }}>
+                                  <div className="class-count-bar" style={{ width: `${pct}%`, height: '100%' }} />
                                 </div>
-                                <span className="font-mono" style={{ fontSize: 14, fontWeight: 700, color }}>{count}</span>
+                                <span className="font-mono class-count-num" style={{ fontSize: 14, fontWeight: 700 }}>{count}</span>
                               </div>
                             </td>
                           </tr>
@@ -2622,6 +2652,7 @@ export function VideoDetectionPage() {
           </div>
         </div>
 
+        {/* Pop up konfirmasi Video Analytic — saat ini tidak dipicu (lihat handler Run Detection). */}
         {showConfirm && (
           <div className="modal-backdrop" onClick={cancelStartDetection}>
             <div
@@ -2641,7 +2672,7 @@ export function VideoDetectionPage() {
               </div>
 
               <div className="modal-body">
-                <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: 'var(--text-normal, #e2e8f0)' }}>
+                <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: 'var(--text-primary)' }}>
                   {t('Analytic paling optimal digunakan ketika terdapat 1-2 orang dalam 1 frame. Lanjutkan menjalankan analisis?')}
                 </p>
               </div>

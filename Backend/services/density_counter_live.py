@@ -43,6 +43,30 @@ class VideoCrowdCounterLive:
 
         self.counter = density_counter
 
+    # ------------------------------------------------------------------
+    # Titik ganti model. predict_video_stream/predict_live_stream hanya
+    # memanggil dua metode ini, jadi subclass (mis. YoloCrowdCounterLive)
+    # cukup menimpa keduanya untuk memakai model lain dengan pipeline
+    # pacing/encode/kirim yang sama persis.
+    # ------------------------------------------------------------------
+
+    def _infer(self, frame):
+        """Dijalankan di thread background. Mengembalikan (hasil, jumlah)
+        — `hasil` diteruskan apa adanya ke _render."""
+
+        density_map, raw_count, _ = self.counter.predict_frame(frame)
+
+        # DM-Count mengembalikan jumlah densitas berupa pecahan (mis.
+        # 42.37). Operator hanya ingin melihat jiwa sebagai bilangan bulat,
+        # dan sisa densitas sekecil apa pun tetap mewakili bagian dari satu
+        # orang — jadi dibulatkan KE ATAS, bukan ke terdekat.
+        return density_map, math.ceil(raw_count)
+
+    def _render(self, result, frame):
+        """Gambar hasil inferensi (mungkin basi) ke frame TERKINI."""
+
+        return self._blend_heatmap(result, frame)
+
     def _draw_count_overlay(self, frame_out, width, count):
 
         label = "Crowd Count"
@@ -241,7 +265,7 @@ class VideoCrowdCounterLive:
         if not writer.isOpened():
             raise Exception("Failed to create VideoWriter")
 
-        last_density_map = None
+        last_result = None
         last_count = 0
         counter_task = None
 
@@ -285,17 +309,10 @@ class VideoCrowdCounterLive:
                 if counter_task is not None and counter_task.done():
 
                     try:
-                        last_density_map, raw_count, _ = counter_task.result()
-
-                        # DM-Count mengembalikan jumlah densitas berupa
-                        # pecahan (mis. 42.37). Operator hanya ingin melihat
-                        # jiwa sebagai bilangan bulat, dan sisa densitas
-                        # sekecil apa pun tetap mewakili bagian dari satu
-                        # orang — jadi dibulatkan KE ATAS, bukan ke terdekat.
-                        last_count = math.ceil(raw_count)
+                        last_result, last_count = counter_task.result()
                     except Exception:
                         print(
-                            f"[crowd] DM-Count error at frame {frame_index}:\n"
+                            f"[crowd] Inference error at frame {frame_index}:\n"
                             f"{traceback.format_exc()}"
                         )
                     finally:
@@ -307,17 +324,17 @@ class VideoCrowdCounterLive:
                 ):
                     counter_task = asyncio.create_task(
                         asyncio.to_thread(
-                            self.counter.predict_frame,
+                            self._infer,
                             frame.copy()
                         )
                     )
 
-                # Heatmap di-blend ulang ke frame TERKINI setiap iterasi
+                # Hasil di-render ulang ke frame TERKINI setiap iterasi
                 # (bukan menampilkan ulang gambar beku dari inferensi lama)
                 # supaya video tetap mengikuti gerakan asli dan tidak
                 # terlihat patah-patah/macet.
-                if last_density_map is not None:
-                    annotated = self._blend_heatmap(last_density_map, frame)
+                if last_result is not None:
+                    annotated = self._render(last_result, frame)
                     count = last_count
                 else:
                     annotated = frame.copy()
@@ -397,7 +414,7 @@ class VideoCrowdCounterLive:
                     await counter_task
                 except Exception:
                     print(
-                        "[crowd] Final DM-Count error:\n"
+                        "[crowd] Final inference error:\n"
                         f"{traceback.format_exc()}"
                     )
 
@@ -549,7 +566,7 @@ class VideoCrowdCounterLive:
                 f"@ {reader.fps:.2f}fps dilaporkan sumber)"
             )
 
-            last_density_map = None
+            last_result = None
             last_count = 0
             counter_task = None
 
@@ -595,11 +612,10 @@ class VideoCrowdCounterLive:
                     if counter_task is not None and counter_task.done():
 
                         try:
-                            last_density_map, raw_count, _ = counter_task.result()
-                            last_count = math.ceil(raw_count)
+                            last_result, last_count = counter_task.result()
                         except Exception:
                             print(
-                                f"[crowd-live] DM-Count error at frame {frame_index}:\n"
+                                f"[crowd-live] Inference error at frame {frame_index}:\n"
                                 f"{traceback.format_exc()}"
                             )
                         finally:
@@ -611,13 +627,13 @@ class VideoCrowdCounterLive:
                     ):
                         counter_task = asyncio.create_task(
                             asyncio.to_thread(
-                                self.counter.predict_frame,
+                                self._infer,
                                 frame.copy()
                             )
                         )
 
-                    if last_density_map is not None:
-                        annotated = self._blend_heatmap(last_density_map, frame)
+                    if last_result is not None:
+                        annotated = self._render(last_result, frame)
                         count = last_count
                     else:
                         annotated = frame.copy()
@@ -678,7 +694,7 @@ class VideoCrowdCounterLive:
                         await counter_task
                     except Exception:
                         print(
-                            "[crowd-live] Final DM-Count error:\n"
+                            "[crowd-live] Final inference error:\n"
                             f"{traceback.format_exc()}"
                         )
 

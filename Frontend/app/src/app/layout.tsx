@@ -28,7 +28,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="id" data-theme="dark" suppressHydrationWarning>
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head>
         {/* Huruf disajikan dari repositori ini sendiri — dimuat lebih awal
             agar judul tidak berkedip saat pemuatan pertama. */}

@@ -7,7 +7,7 @@ import { CountUp, Dots, TypeLine, Magnetic } from './fx';
 import {
   ShieldCheck, ShieldAlert, Loader2, Check, Eye, EyeOff,
   User, KeyRound, ArrowRight, Lock, Radar, CircleDot,
-  Globe2, ScanEye, FileBadge, WifiOff, Award,UsersRound,Boxes,Sparkles,LibraryBig
+  Globe2, ScanEye, FileBadge, WifiOff, Award, UsersRound, Boxes, Sparkles, LibraryBig
 } from 'lucide-react';
 
 /* Three.js menyentuh objek window saat dimuat, sehingga adegan 3D hanya
@@ -26,7 +26,7 @@ const AUTH_STEPS = [
    yang memang tersedia di dalam aplikasi, bukan klaim tambahan. */
 const CAPABILITIES = [
   { icon: <UsersRound size={16} />, title: 'Crowd Counting', desc: 'Crowd counting dan deteksi objek pada umpan EO/IR' },
-  { icon: <Boxes size={16} />, title: 'Analytic and Object Detection', desc: 'Sistem Intelijen Geospasial Balon Tertambat dengan Kemampuan Analitik dan Deteksi Objek' },
+  { icon: <Boxes size={16} />, title: 'Analytic and Object Detection', desc: 'Modul Sistem Analitik dan Deteksi Objek' },
   { icon: <Sparkles size={16} />, title: 'Digital Analytic Enhancement', desc: 'Modul Sistem Pemrosesan Peningkatan Analitik Digital' },
   { icon: <LibraryBig size={16} />, title: 'Information & Reporting', desc: 'Modul Sistem Intelijen Geospasial Balon Tambat untuk Informasi dan Pelaporan' },
 ];
@@ -201,7 +201,7 @@ export default function LoginPage() {
               >
                 {submitting
                   ? <><Loader2 size={16} className="spin" /> {t('Menghubungkan…')}</>
-                  : <>Masuk ke Ruang Kendali <ArrowRight size={16} /></>}
+                  : <>Masuk<ArrowRight size={16} /></>}
               </button>
             </Magnetic>
 

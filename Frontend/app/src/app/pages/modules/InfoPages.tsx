@@ -2486,8 +2486,8 @@ export function FlightInfoPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>{t('Misi')}</th><th>{t('Lepas Landas')}</th>
-                    <th>{t('Mendarat')}</th><th>{t('Durasi')}</th><th>{t('Ketinggian')}</th>
+                    <th>{t('ID Misi')}</th><th>{t('Nama Misi')}</th><th>{t('Lepas Landas')}</th>
+                    <th>{t('Mendarat')}</th><th>{t('Durasi')}</th>
                     <th>{t('Pimpinan')}</th><th>{t('Status')}</th><th>{t('Aksi')}</th>
                   </tr>
                 </thead>
@@ -2500,11 +2500,11 @@ export function FlightInfoPage() {
                     const isActing = actionMissionId === m.id;
                     return (
                       <tr key={String(m.id)}>
-                        <td className="font-mono" style={{ fontWeight: 700 }}>{m.mission_code ?? m.mission_name ?? String(m.id)}</td>
+                        <td className="font-mono text-xs" style={{ whiteSpace: 'nowrap' }}>{m.mission_code ?? String(m.id)}</td>
+                        <td style={{ fontWeight: 700 }}>{m.mission_name ?? '—'}</td>
                         <td className="font-mono text-xs">{info?.takeoff_time ? info.takeoff_time.slice(0, 16).replace('T', ' ') : '—'}</td>
                         <td className="font-mono text-xs">{info?.landing_time ? info.landing_time.slice(0, 16).replace('T', ' ') : '—'}</td>
                         <td className="font-mono text-xs">{info?.duration != null ? formatDurationHM(info.duration) : '—'}</td>
-                        <td className="font-mono text-xs">{info?.max_altitude != null ? `${info.max_altitude} m` : '—'}</td>
                         <td style={{ fontSize: 12 }}>{leader}</td>
                         <td><span className={`badge badge-${meta.tone}`}>{t(meta.label)}</span></td>
                         <td>

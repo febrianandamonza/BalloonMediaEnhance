@@ -1,89 +1,43 @@
 'use client';
-import React, { useEffect, useId, useRef, useState } from 'react';
-import Hls from 'hls.js';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useApp, useNavGuard } from '../context';
-import api, { API_BASE_MEDIA } from '../services/api';
+import api, { WS_BASE, type LiveStreamFrameMessage } from '../services/api';
 import GlassCard from '../components/GlassCard';
 import { PageHead, SectionHead, VideoStage } from '../components/ui';
 import {
-  Radio, Wifi, Play, Pause, Square, AlertTriangle, Video,
+  Radio, Wifi, Play, Pause, Square, AlertTriangle, Video, Maximize2, Minimize2,
 } from 'lucide-react';
 
 /* =====================================================================
    LIVE STREAM
    ---------------------------------------------------------------------
-   Kamera/Source (UDP/RTSP/RTMP) → backend (FFmpeg → HLS) → browser.
-   POST /network-stream/start {network_url} membuat backend menjalankan
-   FFmpeg yang menulis segmen HLS; respons berisi stream_id + playlist_url
-   (path statis, diresolusi lewat API_BASE_MEDIA, bukan API_BASE — sama
-   seperti berkas media di GCSPage). Playlist di-poll dulu (FFmpeg butuh
-   beberapa detik generate segmen pertama) sebelum hls.js dipasang ke
-   <video>. POST /network-stream/stop/{stream_id} menghentikan FFmpeg di
-   sisi backend.
+   Sumber UDP → backend (LatestFrameReader → JPEG) → WebSocket → <img>.
+   Jalurnya sama dengan sesi live Crowd Counting / Video Analytic, hanya
+   tanpa inferensi AI. POST /network-stream/live {network_url} membuat
+   job_id; backend baru membuka sumber saat WebSocket
+   /network-stream/ws/{job_id} tersambung, dan sesi diakhiri dengan
+   mengirim {"action":"stop"} lewat socket itu.
 
-   HLS punya buffer segmen tersimpan secara alami di sisi backend, jadi
-   Jeda/Putar-Ulang/Kembali-ke-Live didapat dari kemampuan seek bawaan
-   <video>+hls.js (hls.liveSyncPosition, video.seekable) — tanpa hack
-   canvas-capture.
+   Sebelumnya halaman ini memakai FFmpeg → HLS → hls.js; HLS menahan
+   beberapa segmen video sebelum diputar sehingga delay-nya beberapa
+   detik. Di sini backend selalu mengirim frame TERBARU dan membuang yang
+   tertunggak, jadi delay tidak pernah menumpuk.
+
+   Jeda / putar ulang memakai buffer frame di browser (seperti Crowd
+   Counting): saat dijeda, frame tetap diterima dan disimpan sehingga
+   "Kembali ke Live" langsung ke frame terkini.
    ===================================================================== */
 
-type Phase = 'setup' | 'live' | 'paused';
+type Phase = 'setup' | 'connecting' | 'live' | 'paused';
 
-// async function waitForPlaylist(url: string, maxAttempts = 20, intervalMs = 1000): Promise<boolean> {
-
-
-//   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-//     try {
-//       const res = await fetch(url, { cache: 'no-store' });
-//       if (res.ok) {
-//         const body = await res.text();
-//         if (body.includes('.ts')) return true;
-//       }
-//     } catch {
-//       // backend/jaringan belum siap, coba lagi
-//     }
-//     await new Promise(resolve => setTimeout(resolve, intervalMs));
-//   }
-//   return false;
-// }
-
-async function waitForPlaylist(
-  url: string,
-  maxAttempts = 20,
-  intervalMs = 1000
-): Promise<boolean> {
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const res = await fetch(url, { cache: "no-store" });
-
-      console.log(
-        "WAIT",
-        attempt,
-        res.status,
-        url
-      );
-
-      if (res.ok) {
-        const body = await res.text();
-
-        console.log(body);
-
-        if (body.includes(".ts")) {
-          console.log("PLAYLIST READY");
-          return true;
-        }
-      }
-    } catch (err) {
-      console.log("WAIT ERROR", err);
-    }
-
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
-  }
-
-  console.log("PLAYLIST TIMEOUT");
-  return false;
-}
+/* Jumlah frame yang disimpan untuk putar ulang. Pada ~25 fps ≈ 12 detik;
+   satu frame JPEG 1280px ±60–120 KB base64, jadi buffer ini ±30 MB. */
+const LIVE_FRAME_BUFFER = 300;
+/* Batas tunggu backend menutup sesi setelah pesan stop dikirim — sama
+   seperti LIVE_STOP_TIMEOUT_MS di Crowd Counting. */
+const LIVE_STOP_TIMEOUT_MS = 15000;
+/* Slider & indikator fps tidak perlu di-render ulang di setiap frame. */
+const UI_REFRESH_MS = 250;
 
 function NetworkUrlField({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled: boolean }) {
   const { t } = useApp();
@@ -108,258 +62,308 @@ export default function LiveStreamPage() {
   const { t, pushToast, notify } = useApp();
 
   const [networkUrl, setNetworkUrl] = useState('');
-  const [streamId, setStreamId] = useState<string | null>(null);
-  const [tetherApiUid, setTetherApiUid] = useState<string | null>(null);
-  const [hlsUrl, setHlsUrl] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('setup');
   const [loading, setLoading] = useState(false);
-  const [connectError, setConnectError] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
-  const [currentTime, setCurrentTime] = useState(0);
-  const [seekableStart, setSeekableStart] = useState(0);
-  const [seekableEnd, setSeekableEnd] = useState(0);
+  // Hanya untuk tampilan (slider/fps) — diperbarui tiap UI_REFRESH_MS.
+  const [bufferLen, setBufferLen] = useState(0);
+  const [playIndex, setPlayIndex] = useState(0);
+  const [fps, setFps] = useState(0);
+  const [resolution, setResolution] = useState<string | null>(null);
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const framesRef = useRef<string[]>([]);
+  const playIndexRef = useRef(0);
+  // Salinan phase untuk handler WebSocket, yang closure-nya dibuat sekali
+  // saat socket dibuka. Selalu diubah lewat changePhase.
+  const phaseRef = useRef<Phase>('setup');
+  const stopTimerRef = useRef<number | null>(null);
+  const uiTimerRef = useRef<number | null>(null);
+  const fpsWindowRef = useRef<{ start: number; frames: number }>({ start: 0, frames: 0 });
+  // uid log /tether-cable-api — tidak ditampilkan, cukup ref.
+  const tetherUidRef = useRef<string | null>(null);
+
+  const changePhase = (next: Phase) => {
+    phaseRef.current = next;
+    setPhase(next);
+  };
+
+  const changeTetherUid = (uid: string | null) => {
+    tetherUidRef.current = uid;
+  };
+
+  /* ---- Fullscreen panel Umpan Live — pola sama dengan Crowd Counting /
+     Video Analytic (class vd-fullscreen di media.css). Yang dibuat layar
+     penuh adalah wrapper, bukan <img>, supaya bar kontrol ikut tampil. */
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === stageRef.current && stageRef.current != null);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    const el = stageRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(() => { });
+    } else {
+      document.exitFullscreen?.().catch(() => { });
+    }
+  };
 
   useNavGuard(
     phase !== 'setup',
-    t('Live stream sedang berjalan. Tekan Stop dulu sebelum meninggalkan halaman ini, supaya proses FFmpeg di backend ikut dihentikan.'),
+    t('Live stream sedang berjalan. Tekan Stop dulu sebelum meninggalkan halaman ini.'),
   );
 
-  /* Reload browser (F5) atau navigasi keluar-masuk menu ini tidak lewat
-     stop() — streamId lokal hilang tapi proses FFmpeg di backend tetap
-     jalan. Setiap kali halaman ini mount (termasuk lewat reload, karena
-     PAGES[currentPage] di page.tsx benar-benar unmount/mount ulang
-     komponen), cek health lalu bersihkan stream sisa dari sesi
-     sebelumnya supaya tidak menumpuk. */
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const health = await api.getNetworkStreamHealth();
-        const leftover = health.active_streams ?? [];
-        if (leftover.length === 0 || cancelled) return;
-        await Promise.allSettled(leftover.map(id => api.stopNetworkStream(id)));
-        if (cancelled) return;
-        pushToast({
-          tone: 'info',
-          title: t('Live stream sebelumnya dihentikan otomatis'),
-          detail: t('Proses FFmpeg yang masih berjalan dari sesi sebelumnya sudah dibersihkan.'),
-        });
-      } catch {
-        // Backend/health endpoint belum siap — halaman tetap bisa dipakai normal.
-      }
-    })();
-    return () => { cancelled = true; };
+  const showFrame = (src: string | undefined) => {
+    if (src && imgRef.current) imgRef.current.src = src;
+  };
+
+  const clearTimers = () => {
+    if (stopTimerRef.current != null) window.clearTimeout(stopTimerRef.current);
+    if (uiTimerRef.current != null) window.clearInterval(uiTimerRef.current);
+    stopTimerRef.current = null;
+    uiTimerRef.current = null;
+  };
+
+  /* Menutup socket & kembali ke layar setup. Dipanggil saat backend
+     mengirim `finished`, saat error, atau saat batas tunggu stop habis. */
+  const endSession = () => {
+    clearTimers();
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => { });
+    const socket = wsRef.current;
+    wsRef.current = null;
+    if (socket) {
+      socket.onclose = null;
+      socket.close();
+    }
+    const uid = tetherUidRef.current;
+    if (uid) api.stopTetherCableApiLog(uid).catch(() => { });
+    framesRef.current = [];
+    playIndexRef.current = 0;
+    changeTetherUid(null);
+    changePhase('setup');
+    setStopping(false);
+    setBufferLen(0);
+    setPlayIndex(0);
+    setFps(0);
+    setResolution(null);
+  };
+
+  /* Pindah halaman / reload di tengah sesi → socket ditutup; backend
+     menganggap socket putus sebagai permintaan berhenti dan melepas port
+     UDP-nya. */
+  useEffect(() => () => {
+    clearTimers();
+    wsRef.current?.close();
+    const uid = tetherUidRef.current;
+    if (uid) api.stopTetherCableApiLog(uid).catch(() => { });
   }, []);
 
-  const goLive = async () => {
-    if (!networkUrl.trim()) return;
-    setLoading(true);
-    setConnectError(false);
-    try {
-      const data = await api.startNetworkStream(networkUrl.trim());
-      console.log("START RESPONSE", data);
-      setStreamId(data.stream_id);
-      const url = `${API_BASE_MEDIA}${data.playlist_url}`;
-      const ready = await waitForPlaylist(url);
-      if (!ready) throw new Error(t('Timeout menunggu FFmpeg menyiapkan stream. Periksa URL dan pastikan sumbernya aktif.'));
-      setHlsUrl(url);
-      setCurrentTime(0);
-      setSeekableStart(0);
-      setSeekableEnd(0);
-      setPhase('live');
+  const openSocket = (jobId: string, url: string) => {
+    const socket = new WebSocket(`${WS_BASE}/network-stream/ws/${jobId}`);
+    wsRef.current = socket;
+    fpsWindowRef.current = { start: performance.now(), frames: 0 };
 
-      /* Pencatatan sesi ke /tether-cable-api — murni log, tidak
-         memengaruhi pemutaran video. Kegagalannya tidak boleh membuat
-         live stream (yang sudah jalan lewat FFmpeg) dianggap gagal. */
+    uiTimerRef.current = window.setInterval(() => {
+      setBufferLen(framesRef.current.length);
+      setPlayIndex(playIndexRef.current);
+      const now = performance.now();
+      const w = fpsWindowRef.current;
+      if (now - w.start >= 1000) {
+        setFps(Math.round((w.frames * 1000) / (now - w.start)));
+        fpsWindowRef.current = { start: now, frames: 0 };
+      }
+    }, UI_REFRESH_MS);
+
+    socket.onmessage = (ev) => {
+      let data: LiveStreamFrameMessage;
       try {
-        const log = await api.startTetherCableApiLog(networkUrl.trim());
-        setTetherApiUid(log.uid);
-      } catch (logErr) {
-        console.error('Gagal mencatat sesi tether-cable-api:', logErr);
+        data = JSON.parse(ev.data) as LiveStreamFrameMessage;
+      } catch {
+        return;
       }
 
-      pushToast({ tone: 'success', title: t('Live stream dimulai'), detail: networkUrl.trim() });
+      if (data.error) {
+        setConnectError(data.error);
+        pushToast({ tone: 'error', title: t('Gagal memulai live stream'), detail: data.error });
+        endSession();
+        return;
+      }
+
+      if (data.frame) {
+        const src = `data:image/jpeg;base64,${data.frame}`;
+        const frames = framesRef.current;
+        frames.push(src);
+        if (frames.length > LIVE_FRAME_BUFFER) {
+          frames.shift();
+          // Frame yang sedang ditonton saat dijeda ikut bergeser indeksnya.
+          playIndexRef.current = Math.max(0, playIndexRef.current - 1);
+        }
+        fpsWindowRef.current.frames += 1;
+
+        if (phaseRef.current === 'connecting') {
+          changePhase('live');
+          if (data.width && data.height) setResolution(`${data.width}×${data.height}`);
+        }
+        if (phaseRef.current === 'live') {
+          playIndexRef.current = frames.length - 1;
+          // Langsung ke DOM, tanpa re-render React di setiap frame.
+          showFrame(src);
+        }
+      }
+
+      if (data.finished) {
+        const sourceLost = data.reason === 'source_lost';
+        pushToast({
+          tone: sourceLost ? 'warning' : 'info',
+          title: sourceLost ? t('Sumber UDP terputus') : t('Live stream dihentikan'),
+          detail: sourceLost ? t('Tidak ada frame baru dari sumber — sesi diakhiri otomatis.') : undefined,
+        });
+        if (sourceLost) {
+          notify({
+            title: t('Sumber UDP terputus'),
+            detail: `${t('Tidak ada frame baru dari sumber — sesi diakhiri otomatis.')} (${url})`,
+            severity: 'peringatan',
+            category: 'Operasional',
+            source: 'Live Stream',
+            silent: true,
+          });
+        }
+        endSession();
+      }
+    };
+
+    socket.onerror = () => {
+      setConnectError(t('WebSocket ke server live stream gagal.'));
+    };
+
+    // Socket ditutup server tanpa pesan `finished` (mis. backend mati).
+    socket.onclose = () => {
+      if (wsRef.current !== socket) return;
+      pushToast({ tone: 'error', title: t('Koneksi live stream terputus') });
+      endSession();
+    };
+  };
+
+  const goLive = async () => {
+    const url = networkUrl.trim();
+    if (!url) return;
+    setLoading(true);
+    setConnectError(null);
+    framesRef.current = [];
+    playIndexRef.current = 0;
+    try {
+      const job = await api.startLiveStream(url);
+      changePhase('connecting');
+      openSocket(job.job_id, url);
+
+      /* Pencatatan sesi ke /tether-cable-api — murni log; kegagalannya
+         tidak boleh membuat live stream dianggap gagal. */
+      try {
+        const log = await api.startTetherCableApiLog(url);
+        changeTetherUid(log.uid);
+      } catch (logErr) {
+        console.warn('Gagal mencatat sesi tether-cable-api:', logErr);
+      }
+
+      pushToast({ tone: 'success', title: t('Live stream dimulai'), detail: url });
       notify({
         title: t('Live stream dimulai'),
-        detail: `${t('Menerima umpan dari')} ${networkUrl.trim()}.`,
+        detail: `${t('Menerima umpan dari')} ${url}.`,
         severity: 'informasi',
         category: 'Operasional',
         source: 'Live Stream',
         silent: true,
       });
     } catch (err) {
-      setConnectError(true);
-      pushToast({
-        tone: 'error',
-        title: t('Gagal memulai live stream'),
-        detail: err instanceof Error ? err.message : undefined,
-      });
+      const detail = err instanceof Error ? err.message : undefined;
+      setConnectError(detail ?? t('Tidak bisa menyambung ke stream. Periksa URL sumber dan pastikan backend berjalan.'));
+      pushToast({ tone: 'error', title: t('Gagal memulai live stream'), detail });
+      endSession();
     } finally {
       setLoading(false);
     }
   };
 
   const pause = () => {
-    videoRef.current?.pause();
-    setPhase('paused');
+    playIndexRef.current = Math.max(0, framesRef.current.length - 1);
+    setPlayIndex(playIndexRef.current);
+    changePhase('paused');
   };
 
   const resumeLive = () => {
-    const video = videoRef.current;
-    const hls = hlsRef.current;
-    if (video) {
-      if (hls?.liveSyncPosition != null) video.currentTime = hls.liveSyncPosition;
-      else if (video.seekable.length > 0) video.currentTime = video.seekable.end(video.seekable.length - 1);
-      video.play();
-    }
-    setPhase('live');
+    const frames = framesRef.current;
+    playIndexRef.current = Math.max(0, frames.length - 1);
+    showFrame(frames[frames.length - 1]);
+    changePhase('live');
   };
 
-  const stop = async () => {
-    hlsRef.current?.destroy();
-    hlsRef.current = null;
-    if (streamId) await api.stopNetworkStream(streamId).catch(() => { });
-    if (tetherApiUid) await api.stopTetherCableApiLog(tetherApiUid).catch(() => { });
-    setPhase('setup');
-    setStreamId(null);
-    setTetherApiUid(null);
-    setHlsUrl(null);
-    setConnectError(false);
-    pushToast({ tone: 'info', title: t('Live stream dihentikan') });
+  const seek = (index: number) => {
+    playIndexRef.current = index;
+    setPlayIndex(index);
+    showFrame(framesRef.current[index]);
+    if (phase !== 'paused') changePhase('paused');
   };
 
-  useEffect(() => {
-    if (!hlsUrl) return;
-
-    const video = videoRef.current;
-    if (!video) return;
-
-    console.log("=================================");
-    console.log("HLS URL:", hlsUrl);
-    console.log("Hls supported:", Hls.isSupported());
-    console.log("Native HLS:", video.canPlayType("application/vnd.apple.mpegurl"));
-    console.log("=================================");
-
-    let hls: Hls | null = null;
-
-    // Chrome / Firefox / Edge → gunakan Hls.js
-    if (Hls.isSupported()) {
-      console.log("USING HLS.JS");
-
-      hls = new Hls();
-
-      hlsRef.current = hls;
-
-      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-        console.log("MEDIA ATTACHED");
-
-        hls?.loadSource(hlsUrl);
-      });
-
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        console.log("MANIFEST PARSED");
-
-        video.play().catch(err => {
-          console.error("PLAY ERROR:", err);
-        });
-      });
-
-      hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
-        console.log("LEVEL LOADED:", data.details);
-      });
-
-      hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
-        console.log("FRAG LOADED:", data.frag.sn);
-      });
-
-      hls.on(Hls.Events.FRAG_BUFFERED, (_, data) => {
-        console.log("FRAG BUFFERED:", data.frag.sn);
-      });
-
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        console.error("HLS ERROR:", data);
-
-        if (!data.fatal) {
-          return;
-        }
-
-        switch (data.type) {
-          case Hls.ErrorTypes.NETWORK_ERROR:
-            console.log("Recovering NETWORK ERROR...");
-            hls?.startLoad();
-            break;
-
-          case Hls.ErrorTypes.MEDIA_ERROR:
-            console.log("Recovering MEDIA ERROR...");
-            hls?.recoverMediaError();
-            break;
-
-          default:
-            console.error("Fatal HLS error, destroying...");
-            hls?.destroy();
-            hls = null;
-            hlsRef.current = null;
-            setConnectError(true);
-            break;
-        }
-      });
-
-      hls.attachMedia(video);
-
-      // Safari → native HLS
-    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      console.log("USING NATIVE HLS");
-
-      video.src = hlsUrl;
-
-      video.addEventListener("loadedmetadata", () => {
-        video.play().catch(err => {
-          console.error("PLAY ERROR:", err);
-        });
-      });
-
-    } else {
-      console.error("HLS NOT SUPPORTED");
-      setConnectError(true);
+  const stop = () => {
+    const socket = wsRef.current;
+    /* Sama seperti Crowd Counting: backend yang menutup sesi setelah
+       menerima pesan stop (melepas port UDP dengan rapi), lalu mengirim
+       `finished`. Batas waktu hanya jaga-jaga kalau balasan tidak datang. */
+    if (socket?.readyState === WebSocket.OPEN) {
+      if (stopping) return;
+      socket.send(JSON.stringify({ action: 'stop' }));
+      setStopping(true);
+      stopTimerRef.current = window.setTimeout(endSession, LIVE_STOP_TIMEOUT_MS);
+      return;
     }
-
-    return () => {
-      console.log("CLEANUP HLS");
-
-      if (hls) {
-        hls.destroy();
-        hls = null;
-      }
-
-      if (hlsRef.current) {
-        hlsRef.current = null;
-      }
-
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-    };
-  }, [hlsUrl]);
-
-  const onTimeUpdate = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    setCurrentTime(video.currentTime);
-    if (video.seekable.length > 0) {
-      setSeekableStart(video.seekable.start(0));
-      setSeekableEnd(video.seekable.end(video.seekable.length - 1));
-    }
+    endSession();
   };
+
+  const receiving = phase === 'live' || phase === 'paused';
+  const behindFrames = Math.max(0, bufferLen - 1 - playIndex);
+
+  const statusBadge = phase === 'live'
+    ? <span className="badge badge-success">{t('LIVE')}</span>
+    : phase === 'paused'
+      ? <span className="badge badge-neutral">{t('DIJEDA')}</span>
+      : <span className="badge badge-neutral">{t('MENGHUBUNGKAN')}</span>;
+
+  // Dipakai di bawah panel (mode biasa) dan di bar kontrol layar penuh.
+  const replaySlider = receiving && bufferLen > 1 ? (
+    <>
+      <input
+        type="range"
+        min={0}
+        max={bufferLen - 1}
+        step={1}
+        value={phase === 'live' ? bufferLen - 1 : Math.min(playIndex, bufferLen - 1)}
+        onChange={e => seek(Number(e.target.value))}
+        aria-label={t('Putar ulang')}
+        style={{ flex: 1, minWidth: 0, accentColor: 'var(--accent-primary)' }}
+      />
+      {phase === 'paused' && behindFrames > 0 && (
+        <span className="text-muted font-mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+          −{behindFrames} {t('frame')}
+        </span>
+      )}
+    </>
+  ) : null;
 
   return (
     <div className="animate-fade-in">
       <PageHead
         icon={<Radio size={22} />}
         title={t('Live Stream')}
-        description={t('Masukkan URL sumber jaringan UDP untuk memulai umpan live.')}
+        description={t('Masukkan URL UDP untuk memulai live.')}
       />
 
       <GlassCard tilt={false}>
@@ -377,21 +381,27 @@ export default function LiveStreamPage() {
             </button>
           ) : (
             <>
-              {phase === 'live' ? (
-                <button className="btn btn-secondary" onClick={pause}>
-                  <Pause size={15} /> {t('Jeda')}
-                </button>
-              ) : (
+              {phase === 'paused' ? (
                 <button className="btn btn-primary sheen" onClick={resumeLive}>
                   <Play size={15} /> {t('Kembali ke Live')}
                 </button>
+              ) : (
+                <button className="btn btn-secondary" onClick={pause} disabled={phase !== 'live'}>
+                  <Pause size={15} /> {t('Jeda')}
+                </button>
               )}
-              <button className="btn btn-danger" onClick={stop}>
-                <Square size={15} /> {t('Stop')}
+              <button className="btn btn-danger" onClick={stop} disabled={stopping}>
+                <Square size={15} /> {stopping ? t('Menghentikan...') : t('Stop')}
               </button>
             </>
           )}
         </div>
+
+        {phase === 'setup' && connectError && (
+          <p className="note-inline" style={{ color: 'var(--danger-400)', marginTop: 12 }}>
+            <AlertTriangle size={13} /> {connectError}
+          </p>
+        )}
       </GlassCard>
 
       {phase !== 'setup' && (
@@ -399,72 +409,90 @@ export default function LiveStreamPage() {
           <SectionHead
             icon={<Video size={15} />}
             title={t('Umpan Live')}
-            sub={networkUrl}
+            sub={[networkUrl, resolution, receiving ? `${fps} fps` : null].filter(Boolean).join(' · ')}
             right={
-              phase === 'live'
-                ? <span className="badge badge-success">{t('LIVE')}</span>
-                : <span className="badge badge-neutral">{t('DIJEDA')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {statusBadge}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm vd-fullscreen-btn"
+                  onClick={toggleFullscreen}
+                  disabled={!receiving}
+                  aria-label={t('Layar penuh')}
+                  title={t('Layar penuh')}
+                >
+                  <Maximize2 size={13} />
+                </button>
+              </div>
             }
           />
 
-          <VideoStage
-            label={t('Live Stream')}
-            running={phase === 'live'}
-            scene={
-              <video
-                ref={videoRef}
-                controls
-                muted
-                autoPlay
-                playsInline
-                onTimeUpdate={onTimeUpdate}
-                onError={() => setConnectError(true)}
-                onPlaying={() => setConnectError(false)}
-                style={{
-                  position: 'absolute', inset: 0, width: '100%', height: '100%',
-                  objectFit: 'contain',
-                }}
-              />
-              // <video
-              //   ref={videoRef}
-              //   controls
-              //   muted
-              //   autoPlay
-              //   playsInline
-              //   onLoadedMetadata={() => console.log("VIDEO METADATA")}
-              //   onCanPlay={() => console.log("VIDEO CANPLAY")}
-              //   onPlaying={() => console.log("VIDEO PLAYING")}
-              //   onWaiting={() => console.log("VIDEO WAITING")}
-              //   onError={(e) => {
-              //       console.log("VIDEO ERROR", videoRef.current?.error);
-              //       setConnectError(true);
-              //   }}
-              // />
-            }
-          />
+          <div
+            ref={stageRef}
+            className={`live-stage${isFullscreen ? ' vd-fullscreen' : ''}`}
+            onDoubleClick={receiving ? toggleFullscreen : undefined}
+          >
+            <VideoStage
+              label={t('Live Stream')}
+              running={phase === 'live'}
+              aspect={isFullscreen ? 'auto' : '16 / 9'}
+              overlay={phase === 'connecting' ? (
+                <span className="text-muted">{t('Menunggu frame pertama dari sumber...')}</span>
+              ) : undefined}
+              scene={
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  ref={imgRef}
+                  alt={t('Live Stream')}
+                  style={{
+                    position: 'absolute', inset: 0, width: '100%', height: '100%',
+                    objectFit: 'contain',
+                    visibility: receiving ? 'visible' : 'hidden',
+                  }}
+                />
+              }
+            />
+
+            {/* Bar kontrol khusus layar penuh — Jeda/Live & putar ulang
+                tetap bisa dipakai tanpa keluar dari layar penuh. */}
+            {isFullscreen && (
+              <div className="live-fs-bar" onDoubleClick={e => e.stopPropagation()}>
+                {statusBadge}
+                {phase === 'paused' ? (
+                  <button className="btn btn-primary btn-sm" onClick={resumeLive}>
+                    <Play size={13} /> {t('Kembali ke Live')}
+                  </button>
+                ) : (
+                  <button className="btn btn-secondary btn-sm" onClick={pause} disabled={phase !== 'live'}>
+                    <Pause size={13} /> {t('Jeda')}
+                  </button>
+                )}
+                {replaySlider}
+                <span className="font-mono live-fs-meta">
+                  {[resolution, `${fps} fps`].filter(Boolean).join(' · ')}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={toggleFullscreen}
+                  aria-label={t('Keluar layar penuh')}
+                  title={t('Keluar layar penuh')}
+                >
+                  <Minimize2 size={13} />
+                </button>
+              </div>
+            )}
+          </div>
 
           {connectError && (
             <p className="note-inline" style={{ color: 'var(--danger-400)' }}>
-              <AlertTriangle size={13} />{' '}
-              {t('Tidak bisa menyambung ke stream. Periksa URL sumber dan pastikan backend/FFmpeg berjalan.')}
+              <AlertTriangle size={13} /> {connectError}
             </p>
           )}
 
-          {seekableEnd > seekableStart && (
+          {!isFullscreen && replaySlider && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-              <input
-                type="range"
-                min={seekableStart}
-                max={seekableEnd}
-                step={0.1}
-                value={currentTime}
-                onChange={e => {
-                  const v = Number(e.target.value);
-                  if (videoRef.current) videoRef.current.currentTime = v;
-                  setPhase('paused');
-                }}
-                style={{ flex: 1, accentColor: 'var(--accent-primary)' }}
-              />
+              {replaySlider}
             </div>
           )}
         </GlassCard>

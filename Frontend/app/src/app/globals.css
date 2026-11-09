@@ -2498,3 +2498,37 @@ textarea.form-input {
 .spotlight-card:hover::before {
   opacity: 1;
 }
+
+/* Hasil Deteksi (Video Analytic) — warna kelas dari backend (mis. #00FF00)
+   terlalu terang di atas latar terang, jadi digelapkan khusus light mode. */
+.class-count-bar { background: var(--cls-color); }
+.class-count-num { color: var(--cls-color); }
+
+[data-theme="light"] .class-count-bar {
+  background: color-mix(in srgb, var(--cls-color) 70%, #000);
+}
+
+[data-theme="light"] .class-count-num {
+  color: color-mix(in srgb, var(--cls-color) 55%, #000);
+}
+
+[data-theme="light"] .class-count-track {
+  background: rgba(100, 116, 139, 0.22) !important;
+}
+
+/* Latar semua tabel di light mode — rgba(0,0,0,0.15) bawaan
+   .table-container membuatnya tampak abu-abu seperti tabel nonaktif. */
+[data-theme="light"] .table-container {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.1);
+}
+
+[data-theme="light"] .table-container th {
+  background: rgba(15, 23, 42, 0.035);
+  color: #64748b;
+}
+
+[data-theme="light"] .table-container td {
+  color: #1e293b;
+  border-bottom-color: rgba(15, 23, 42, 0.07);
+}
